@@ -42,8 +42,8 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 1. **Clone the repository**:
    ```bash
-   git clone https://your-repo-url.git
-   cd your-repo-directory ´´´
+   git clone https://github.com/destaben/klipper_ender3_v3_se.git
+   cd klipper_ender3_v3_se
 
 2. **Modify the configuration files**:
    - In some application configuration files, you may need to replace the IP 192.168.1.222 with your own local IP address.
@@ -56,7 +56,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 4. **Start the services using Docker Compose**:
    ```bash
-   docker-compose up -d´´´
+   docker-compose up -d
 
 5. **Access the interfaces**:
    - Mainsail: http://<host_ip>/
@@ -64,7 +64,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 6. **Stopping the services**:
    ```bash
-   docker-compose down´´´
+   docker-compose down
 
 ## Notes
 
