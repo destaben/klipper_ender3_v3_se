@@ -1,0 +1,101 @@
+services:
+  klipper:
+    build: .
+    restart: unless-stopped
+    container_name: klipper
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - ./config:/home/klippy/.config
+      - ./gcodes:/opt/printer_data/gcodes
+      - ./logs:/opt/printer_data/logs
+    labels:
+      org.prind.service: klipper
+
+  moonraker:
+    image: mkuf/moonraker:v0.9.3-3-gccfe32f
+    restart: unless-stopped
+    container_name: moonraker
+    pid: host
+    ports:
+      - "7125:7125"
+    volumes:
+      - /dev/null:/opt/klipper/config/null
+      - /dev/null:/opt/klipper/docs/null
+      - /run/dbus:/run/dbus
+      - /run/systemd:/run/systemd
+      - ./gcodes:/opt/printer_data/gcodes
+      - ./logs:/opt/printer_data/logs
+      - ./database:/opt/printer_data/database
+      - ./config:/opt/printer_data/config
+    labels:
+      org.prind.service: moonraker
+      traefik.enable: true
+      traefik.http.services.moonraker.loadbalancer.server.port: 7125
+      traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
+      traefik.http.routers.moonraker.entrypoints: web
+
+  mainsail:
+    image: ghcr.io/mainsail-crew/mainsail:v2.12.0
+    restart: unless-stopped
+    container_name: mainsail
+    labels:
+      org.prind.service: mainsail
+      traefik.enable: true
+      traefik.http.services.mainsail.loadbalancer.server.port: 80
+      traefik.http.routers.mainsail.rule: PathPrefix(`/`)
+      traefik.http.routers.mainsail.entrypoints: web
+
+  mobileraker_companion:
+    image: ghcr.io/clon1998/mobileraker_companion:latest
+    restart: unless-stopped
+    container_name: mobileraker_companion
+    volumes:
+      - ./config/mobileraker.conf:/opt/printer_data/config/mobileraker.conf
+    labels:
+      org.prind.service: mobileraker_companion
+
+  moonraker-obico:
+    image: ghcr.io/thespaghettidetective/moonraker-obico:latest
+    restart: unless-stopped
+    container_name: mobileraker_obico
+    privileged: true
+    volumes:
+      - ./config:/opt/printer_data/config
+      - ./logs:/opt/printer_data/logs
+    labels:
+      org.prind.service: moonraker-obico
+
+  spoolman:
+    image: ghcr.io/donkie/spoolman:latest
+    restart: unless-stopped
+    container_name: spoolman
+    volumes:
+      - ./spoolman:/home/app/.local/share/spoolman
+    ports:
+     - 8000:8000
+
+  traefik:
+    image: traefik:3.2
+    restart: unless-stopped
+    container_name: traefik
+    command:
+      - "--accesslog"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      org.prind.service: traefik
+
+  #hostmcu:
+  #  image: mkuf/klipper:latest-hostmcu
+  #  restart: unless-stopped
+  #  privileged: true
+  #  volumes:
+  #    - /dev:/dev
+  #  labels:
+  #    org.prind.service: hostmcu
