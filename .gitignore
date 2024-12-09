@@ -3,3 +3,7 @@ gcodes
 database
 klippy_uds
 spoolman
+printer-*.cfg
+!printer.cfg
+moonraker-*.cfg
+!moonraker.cfg
