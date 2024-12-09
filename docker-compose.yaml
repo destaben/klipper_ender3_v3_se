@@ -55,17 +55,6 @@ services:
     labels:
       org.prind.service: mobileraker_companion
 
-  moonraker-obico:
-    image: ghcr.io/thespaghettidetective/moonraker-obico:latest
-    restart: unless-stopped
-    container_name: mobileraker_obico
-    privileged: true
-    volumes:
-      - ./config:/opt/printer_data/config
-      - ./logs:/opt/printer_data/logs
-    labels:
-      org.prind.service: moonraker-obico
-
   spoolman:
     image: ghcr.io/donkie/spoolman:latest
     restart: unless-stopped
