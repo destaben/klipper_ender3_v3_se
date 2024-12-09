@@ -22,17 +22,13 @@ This repository contains a Docker Compose configuration for setting up multiple 
 - **Container Name**: `mobileraker_companion`
 - **Image**: `ghcr.io/clon1998/mobileraker_companion:latest`
 
-### 5. Moonraker Obico
-- **Container Name**: `mobileraker_obico`
-- **Image**: `ghcr.io/thespaghettidetective/moonraker-obico:latest`
-
-### 6. Spoolman
+### 5. Spoolman
 - **Container Name**: `spoolman`
 - **Image**: `ghcr.io/donkie/spoolman:latest`
 - **Ports**:
   - `8000:8000`: Web interface for spool management
 
-### 7. Traefik
+### 6. Traefik
 - **Container Name**: `traefik`
 - **Image**: `traefik:3.2`
 - **Ports**:
