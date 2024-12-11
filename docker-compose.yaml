@@ -28,6 +28,8 @@ services:
       - ./logs:/opt/printer_data/logs
       - ./database:/opt/printer_data/database
       - ./config:/opt/printer_data/config
+      - ./timelapse:/moonraker/timelapse
+      - ../moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
     labels:
       org.prind.service: moonraker
       traefik.enable: true

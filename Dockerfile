@@ -1,7 +1,14 @@
 FROM ubuntu:18.04
 
+RUN export DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && \
-    apt-get install -y sudo git
+    apt-get install -y tzdata
+
+RUN ln -fs /usr/share/zoneinfo/Europe/Madrid /etc/localtime && \
+dpkg-reconfigure --frontend noninteractive tzdata
+
+RUN apt-get install -y curl sudo git python3-pip python3-dev python3-numpy python3-matplotlib libatlas-base-dev libopenblas-dev
 
 # Create user
 RUN useradd -ms /bin/bash klippy && adduser klippy dialout
@@ -16,10 +23,15 @@ WORKDIR /home/klippy
 
 USER root
 
+#ADXL345 requirement
+RUN pip3 install "numpy<1.26"
+
 # Clone the forked Klipper repository
 ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
-ARG GITHUB_BRANCH=master
-RUN git clone --depth=1 --branch $GITHUB_BRANCH $GITHUB_FORK_URL /klipper
+ARG GITHUB_COMMIT=43469a29
+RUN git clone --depth=1 $GITHUB_FORK_URL /klipper && \
+    cd /klipper && \
+    git checkout $GITHUB_COMMIT
 
 RUN echo 'klippy ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klippy && \
     chown klippy:klippy -R /klipper

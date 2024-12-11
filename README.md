@@ -36,10 +36,17 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 ## Usage
 
+0. **Timelapse config** (Optional):
+   ```bash
+   git clone https://github.com/mainsail-crew/moonraker-timelapse.git ../moonraker-timelapse
+   cd ../moonraker-timelapse
+   make install
+
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
+   sudo cp ../moonraker-timelapse/klipper_macro/timelapse.cfg config/timelapse.cfg
 
 2. **Modify the configuration files**:
    - In some application configuration files, you may need to replace the IP 192.168.1.222 with your own local IP address.
