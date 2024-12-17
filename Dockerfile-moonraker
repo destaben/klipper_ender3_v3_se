@@ -1,0 +1,14 @@
+# Use the specific Moonraker image as the base
+FROM mkuf/moonraker:v0.9.3-3-gccfe32f
+
+USER root
+
+# Install wget and ffmpeg, and clean up the APT cache
+RUN apt-get update && \
+    apt-get install -y wget ffmpeg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Ensure the default entrypoint and CMD are preserved
+ENTRYPOINT ["/opt/venv/bin/python", "moonraker/moonraker/moonraker.py"]
+CMD ["-d", "/opt/printer_data"]

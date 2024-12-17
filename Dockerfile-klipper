@@ -23,9 +23,6 @@ WORKDIR /home/klippy
 
 USER root
 
-#ADXL345 requirement
-RUN pip3 install "numpy<1.26"
-
 # Clone the forked Klipper repository
 ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
 ARG GITHUB_COMMIT=43469a29
@@ -38,8 +35,13 @@ RUN echo 'klippy ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klippy && \
 # This is to allow the install script to run without error
 RUN ln -s /bin/true /bin/systemctl
 USER klippy
+
 RUN /klipper/scripts/install-ubuntu-18.04.sh
+
+#ADXL345 requirement
+RUN ~/klippy-env/bin/pip install numpy
+
 # Clean up install script workaround
 RUN sudo rm -f /bin/systemctl
 
-CMD ["/home/klippy/klippy-env/bin/python", "/klipper/klippy/klippy.py", "/home/klippy/.config/printer.cfg", "-a", "/home/klippy/.config/klippy_uds", "-l", "/opt/printer_data/logs/klippy.log"]
+CMD ["/home/klippy/klippy-env/bin/python", "/klipper/klippy/klippy.py", "/home/klippy/.config/printer.cfg", "-a", "/home/klippy/.config/klippy_uds"]

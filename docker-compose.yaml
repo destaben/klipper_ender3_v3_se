@@ -1,6 +1,8 @@
 services:
   klipper:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile-klipper
     restart: unless-stopped
     container_name: klipper
     privileged: true
@@ -9,11 +11,13 @@ services:
       - ./config:/home/klippy/.config
       - ./gcodes:/opt/printer_data/gcodes
       - ./logs:/opt/printer_data/logs
-    labels:
-      org.prind.service: klipper
+    mem_limit: 200m
+    cpus: "0.3"
 
   moonraker:
-    image: mkuf/moonraker:v0.9.3-3-gccfe32f
+    build:
+      context: .
+      dockerfile: Dockerfile-moonraker
     restart: unless-stopped
     container_name: moonraker
     pid: host
@@ -28,25 +32,27 @@ services:
       - ./logs:/opt/printer_data/logs
       - ./database:/opt/printer_data/database
       - ./config:/opt/printer_data/config
-      - ./timelapse:/moonraker/timelapse
-      - ../moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
+      - ./timelapse:/opt/printer_data/timelapse
+      - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
     labels:
-      org.prind.service: moonraker
       traefik.enable: true
       traefik.http.services.moonraker.loadbalancer.server.port: 7125
       traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
       traefik.http.routers.moonraker.entrypoints: web
+    mem_limit: 200m
+    cpus: "0.3"
 
   mainsail:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
     restart: unless-stopped
     container_name: mainsail
     labels:
-      org.prind.service: mainsail
       traefik.enable: true
       traefik.http.services.mainsail.loadbalancer.server.port: 80
       traefik.http.routers.mainsail.rule: PathPrefix(`/`)
       traefik.http.routers.mainsail.entrypoints: web
+    mem_limit: 200m
+    cpus: "0.2"
 
   mobileraker_companion:
     image: ghcr.io/clon1998/mobileraker_companion:latest
@@ -54,17 +60,8 @@ services:
     container_name: mobileraker_companion
     volumes:
       - ./config/mobileraker.conf:/opt/printer_data/config/mobileraker.conf
-    labels:
-      org.prind.service: mobileraker_companion
-
-  spoolman:
-    image: ghcr.io/donkie/spoolman:latest
-    restart: unless-stopped
-    container_name: spoolman
-    volumes:
-      - ./spoolman:/home/app/.local/share/spoolman
-    ports:
-     - 8000:8000
+    mem_limit: 200m
+    cpus: "0.2"
 
   traefik:
     image: traefik:3.2
@@ -79,14 +76,30 @@ services:
       - "80:80"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    labels:
-      org.prind.service: traefik
+    mem_limit: 200m
+    cpus: "0.2"
 
-  #hostmcu:
-  #  image: mkuf/klipper:latest-hostmcu
-  #  restart: unless-stopped
-  #  privileged: true
-  #  volumes:
-  #    - /dev:/dev
-  #  labels:
-  #    org.prind.service: hostmcu
+  mjpg-streamer:
+    image: badsmoke/mjpg-streamer:1.0.0
+    container_name: mjpg-streamer
+    restart: always
+    privileged: true
+    volumes:
+      - /dev:/dev
+    ports:
+      - 8081:8080
+    security_opt:
+      - seccomp:unconfined
+    mem_limit: 200m
+    cpus: "0.2"
+
+  moonraker-obico:
+    image: ghcr.io/thespaghettidetective/moonraker-obico:latest
+    container_name: moonraker-obico
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - ./config:/opt/printer_data/config
+      - ./logs:/opt/printer_data/logs
+    mem_limit: 200m
+    cpus: "0.2"
