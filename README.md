@@ -22,13 +22,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 - **Container Name**: `mobileraker_companion`
 - **Image**: `ghcr.io/clon1998/mobileraker_companion:latest`
 
-### 5. Spoolman
-- **Container Name**: `spoolman`
-- **Image**: `ghcr.io/donkie/spoolman:latest`
-- **Ports**:
-  - `8000:8000`: Web interface for spool management
-
-### 6. Traefik
+### 5. Traefik
 - **Container Name**: `traefik`
 - **Image**: `traefik:3.2`
 - **Ports**:
@@ -40,6 +34,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
+   ```
 
 **Timelapse config** (Optional):
    ```bash
@@ -48,6 +43,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
    make install
    cd ..
    sudo cp moonraker-timelapse/klipper_macro/timelapse.cfg config/timelapse.cfg
+   ```
 
 2. **Modify the configuration files**:
    - In some application configuration files, you may need to replace the IP 192.168.1.222 with your own local IP address.
