@@ -12,8 +12,10 @@ services:
       - ./gcodes:/opt/printer_data/gcodes
       - ./logs:/opt/printer_data/logs
       - ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
-    mem_limit: 200m
-    cpus: "0.3"
+      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
+      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
+    mem_limit: 300m
+    cpus: "0.5"
 
   moonraker:
     build:
