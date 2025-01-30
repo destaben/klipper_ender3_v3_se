@@ -94,7 +94,7 @@ fi
 
 # Start Docker services
 echo "Starting Docker containers..."
-docker-compose up -d
+docker compose up -d
 
 echo "Setup completed successfully."
 
