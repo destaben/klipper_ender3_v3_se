@@ -66,9 +66,6 @@ FIRMWARE_FILE="out/klipper_$TIMESTAMP.bin"
 
 mv "out/klipper.bin" "$FIRMWARE_FILE"
 echo "Firmware successfully compiled."
-echo "Please manually copy the firmware file to the SD card:"
-echo "$PWD/$FIRMWARE_FILE"
-echo "Then insert the SD card into the printer and restart to flash."
 
 # Clone additional repositories
 declare -A repos=(
@@ -100,3 +97,7 @@ echo "Starting Docker containers..."
 docker-compose up -d
 
 echo "Setup completed successfully."
+
+echo "Please manually copy the firmware file to the SD card:"
+echo "$PWD/$FIRMWARE_FILE"
+echo "Then insert the SD card into the printer and restart to flash."
