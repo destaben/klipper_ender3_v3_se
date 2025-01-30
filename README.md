@@ -37,10 +37,13 @@ This repository contains a Docker Compose configuration for setting up multiple 
    bash run_klipper.sh
    ```
 
-2. **Access the interfaces**:
+2. **Flash your printer**
+   - In the last step, you will see a path at the end of the script execution. You need to copy that file to the SD card and turn on the printer. After waiting for about 5 minutes, the printer should be flashed. If this does not happen, it is recommended to try multiple times, as there is no way to determine if it was successful or not since the screen will become unusable. The important thing is to proceed to the next step after waiting for 5 minutes, and if it doesn't work, try again. The SD card should contain only the file to be flashed.
+
+3. **Access the interfaces**:
    - Mainsail: http://<host_ip>/
 
-3. **Change snapshot_uri - Optional for timelapse**
+4. **Change snapshot_uri - Optional for timelapse**
    - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.222 (my local IP) by the output of this command:
    ```bash
    hostname -I | awk '{print $1}'
