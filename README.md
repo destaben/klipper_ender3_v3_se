@@ -1,4 +1,4 @@
-# Docker Services for 3D Printer Setup
+# Ender 3 V3 SE Klipper
 
 This repository contains a Docker Compose configuration for setting up multiple services to manage a 3D printer using Klipper, Moonraker, Mainsail, Mobileraker, and other related services.
 
