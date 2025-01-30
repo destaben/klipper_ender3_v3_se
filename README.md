@@ -56,6 +56,21 @@ This repository contains a Docker Compose configuration for setting up multiple 
 - Ensure that the printer's configuration is properly set in the klipper and moonraker service volumes.
 - Traefik is set up to handle HTTP routing and expose the services through a reverse proxy.
 
+## FAQ
+
+- In case there are connectivity issues with the printer it's recommended to verify that mcu value it's the same for you in config/printer.cfg:
+   ```bash
+   [mcu]
+   serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+   ```
+To be able to know this:
+   ```bash
+   ls /dev/serial/by-id/
+   ```
+And look for any similar value.
+
+- Also this configuration it's to use a lis2dw as accelerometer in case you don't have it you can easily comment any reference in printer.cfg or adx345.cfg.
+
 ## Customization
 
 - You can adjust the configuration of the services by modifying the corresponding volumes and labels in the docker-compose.yml file.
