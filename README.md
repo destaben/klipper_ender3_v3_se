@@ -30,7 +30,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 ## Usage
 
-1. **Clone the repository**:
+1. **Clone the repository and run the script**:
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
