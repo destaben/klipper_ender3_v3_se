@@ -48,6 +48,9 @@ This repository contains a Docker Compose configuration for setting up multiple 
 4. **Access the interfaces**:
    - Mainsail: http://<host_ip>/
 
+5. **Change snapshot_uri - Optional for timelapse**
+   - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.222 by the output of this command: hostname -I | awk '{print $1}'
+
 ## Notes
 
 - This setup requires Docker and Docker Compose installed on your system.

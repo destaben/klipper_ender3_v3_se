@@ -83,15 +83,6 @@ for repo in "${!repos[@]}"; do
     fi
 done
 
-# Update IP in mobileraker.conf
-if [ -f "$MOBILERAKER_CONF" ]; then
-    CURRENT_IP=$(hostname -I | awk '{print $1}')
-    echo "Updating Mobileraker snapshot URI to current IP: $CURRENT_IP"
-    sed -i "s|snapshot_uri: http://[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+/webcam/\?action=snapshot|snapshot_uri: http://$CURRENT_IP/webcam/?action=snapshot|" "$MOBILERAKER_CONF"
-else
-    echo "Warning: $MOBILERAKER_CONF not found. Skipping IP update."
-fi
-
 # Start Docker services
 echo "Starting Docker containers..."
 docker compose up -d
