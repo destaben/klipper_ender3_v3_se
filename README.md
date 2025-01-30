@@ -5,24 +5,29 @@ This repository contains a Docker Compose configuration for setting up multiple 
 ## Services
 
 ### 1. Klipper
+
 - **Container Name**: `klipper`
 - **Image**: Custom build from the current directory
 
 ### 2. Moonraker
+
 - **Container Name**: `moonraker`
 - **Image**: `mkuf/moonraker:v0.9.3-3-gccfe32f`
 - **Ports**:
   - `7125:7125`: Exposing Moonraker API to be able to connect from applications
 
 ### 3. Mainsail
+
 - **Container Name**: `mainsail`
 - **Image**: `ghcr.io/mainsail-crew/mainsail:v2.12.0`
 
 ### 4. Mobileraker Companion
+
 - **Container Name**: `mobileraker_companion`
 - **Image**: `ghcr.io/clon1998/mobileraker_companion:latest`
 
 ### 5. Traefik
+
 - **Container Name**: `traefik`
 - **Image**: `traefik:3.2`
 - **Ports**:
@@ -31,6 +36,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 ## Usage
 
 1. **Clone the repository and run the script**:
+
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
@@ -45,10 +51,12 @@ This repository contains a Docker Compose configuration for setting up multiple 
 
 4. **Change snapshot_uri - Optional for timelapse**
    - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.222 (my local IP) by the output of this command:
+
    ```bash
    hostname -I | awk '{print $1}'
    ```
-   (your local IP)
+
+   (Your local IP)
 
 ## Notes
 
@@ -59,14 +67,18 @@ This repository contains a Docker Compose configuration for setting up multiple 
 ## FAQ
 
 - In case there are connectivity issues with the printer it's recommended to verify that mcu value it's the same for you in config/printer.cfg:
+
    ```bash
    [mcu]
    serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
    ```
+
 To be able to know this:
+
    ```bash
    ls /dev/serial/by-id/
    ```
+
 And look for any similar value.
 
 - Also this configuration it's to use a lis2dw as accelerometer in case you don't have it you can easily comment any reference in printer.cfg or adx345.cfg.
