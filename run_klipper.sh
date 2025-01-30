@@ -86,14 +86,6 @@ for repo in "${!repos[@]}"; do
     fi
 done
 
-# Install moonraker-timelapse
-if [ -d "moonraker-timelapse" ]; then
-    cd moonraker-timelapse
-    yes | make install
-    sudo cp klipper_macro/timelapse.cfg ../config/timelapse.cfg
-    cd ..
-fi
-
 # Update IP in mobileraker.conf
 if [ -f "$MOBILERAKER_CONF" ]; then
     CURRENT_IP=$(hostname -I | awk '{print $1}')
