@@ -34,37 +34,19 @@ This repository contains a Docker Compose configuration for setting up multiple 
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
+   bash run_klipper.sh
    ```
 
-**Timelapse config** (Optional):
-   ```bash
-   git clone https://github.com/mainsail-crew/moonraker-timelapse.git
-   cd moonraker-timelapse
-   make install
-   cd ..
-   sudo cp moonraker-timelapse/klipper_macro/timelapse.cfg config/timelapse.cfg
-   ```
+2. **Set file permissions for proper functionality**:
+   - sudo chown -R $USER:$USER .
+   - sudo chmod -R 755 .
 
-2. **Modify the configuration files**:
-   - In some application configuration files, you may need to replace the IP 192.168.1.222 with your own local IP address.
-
-3. **Set file permissions for proper functionality**:
-   - sudo chown -R $USER:$USER <REPO_FOLDER>
-   - sudo chmod -R 755 <REPO_FOLDER>
-
-    Replace <REPO_FOLDER> with the path to your cloned repository folder.
-
-4. **Start the services using Docker Compose**:
+3. **Start the services using Docker Compose**:
    ```bash
    docker-compose up -d
 
-5. **Access the interfaces**:
+4. **Access the interfaces**:
    - Mainsail: http://<host_ip>/
-   - Spoolman: http://<host_ip>:8000
-
-6. **Stopping the services**:
-   ```bash
-   docker-compose down
 
 ## Notes
 
