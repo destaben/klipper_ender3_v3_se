@@ -57,15 +57,6 @@ services:
     mem_limit: 200m
     cpus: "0.2"
 
-  mobileraker_companion:
-    image: ghcr.io/clon1998/mobileraker_companion:latest
-    restart: unless-stopped
-    container_name: mobileraker_companion
-    volumes:
-      - ./config/mobileraker.conf:/opt/printer_data/config/mobileraker.conf
-    mem_limit: 200m
-    cpus: "0.2"
-
   traefik:
     image: traefik:3.2
     restart: unless-stopped
