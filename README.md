@@ -21,12 +21,7 @@ This repository contains a Docker Compose configuration for setting up multiple 
 - **Container Name**: `mainsail`
 - **Image**: `ghcr.io/mainsail-crew/mainsail:v2.12.0`
 
-### 4. Mobileraker Companion
-
-- **Container Name**: `mobileraker_companion`
-- **Image**: `ghcr.io/clon1998/mobileraker_companion:latest`
-
-### 5. Traefik
+### 4. Traefik
 
 - **Container Name**: `traefik`
 - **Image**: `traefik:3.2`
