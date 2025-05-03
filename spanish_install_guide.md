@@ -4,6 +4,8 @@ El propósito de este documento es explicar el proceso completo de instalación 
 
 Este mismo proceso es válido para la Ender 3 V3 KE.
 
+![General view ](https://github.com/destaben/klipper_ender3_v3_se/blob/main/general_view.jpg)
+
 # ¿Qué modificaciones necesito realizar?
 
  1. Klipper https://www.klipper3d.org/
