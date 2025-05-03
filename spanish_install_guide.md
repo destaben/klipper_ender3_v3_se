@@ -40,6 +40,8 @@ Para un mejor funcionamiento aconsejo poner un trocito de tubo PTFE tanto en el 
 
 Una vez instalado, es necesario comprobar que el corte se realiza correctamente ejerciendo presión con la mano. El movimiento en ambos sentidos debe de ser suave y sin excesivo juego hacia los lados.
 
+Será necesario reubicar el ventilador en el lado izquierdo. Existen muchos modelos disponibles.
+
 ## Hub 4 lineas
 
 Es otra parte muy importante de nuestro setup, recomiendo imprimirlo en 0,16 de altura o incluso menos. Las paredes y agujeros tienen que quedar lo mas perfectos posibles así que probablemente será necesario lijar o taladrar un poco los agujeros para los tubos. Reducir la velocidad de impresión también suele ayudar.
