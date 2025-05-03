@@ -40,6 +40,8 @@ Para un mejor funcionamiento aconsejo poner un trocito de tubo PTFE tanto en el 
 
 Una vez instalado, es necesario comprobar que el corte se realiza correctamente ejerciendo presión con la mano. El movimiento en ambos sentidos debe de ser suave y sin excesivo juego hacia los lados.
 
+![PTFE Tube](https://github.com/destaben/klipper_ender3_v3_se/blob/main/PTFE_tube.jpg)
+
 Será necesario reubicar el ventilador en el lado izquierdo. Existen muchos modelos disponibles.
 
 ## Hub 4 lineas
