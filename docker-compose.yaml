@@ -8,14 +8,12 @@ services:
     privileged: true
     volumes:
       - /dev:/dev
-      - ./config:/home/klippy/.config
-      - ./gcodes:/opt/printer_data/gcodes
-      - ./logs:/opt/printer_data/logs
-      - ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
-      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
-      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
-    mem_limit: 300m
-    cpus: "0.5"
+      - ./config:/home/klipper/config
+      #- ./gcodes:/opt/printer_data/gcodes
+      #- ./logs:/opt/printer_data/logs
+      #- ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
+      #- ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
+      #- ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
 
   moonraker:
     build:
@@ -31,58 +29,9 @@ services:
       - /dev/null:/opt/klipper/docs/null
       - /run/dbus:/run/dbus
       - /run/systemd:/run/systemd
-      - ./gcodes:/opt/printer_data/gcodes
-      - ./logs:/opt/printer_data/logs
+      #- ./gcodes:/opt/printer_data/gcodes
+      #- ./logs:/opt/printer_data/logs
       - ./database:/opt/printer_data/database
       - ./config:/opt/printer_data/config
-      - ./timelapse:/opt/printer_data/timelapse
-      - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
-    labels:
-      traefik.enable: true
-      traefik.http.services.moonraker.loadbalancer.server.port: 7125
-      traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
-      traefik.http.routers.moonraker.entrypoints: web
-    mem_limit: 200m
-    cpus: "0.3"
-
-  mainsail:
-    image: ghcr.io/mainsail-crew/mainsail:v2.12.0
-    restart: unless-stopped
-    container_name: mainsail
-    labels:
-      traefik.enable: true
-      traefik.http.services.mainsail.loadbalancer.server.port: 80
-      traefik.http.routers.mainsail.rule: PathPrefix(`/`)
-      traefik.http.routers.mainsail.entrypoints: web
-    mem_limit: 200m
-    cpus: "0.2"
-
-  traefik:
-    image: traefik:3.2
-    restart: unless-stopped
-    container_name: traefik
-    command:
-      - "--accesslog"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-    ports:
-      - "80:80"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    mem_limit: 200m
-    cpus: "0.2"
-
-  mjpg-streamer:
-    image: badsmoke/mjpg-streamer:1.0.0
-    container_name: mjpg-streamer
-    restart: always
-    privileged: true
-    volumes:
-      - /dev:/dev
-    ports:
-      - 8081:8080
-    security_opt:
-      - seccomp:unconfined
-    mem_limit: 200m
-    cpus: "0.2"
+      #- ./timelapse:/opt/printer_data/timelapse
+      #- ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py

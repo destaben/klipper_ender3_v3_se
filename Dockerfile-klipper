@@ -1,50 +1,41 @@
 FROM ubuntu:22.04
 
-RUN export DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y tzdata
+    apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
 
-RUN ln -fs /usr/share/zoneinfo/Europe/Madrid /etc/localtime && \
-dpkg-reconfigure --frontend noninteractive tzdata
+# Crear usuario klipper y home
+RUN useradd -ms /bin/bash klipper && adduser klipper dialout
+RUN mkdir /home/klipper/config
+VOLUME /home/klipper/config
 
-RUN apt-get install -y zlib1g-dev libjpeg-dev libfreetype6-dev curl sudo git libatlas-base-dev libopenblas-dev python3-tqdm python3-plotly python3-numpy python3-matplotlib
-
-# Create user
-RUN useradd -ms /bin/bash klippy && adduser klippy dialout
-USER klippy
-
-#This fixes issues with the volume command setting wrong permissions
-RUN mkdir /home/klippy/.config
-VOLUME /home/klippy/.config
-
-### Klipper setup ###
-WORKDIR /home/klippy
+WORKDIR /home/klipper
 
 USER root
 
-# Clone the forked Klipper repository
 ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
-RUN git clone --depth=1 $GITHUB_FORK_URL /klipper
+RUN git clone --depth=1 $GITHUB_FORK_URL /home/klipper/klipper
 
-RUN echo 'klippy ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klippy && \
-    chown klippy:klippy -R /klipper
-# This is to allow the install script to run without error
-RUN ln -s /bin/true /bin/systemctl
-USER klippy
+RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
+    chown klipper:klipper -R /home/klipper && \
+    ln -s /bin/true /bin/systemctl
 
-RUN /klipper/scripts/install-ubuntu-22.04.sh
+USER klipper
 
-#ADXL345 requirement
-RUN ~/klippy-env/bin/pip install numpy
+RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
 
+# Instalar klippain-shaketune y requirements
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
-RUN /home/klippy/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
+RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
+RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
+RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
 
-RUN mkdir -p /klipper/klippy/extras/shaketune
-RUN cp -r klippain-shaketune/shaketune /klipper/klippy/extras/
+USER root
+RUN rm -f /bin/systemctl
 
-# Clean up install script workaround
-RUN sudo rm -f /bin/systemctl
+USER klipper
 
-CMD ["/home/klippy/klippy-env/bin/python", "/klipper/klippy/klippy.py", "/home/klippy/.config/printer.cfg", "-a", "/home/klippy/.config/klippy_uds"]
+RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
+
+CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/klipper_uds"]
