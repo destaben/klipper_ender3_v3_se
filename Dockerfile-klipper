@@ -5,7 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
 
-# Crear usuario klipper y home
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
 RUN mkdir /home/klipper/config
 VOLUME /home/klipper/config
@@ -25,7 +24,6 @@ USER klipper
 
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
 
-# Instalar klippain-shaketune y requirements
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
 RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
 RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
