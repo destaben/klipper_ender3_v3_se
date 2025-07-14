@@ -1,4 +1,3 @@
-
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -32,9 +31,9 @@ RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
 RUN rm -f /bin/systemctl
 
 #Shaketune setup
-USER klipper
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
 RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
+USER klipper
 RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
 RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
 
