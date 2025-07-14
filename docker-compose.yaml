@@ -9,9 +9,7 @@ services:
     volumes:
       - /dev:/dev
       - ./config:/home/klipper/config
-      #- ./gcodes:/opt/printer_data/gcodes
-      #- ./logs:/opt/printer_data/logs
-      #- ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
+      - ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
       #- ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
       #- ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
 
@@ -25,13 +23,13 @@ services:
     ports:
       - "7125:7125"
     volumes:
-      - /dev/null:/opt/klipper/config/null
-      - /dev/null:/opt/klipper/docs/null
-      - /run/dbus:/run/dbus
       - /run/systemd:/run/systemd
-      #- ./gcodes:/opt/printer_data/gcodes
-      #- ./logs:/opt/printer_data/logs
+      - /run/dbus:/run/dbus
       - ./database:/opt/printer_data/database
       - ./config:/opt/printer_data/config
+      #- /dev/null:/opt/klipper/config/null
+      #- /dev/null:/opt/klipper/docs/null
+      #- ./gcodes:/opt/printer_data/gcodes
+      #- ./logs:/opt/printer_data/logs
       #- ./timelapse:/opt/printer_data/timelapse
       #- ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
