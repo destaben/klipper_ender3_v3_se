@@ -13,6 +13,10 @@ WORKDIR /home/klipper
 
 USER root
 
+# Download and install Klipper
+# Use a specific fork if needed, otherwise use the main Klipper repository
+# Uncomment the next line to use the main Klipper repository
+# ARG GITHUB_FORK_URL=
 ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
 RUN git clone --depth=1 $GITHUB_FORK_URL /home/klipper/klipper
 
@@ -20,10 +24,12 @@ RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
     chown klipper:klipper -R /home/klipper && \
     ln -s /bin/true /bin/systemctl
 
+# Install dependencies
 USER klipper
 
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
 
+#Shaketune setup
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
 RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
 RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
