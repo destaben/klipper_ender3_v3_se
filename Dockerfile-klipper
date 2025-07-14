@@ -1,9 +1,12 @@
+
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-    apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
+# Limpiar caché y archivos temporales antes de instalar paquetes
+RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && apt-get clean
+RUN apt-get update --fix-missing
+RUN apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
 
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
 RUN mkdir /home/klipper/config
@@ -25,20 +28,15 @@ RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
     ln -s /bin/true /bin/systemctl
 
 # Install dependencies
-USER klipper
-
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
+RUN rm -f /bin/systemctl
 
 #Shaketune setup
+USER klipper
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
 RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
 RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
 RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
-
-USER root
-RUN rm -f /bin/systemctl
-
-USER klipper
 
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
