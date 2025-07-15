@@ -25,18 +25,16 @@ RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
     chown klipper:klipper -R /home/klipper && \
     ln -s /bin/true /bin/systemctl
 
-#Shaketune setup
+#Shaketune download
 RUN git clone https://github.com/Frix-x/klippain-shaketune.git
-RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt
-
 USER klipper
 
 # Install dependencies
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
-RUN rm -f /bin/systemctl
+#RUN rm -f /bin/systemctl
 RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
 RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
-
+RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt  
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
 CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/klipper_uds"]
