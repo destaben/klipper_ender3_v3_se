@@ -3,6 +3,8 @@ services:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
     restart: unless-stopped
     container_name: mainsail
+    ports:
+      - "7126:80"
 
   klipper:
     build:
