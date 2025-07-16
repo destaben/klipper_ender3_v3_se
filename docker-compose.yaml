@@ -5,6 +5,8 @@ services:
     container_name: mainsail
     ports:
       - "7126:80"
+    volumes:
+      - ./mainsail-config.json:/usr/share/nginx/html/config.json
 
   klipper:
     build:
