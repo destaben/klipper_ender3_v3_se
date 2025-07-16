@@ -33,3 +33,18 @@ services:
       #- ./logs:/opt/printer_data/logs
       #- ./timelapse:/opt/printer_data/timelapse
       #- ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
