@@ -1,12 +1,27 @@
 services:
+  traefik:
+    image: traefik:3.2
+    restart: unless-stopped
+    container_name: traefik
+    command:
+      - "--accesslog"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+  
   mainsail:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
     restart: unless-stopped
     container_name: mainsail
-    ports:
-      - "7126:80"
-    volumes:
-      - ./mainsail-config.json:/usr/share/nginx/html/config.json
+    labels:
+      traefik.enable: true
+      traefik.http.services.mainsail.loadbalancer.server.port: 80
+      traefik.http.routers.mainsail.rule: PathPrefix(`/`)
+      traefik.http.routers.mainsail.entrypoints: web
 
   klipper:
     build:
@@ -29,8 +44,11 @@ services:
     restart: unless-stopped
     container_name: moonraker
     pid: host
-    ports:
-      - "7125:7125"
+    labels:
+      traefik.enable: true
+      traefik.http.services.moonraker.loadbalancer.server.port: 7125
+      traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
+      traefik.http.routers.moonraker.entrypoints: web
     volumes:
       - /run/systemd:/run/systemd
       - /run/dbus:/run/dbus
