@@ -2,7 +2,6 @@
 
 set -e  # Stop the script if an error occurs
 
-# Instalar Docker
 if ! command -v docker &> /dev/null; then
     echo "Installing Docker..."
     curl -fsSL https://get.docker.com -o get-docker.sh
@@ -14,7 +13,6 @@ else
     echo "Docker is already installed."
 fi
 
-# Instalar Docker Compose
 if ! command -v docker-compose &> /dev/null; then
     echo "Installing Docker Compose..."
     sudo apt install -y docker-compose
@@ -23,7 +21,7 @@ else
     echo "Docker Compose is already installed."
 fi
 
-# Clonar repos adicionales
+# Aditional dependencies
 declare -A repos=(
     ["chopper-resonance-tuner"]="https://github.com/MRX8024/chopper-resonance-tuner.git"
     ["KlipperMaintenance"]="https://github.com/3DCoded/KlipperMaintenance.git"
@@ -39,7 +37,10 @@ for repo in "${!repos[@]}"; do
     fi
 done
 
-# Arrancar servicios Docker
+if [ -f "KlipperMaintenance/maintain.py" ]; then
+    sed -i 's|http://localhost:7125|http://moonraker:7125|g' KlipperMaintenance/maintain.py
+fi
+
 echo "Starting Docker containers..."
 docker compose up -d
 
