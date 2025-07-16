@@ -4,6 +4,7 @@ USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install dependencies and set up environment
 RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && apt-get clean && \
     apt-get update --fix-missing && \
     apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
@@ -36,4 +37,5 @@ RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
 RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt  
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
+# Run Klipper
 CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/klipper_uds"]
