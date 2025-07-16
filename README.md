@@ -102,9 +102,9 @@ To set a static IP for your WiFi connection using NetworkManager:
 2. **Use the provided script to set a static IP:**
 
    ```sh
-   sudo ./set_static_wifi.sh "<connection_name>" <ip_address>/<cidr> <gateway> "<dns1> <dns2>"
+   sudo bash ./set_static_wifi.sh "<connection_name>" <ip_address>/<cidr> <gateway> "<dns1> <dns2>"
    # Example:
-   sudo ./set_static_wifi.sh "MIWIFI_XXXX" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
+   sudo bash ./set_static_wifi.sh "MIWIFI_XXXX" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
    ```
 
 This will configure your WiFi connection with the static IP, gateway, and DNS you specify.
