@@ -9,7 +9,7 @@ services:
     volumes:
       - /dev:/dev
       - ./config:/home/klipper/config
-      - ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
+      - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py
       #- ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
       #- ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
 
