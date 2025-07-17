@@ -32,10 +32,13 @@ services:
     privileged: true
     volumes:
       - /dev:/dev
+      # Klipper configuration
       - ./config:/home/klipper/config
+      # Maintenance script
       - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py
-      #- ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
-      #- ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
+      # Chopper Resonance Tuner configuration
+      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
+      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
 
   moonraker:
     build:
@@ -52,14 +55,15 @@ services:
     volumes:
       - /run/systemd:/run/systemd
       - /run/dbus:/run/dbus
-      - ./database:/opt/printer_data/database
+      - /dev/null:/opt/klipper/config/null
+      - /dev/null:/opt/klipper/docs/null
+      # Moonraker configuration
       - ./config:/opt/printer_data/config
-      #- /dev/null:/opt/klipper/config/null
-      #- /dev/null:/opt/klipper/docs/null
-      #- ./gcodes:/opt/printer_data/gcodes
-      #- ./logs:/opt/printer_data/logs
-      #- ./timelapse:/opt/printer_data/timelapse
-      #- ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
+      - ./moonraker/database:/opt/printer_data/database
+      - ./moonraker/logs:/opt/printer_data/logs
+      # Timelapse configuration
+      - ./timelapse:/opt/printer_data/timelapse
+      - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
