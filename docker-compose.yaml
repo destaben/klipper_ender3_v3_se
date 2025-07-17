@@ -93,7 +93,7 @@ services:
     privileged: true
 
   mjpg-streamer:
-    image: badsmoke/mjpg-streamer:1.0.0
+    image: badsmoke/mjpg-streamer:1.0.1
     container_name: mjpg-streamer
     restart: always
     privileged: true
