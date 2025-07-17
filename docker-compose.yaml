@@ -34,6 +34,7 @@ services:
       - /dev:/dev
       # Klipper configuration
       - ./config:/home/klipper/config
+      - ./gcodes:/opt/printer_data/gcodes
       # Maintenance script
       - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py
       # Chopper Resonance Tuner configuration
@@ -59,6 +60,7 @@ services:
       - ./config:/opt/printer_data/config
       - ./moonraker/database:/opt/printer_data/database
       - ./moonraker/logs:/opt/printer_data/logs
+      - ./gcodes:/opt/printer_data/gcodes
       # Timelapse configuration
       - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
 
