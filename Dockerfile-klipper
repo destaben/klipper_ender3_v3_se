@@ -38,4 +38,4 @@ RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
 # Run Klipper
-CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/klipper_uds"]
+CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/config/klippy_uds"]
