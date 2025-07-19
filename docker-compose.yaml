@@ -106,13 +106,3 @@ services:
       - 8081:8080
     security_opt:
       - seccomp:unconfined
-
-  printguard:
-    image: ghcr.io/oliverbravery/printguard::sha256-59e996d2470f273c1bb046a2d7dfcf54401b8e106b4ba988b8356417418a0a8d.sig
-    container_name: printguard
-    restart: always
-    privileged: true
-    volumes:
-      - ./printguard:/data
-    ports:
-      - 8000:8000
