@@ -35,17 +35,22 @@ This repository contains a Docker Compose configuration for setting up multiple 
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
    cd klipper_ender3_v3_se
-   bash run_klipper.sh
+   sudo bash setup_services.sh
    ```
 
 2. **Flash your printer**
-   - In the last step, you will see a path at the end of the script execution. You need to copy that file to the SD card and turn on the printer. After waiting for about 5 minutes, the printer should be flashed. If this does not happen, it is recommended to try multiple times, as there is no way to determine if it was successful or not since the screen will become unusable. The important thing is to proceed to the next step after waiting for 5 minutes, and if it doesn't work, try again. The SD card should contain only the file to be flashed.
+
+   ```bash
+   sudo bash build_firmware.sh
+   ```
+
+   - You need to copy that file to the SD card and turn on the printer. After waiting for about 5 minutes, the printer should be flashed. If this does not happen, it is recommended to try multiple times, as there is no way to determine if it was successful or not since the screen will become unusable. The important thing is to proceed to the next step after waiting for 5 minutes, and if it doesn't work, try again. The SD card should contain only the file to be flashed.
 
 3. **Access the interfaces**:
    - Mainsail: http://<host_ip>/
 
 4. **Change snapshot_uri - Optional for timelapse**
-   - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.222 (my local IP) by the output of this command:
+   - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.225 (my local IP) by the output of this command:
 
    ```bash
    hostname -I | awk '{print $1}'
@@ -81,3 +86,25 @@ And look for any similar value.
 ## Customization
 
 - You can adjust the configuration of the services by modifying the corresponding volumes and labels in the docker-compose.yml file.
+
+## Setting a Static IP for WiFi (Raspberry Pi / Linux)
+
+To set a static IP for your WiFi connection using NetworkManager:
+
+1. **Find your WiFi connection name:**
+
+   ```sh
+   nmcli con show
+   ```
+
+   Look for the name under the `NAME` column (e.g. `MIWIFI_7A19`).
+
+2. **Use the provided script to set a static IP:**
+
+   ```sh
+   sudo bash ./set_static_wifi.sh "<connection_name>" <ip_address>/<cidr> <gateway> "<dns1> <dns2>"
+   # Example:
+   sudo bash ./set_static_wifi.sh "MIWIFI_XXXX" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
+   ```
+
+This will configure your WiFi connection with the static IP, gateway, and DNS you specify.

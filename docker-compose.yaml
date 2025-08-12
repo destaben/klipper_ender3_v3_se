@@ -1,50 +1,22 @@
 services:
-  klipper:
-    build:
-      context: .
-      dockerfile: Dockerfile-klipper
+  traefik:
+    image: traefik:3.2
     restart: unless-stopped
-    container_name: klipper
-    privileged: true
-    volumes:
-      - /dev:/dev
-      - ./config:/home/klippy/.config
-      - ./gcodes:/opt/printer_data/gcodes
-      - ./logs:/opt/printer_data/logs
-      - ./KlipperMaintenance/maintain.py:/klipper/klippy/extras/maintain.py
-      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
-      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
-    mem_limit: 300m
-    cpus: "0.5"
-
-  moonraker:
-    build:
-      context: .
-      dockerfile: Dockerfile-moonraker
-    restart: unless-stopped
-    container_name: moonraker
-    pid: host
+    container_name: traefik
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
     ports:
-      - "7125:7125"
+      - "80:80"
     volumes:
-      - /dev/null:/opt/klipper/config/null
-      - /dev/null:/opt/klipper/docs/null
-      - /run/dbus:/run/dbus
-      - /run/systemd:/run/systemd
-      - ./gcodes:/opt/printer_data/gcodes
-      - ./logs:/opt/printer_data/logs
-      - ./database:/opt/printer_data/database
-      - ./config:/opt/printer_data/config
-      - ./timelapse:/opt/printer_data/timelapse
-      - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
-    labels:
-      traefik.enable: true
-      traefik.http.services.moonraker.loadbalancer.server.port: 7125
-      traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
-      traefik.http.routers.moonraker.entrypoints: web
-    mem_limit: 200m
-    cpus: "0.3"
-
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 128M
+  
   mainsail:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
     restart: unless-stopped
@@ -54,35 +26,129 @@ services:
       traefik.http.services.mainsail.loadbalancer.server.port: 80
       traefik.http.routers.mainsail.rule: PathPrefix(`/`)
       traefik.http.routers.mainsail.entrypoints: web
-    mem_limit: 200m
-    cpus: "0.2"
+      traefik.http.routers.mainsail.middlewares: mainsail-ratelimit
+      traefik.http.middlewares.mainsail-ratelimit.ratelimit.average: 5
+      traefik.http.middlewares.mainsail-ratelimit.ratelimit.burst: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
+    depends_on: [moonraker]
 
-  traefik:
-    image: traefik:3.2
+  klipper:
+    build:
+      context: .
+      dockerfile: Dockerfile-klipper
     restart: unless-stopped
-    container_name: traefik
-    command:
-      - "--accesslog"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-    ports:
-      - "80:80"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    mem_limit: 200m
-    cpus: "0.2"
-
-  mjpg-streamer:
-    image: badsmoke/mjpg-streamer:1.0.0
-    container_name: mjpg-streamer
-    restart: always
+    container_name: klipper
     privileged: true
     volumes:
       - /dev:/dev
+      # Klipper configuration
+      - ./config:/home/klipper/config
+      - ./gcodes:/opt/printer_data/gcodes
+      # Maintenance script
+      - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py
+      # Chopper Resonance Tuner configuration
+      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
+      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  moonraker:
+    build:
+      context: .
+      dockerfile: Dockerfile-moonraker
+    restart: unless-stopped
+    container_name: moonraker
+    pid: host
+    labels:
+      traefik.enable: true
+      traefik.http.services.moonraker.loadbalancer.server.port: 7125
+      traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
+      traefik.http.routers.moonraker.entrypoints: web
+      traefik.http.routers.moonraker.middlewares: moonraker-ratelimit
+      traefik.http.middlewares.moonraker-ratelimit.ratelimit.average: 20
+      traefik.http.middlewares.moonraker-ratelimit.ratelimit.burst: 40
+    volumes:
+      - /run/systemd:/run/systemd
+      - /run/dbus:/run/dbus
+      # Moonraker configuration
+      - ./config:/opt/printer_data/config
+      - ./moonraker/database:/opt/printer_data/database
+      - ./moonraker/logs:/opt/printer_data/logs
+      - ./gcodes:/opt/printer_data/gcodes
+      # Timelapse configuration
+      - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    restart: unless-stopped
     ports:
-      - 8081:8080
-    security_opt:
-      - seccomp:unconfined
-    mem_limit: 200m
-    cpus: "0.2"
+      - 9100:9100
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+      labels:
+        traefik.enable: true
+        traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
+        traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
+        traefik.http.routers.nodeexporter.entrypoints: web
+        traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 5
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 10
+  
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.0
+    container_name: cadvisor
+    restart: unless-stopped
+    command:
+      - '-housekeeping_interval=10s'
+      - '-docker_only=true'
+    ports:
+      - 8080:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+      labels:
+        traefik.enable: true
+        traefik.http.services.cadvisor.loadbalancer.server.port: 8080
+        traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
+        traefik.http.routers.cadvisor.entrypoints: web
+        traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 5
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 10
