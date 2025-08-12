@@ -1,6 +1,12 @@
 # Ender 3 V3 SE Klipper
 
-This repository contains a Docker Compose configuration for setting up multiple services to manage a Ender 3 V3 SE using Klipper, Moonraker, Mainsail, Mobileraker, and other related services.
+This repository contains everything needed to manage an Ender 3 V3 SE with Klipper, Moonraker, Mainsail, and extra utilities, using Docker Compose and automated scripts.
+
+Includes:
+
+- Scripts to build and flash Klipper firmware (`build_firmware.sh`)
+- Pre-made configuration for Ender 3 V3 SE
+- Docker Compose for Klipper, Moonraker, Mainsail, Traefik, and utilities
 
 ## Services
 
@@ -28,9 +34,9 @@ This repository contains a Docker Compose configuration for setting up multiple 
 - **Ports**:
   - `80:80`: Exposing Traefik's HTTP service
 
-## Usage
+## Quick Start
 
-1. **Clone the repository and run the script**:
+1. **Clone the repository and start the services:**
 
    ```bash
    git clone https://github.com/destaben/klipper_ender3_v3_se.git
@@ -38,73 +44,56 @@ This repository contains a Docker Compose configuration for setting up multiple 
    sudo bash setup_services.sh
    ```
 
-2. **Flash your printer**
+2. **Build and flash the Klipper firmware:**
 
    ```bash
    sudo bash build_firmware.sh
    ```
 
-   - You need to copy that file to the SD card and turn on the printer. After waiting for about 5 minutes, the printer should be flashed. If this does not happen, it is recommended to try multiple times, as there is no way to determine if it was successful or not since the screen will become unusable. The important thing is to proceed to the next step after waiting for 5 minutes, and if it doesn't work, try again. The SD card should contain only the file to be flashed.
+   - The script uses the preconfigured `config.ender3_v3_se` file, which enables both USART1 and USART2 for maximum compatibility.
+   - The generated binary will be in `klipper/out/klipper_<date>.bin`. Copy this file to an SD card, insert it into the printer, and power it on to flash.
+   - If the screen freezes, wait a few minutes and try again if needed.
 
-3. **Access the interfaces**:
+3. **Access the web interfaces:**
    - Mainsail: http://<host_ip>/
-
-4. **Change snapshot_uri - Optional for timelapse**
-   - Set your own IP in mobileraker.conf, change snapshot_uri. Replace 192.168.1.225 (my local IP) by the output of this command:
-
-   ```bash
-   hostname -I | awk '{print $1}'
-   ```
-
-   (Your local IP)
 
 ## Notes
 
-- This setup requires Docker and Docker Compose installed on your system.
-- Ensure that the printer's configuration is properly set in the klipper and moonraker service volumes.
-- Traefik is set up to handle HTTP routing and expose the services through a reverse proxy.
+- Requires Docker and Docker Compose.
+- The `config.ender3_v3_se` file is already prepared for the Ender 3 V3 SE and enables both serial ports (USART1 and USART2). You can edit it if your hardware only uses one of them.
+- The `build_firmware.sh` script automates the build and uses the included configuration.
+- Traefik exposes the services via HTTP.
 
 ## FAQ
 
-- In case there are connectivity issues with the printer it's recommended to verify that mcu value it's the same for you in config/printer.cfg:
+- If you have connectivity issues with the printer, check that the `serial` value in `config/printer.cfg` is correct:
 
-   ```bash
+   ```ini
    [mcu]
    serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
    ```
 
-To be able to know this:
+   You can list connected devices with:
 
    ```bash
    ls /dev/serial/by-id/
    ```
 
-And look for any similar value.
-
-- Also this configuration it's to use a lis2dw as accelerometer in case you don't have it you can easily comment any reference in printer.cfg or adx345.cfg.
+- The configuration is set up to use a lis2dw accelerometer. If you don't have one, simply comment out references in `printer.cfg` or `lis2dw.cfg`.
 
 ## Customization
 
-- You can adjust the configuration of the services by modifying the corresponding volumes and labels in the docker-compose.yml file.
+- You can adjust the services by editing the volumes and labels in `docker-compose.yaml`.
+- The `.gitignore` file already ignores binaries, logs, and temporary configs.
 
-## Setting a Static IP for WiFi (Raspberry Pi / Linux)
+## Static IP for WiFi (Raspberry Pi / Linux)
 
-To set a static IP for your WiFi connection using NetworkManager:
+You can use the included script to set a static IP for your WiFi:
 
-1. **Find your WiFi connection name:**
+```sh
+sudo bash ./set_static_wifi.sh "<connection_name>" <ip>/<cidr> <gateway> "<dns1> <dns2>"
+# Example:
+sudo bash ./set_static_wifi.sh "MIWIFI_XXXX" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
+```
 
-   ```sh
-   nmcli con show
-   ```
-
-   Look for the name under the `NAME` column (e.g. `MIWIFI_7A19`).
-
-2. **Use the provided script to set a static IP:**
-
-   ```sh
-   sudo bash ./set_static_wifi.sh "<connection_name>" <ip_address>/<cidr> <gateway> "<dns1> <dns2>"
-   # Example:
-   sudo bash ./set_static_wifi.sh "MIWIFI_XXXX" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
-   ```
-
-This will configure your WiFi connection with the static IP, gateway, and DNS you specify.
+This will automatically configure the IP, gateway, and DNS for your WiFi connection.
