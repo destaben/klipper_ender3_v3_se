@@ -19,7 +19,7 @@ WORKDIR /home/klipper
 # Use a specific fork if needed, otherwise use the main Klipper repository
 # Uncomment the next line to use the main Klipper repository
 # ARG GITHUB_FORK_URL=
-ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
+ARG GITHUB_FORK_URL=https://github.com/jpcurti/ender3-v3-se-klipper-with-display.git
 RUN git clone --depth=1 $GITHUB_FORK_URL /home/klipper/klipper
 
 RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \

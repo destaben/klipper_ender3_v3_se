@@ -4,7 +4,6 @@ services:
     restart: unless-stopped
     container_name: traefik
     command:
-      - "--accesslog"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -12,6 +11,11 @@ services:
       - "80:80"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 128M
   
   mainsail:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
@@ -22,6 +26,15 @@ services:
       traefik.http.services.mainsail.loadbalancer.server.port: 80
       traefik.http.routers.mainsail.rule: PathPrefix(`/`)
       traefik.http.routers.mainsail.entrypoints: web
+      traefik.http.routers.mainsail.middlewares: mainsail-ratelimit
+      traefik.http.middlewares.mainsail-ratelimit.ratelimit.average: 5
+      traefik.http.middlewares.mainsail-ratelimit.ratelimit.burst: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
+    depends_on: [moonraker]
 
   klipper:
     build:
@@ -40,6 +53,17 @@ services:
       # Chopper Resonance Tuner configuration
       - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
       - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   moonraker:
     build:
@@ -53,6 +77,9 @@ services:
       traefik.http.services.moonraker.loadbalancer.server.port: 7125
       traefik.http.routers.moonraker.rule: PathRegexp(`^/(websocket|printer|api|access|machine|server)`)
       traefik.http.routers.moonraker.entrypoints: web
+      traefik.http.routers.moonraker.middlewares: moonraker-ratelimit
+      traefik.http.middlewares.moonraker-ratelimit.ratelimit.average: 20
+      traefik.http.middlewares.moonraker-ratelimit.ratelimit.burst: 40
     volumes:
       - /run/systemd:/run/systemd
       - /run/dbus:/run/dbus
@@ -63,6 +90,11 @@ services:
       - ./gcodes:/opt/printer_data/gcodes
       # Timelapse configuration
       - ./moonraker-timelapse/component/timelapse.py:/opt/moonraker/moonraker/components/timelapse.py
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 384M
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
@@ -78,6 +110,19 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+      labels:
+        traefik.enable: true
+        traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
+        traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
+        traefik.http.routers.nodeexporter.entrypoints: web
+        traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 5
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 10
   
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
@@ -94,15 +139,16 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     privileged: true
-
-  mjpg-streamer:
-    image: badsmoke/mjpg-streamer:1.0.1
-    container_name: mjpg-streamer
-    restart: always
-    privileged: true
-    volumes:
-      - /dev:/dev
-    ports:
-      - 8081:8080
-    security_opt:
-      - seccomp:unconfined
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+      labels:
+        traefik.enable: true
+        traefik.http.services.cadvisor.loadbalancer.server.port: 8080
+        traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
+        traefik.http.routers.cadvisor.entrypoints: web
+        traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 5
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 10
