@@ -16,24 +16,34 @@ Este mismo proceso es válido para la Ender 3 V3 KE.
 
 ## Klipper
 
-Para instalar Klipper en nuestra impresora es necesario disponer de un mini PC que sea capaz de ejecutar Linux, cualquier dispositivo que cumpla esto es válido. En este repositorio este proceso de instalación está automatizado para nuestra impresora, para ello solo hace falta ejecutar los siguientes comandos:
+Para instalar Klipper y el entorno en nuestra impresora usando este repositorio, sigue estos pasos:
 
+1. Clona el repositorio y entra en la carpeta:
+    ```sh
     git clone https://github.com/destaben/klipper_ender3_v3_se.git
     cd klipper_ender3_v3_se
-    bash run_klipper.sh
+    ```
 
-Este proceso tardará alrededor de 5-10 minutos y generará como salida un fichero .bin cuya localización se muestra al terminar la ejecución del script.
-Existen alternativas a este método automático usando KIAUH, aqui un tutorial: https://pblvsky.gitbook.io/ender3v3se/remote-control/klipper
+2. Lanza la instalación automatizada con Docker Compose:
+    ```sh
+    docker compose up -d
+    ```
 
-Una vez tenemos generado el fichero .bin, sea cual sea el método, tenemos que flashear la impresora mediante la tarjeta SD. Para hacer esto, es necesario mover el archivo a la tarjeta SD y, con la impresora apagada, introducir la tarjeta SD.
+3. Para compilar el firmware, ejecuta el script:
+    ```sh
+    bash build_firmware.sh
+    ```
+   Esto generará el archivo `klipper.bin` en la carpeta indicada al finalizar el script.
 
-Encendemos la impresora y la pantalla se quedará congelada. Es recomendable esperar unos minutos para asegurarnos que se ha hecho el flasheo. En caso de cualquier problema, es recomendable volver a probar (en mi caso funcionó a la segunda)
+4. Copia el archivo `klipper.bin` a una tarjeta SD y flashea la impresora (con la impresora apagada, inserta la SD y enciende).
 
-Posteriormente, deberíamos poder acceder a http://IP_DEL_MINI_PC y ya deberíamos de poder controlar la impresora.
+5. Accede a la interfaz web en http://IP_DEL_MINI_PC para controlar la impresora.
+
+Alternativamente, puedes usar KIAUH siguiendo este tutorial: https://pblvsky.gitbook.io/ender3v3se/remote-control/klipper
 
 ## Cortador de filamento
 
-Es una de las partes mas cruciales del multicolor, para que Pico MMU funcione correctamente el cortador tiene que estar entre el hotend y el extrusor. Para ello disponemos de este modelo, dejad un like al creador:   https://www.printables.com/model/1243521-filament-cutter-for-ender-3-v3-se
+Es una de las partes más cruciales del multicolor, para que Pico MMU funcione correctamente el cortador tiene que estar entre el hotend y el extrusor. Para ello disponemos de este modelo, dejad un like al creador:   https://www.printables.com/model/1243521-filament-cutter-for-ender-3-v3-se
 
 Es necesario que no exista rozamiento excesivo entre las piezas, recomiendo seguir las instrucciones al pie de la letra. Es muy importante lijar las piezas y aplicar lubricante a las partes móviles.
 
@@ -48,13 +58,13 @@ Será necesario reubicar el ventilador en el lado izquierdo. Existen muchos mode
 
 ## Hub 4 lineas
 
-Es otra parte muy importante de nuestro setup, recomiendo imprimirlo en 0,16 de altura o incluso menos. Las paredes y agujeros tienen que quedar lo mas perfectos posibles así que probablemente será necesario lijar o taladrar un poco los agujeros para los tubos. Reducir la velocidad de impresión también suele ayudar.
+Es otra parte muy importante de nuestro setup, recomiendo imprimirlo en 0,16 de altura o incluso menos. Las paredes y agujeros tienen que quedar lo más perfectos posibles así que probablemente será necesario lijar o taladrar un poco los agujeros para los tubos. Reducir la velocidad de impresión también suele ayudar.
 
 En mi caso también los he asegurado un poco de silicona caliente para evitar que los tubos se salgan por la presión.
 
 ## Pico MMU
 
-Y por último tenemos el corazón del cambio de color, en este caso no voy a entrar en mucho detalle ya que todo esta perfectamente explicado aqui:
+Y por último tenemos el corazón del cambio de color, en este caso no voy a entrar en mucho detalle ya que todo está perfectamente explicado aquí:
 
 https://github.com/lhndo/LH-Stinger/wiki/Pico-MMU
 

@@ -100,8 +100,6 @@ services:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
     restart: unless-stopped
-    ports:
-      - 9100:9100
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -121,8 +119,8 @@ services:
         traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
         traefik.http.routers.nodeexporter.entrypoints: web
         traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 5
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 10
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
+        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
   
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
@@ -131,8 +129,6 @@ services:
     command:
       - '-housekeeping_interval=10s'
       - '-docker_only=true'
-    ports:
-      - 8080:8080
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -150,5 +146,23 @@ services:
         traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
         traefik.http.routers.cadvisor.entrypoints: web
         traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 5
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 10
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
+        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
+
+  usb-watcher:
+    image: python:3.11-slim
+    container_name: usb-watcher
+    restart: unless-stopped
+    volumes:
+      - /dev:/dev
+      - ./usb_watcher.py:/usb_watcher.py:ro
+    environment:
+      MOONRAKER_URL: "http://moonraker:7125"
+      USB_ID: "1a86:7523,2341:0042" # Change this to match your printer's VID:PID
+    command: >
+      sh -c "pip install pyudev requests && python /usb_watcher.py"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 64M
