@@ -427,10 +427,10 @@
     <div class="card">
       <div class="card-title">Advanced</div>
       <div class="action-grid">
-        <button class="action-btn" onclick="sendCmd('SP_TEST_SERVO ANGLE=' + prompt('Enter servo angle (0-140):', '0'))">
+        <button class="action-btn" onclick="testServo()">
           <span class="icon">🎯</span> Test Servo
         </button>
-        <button class="action-btn" onclick="sendCmd('SP_FORCE_MOVE_LANE LANE=' + selectedLane + ' DIST=' + prompt('Distance in mm:', '10'))">
+        <button class="action-btn" onclick="forceMoveLane()">
           <span class="icon">↔️</span> Force Move
         </button>
         <button class="action-btn" onclick="confirmAction('Force set loaded lane to T' + selectedLane + '?', 'SP_FORCE_SET_LOADED_LANE LANE=' + selectedLane)">
@@ -746,11 +746,6 @@
     if (activeLane < 0 || activeLane >= 4) {
       filPath.style.display = 'none';
     }
-    // Hub entry indicators
-    for (var k = 0; k < 4; k++) {
-      var hubDots = document.querySelectorAll('#mmuSvg circle');
-      // Hub entries are at specific positions - update via fill
-    }
   }
 
   function updateCamPosition(angle, lane) {
@@ -798,6 +793,28 @@
     }
     addLog('Sending: ' + cmd);
     rpcCall('printer.gcode.script', { script: cmd });
+  };
+
+  window.testServo = function() {
+    var input = prompt('Enter servo angle (0-140):', '0');
+    if (input === null) return;
+    var angle = parseFloat(input);
+    if (isNaN(angle) || angle < 0 || angle > 140) {
+      addLog('Invalid servo angle: must be a number between 0 and 140', 'error');
+      return;
+    }
+    sendCmd('SP_TEST_SERVO ANGLE=' + angle);
+  };
+
+  window.forceMoveLane = function() {
+    var input = prompt('Distance in mm:', '10');
+    if (input === null) return;
+    var dist = parseFloat(input);
+    if (isNaN(dist)) {
+      addLog('Invalid distance: must be a number', 'error');
+      return;
+    }
+    sendCmd('SP_FORCE_MOVE_LANE LANE=' + selectedLane + ' DIST=' + dist);
   };
 
   window.loadLane = function() {
