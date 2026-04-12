@@ -81,6 +81,30 @@ Includes:
 
 - The configuration is set up to use a lis2dw accelerometer. If you don't have one, simply comment out references in `printer.cfg` or `lis2dw.cfg`.
 
+## Pico MMU Control Panel
+
+An SVG-based Mainsail custom panel is included for controlling the Pico MMU directly from the web interface.
+
+### Features
+
+- **SVG Visualization**: Real-time schematic of the 4-lane MMU showing motor, gears, servo cam, filament hub, sensor, extruder, and hotend
+- **Lane Selection**: Click to select which lane (T0–T3) to target for operations; the active/loaded lane is highlighted
+- **Operations**: One-click buttons for Home, Load/Unload Lane, Load/Unload Hub, Load/Unload Extruder, Load/Unload Hotend, Purge, and Test MMU
+- **Advanced Controls**: Test Servo angle, Force Move, Force Set Loaded Lane, Clear Errors, full Filament Change, and Custom G-code commands
+- **Real-time Status**: Displays loaded lane, filament sensor state, servo angle, exit code, change count, and error count — all updated live via Moonraker WebSocket
+- **Activity Log**: Timestamped console showing SP: messages from Klipper with color-coded severity
+- **Confirmation Dialogs**: Destructive actions (Init MMU, Purge, Filament Change) require confirmation before executing
+- **Dark Theme**: Matches Mainsail's visual style for seamless integration
+
+### Setup
+
+The panel files are located in `config/.theme/`:
+
+- `navi.json` — Adds a "Pico MMU" entry to the Mainsail sidebar navigation
+- `pico-mmu-panel.html` — The self-contained SVG control panel
+
+To activate the panel, ensure the `.theme` folder is inside your Klipper configuration directory (typically `~/printer_data/config/.theme/`). Mainsail will automatically detect the `navi.json` file and add the sidebar link.
+
 ## Customization
 
 - You can adjust the services by editing the volumes and labels in `docker-compose.yaml`.

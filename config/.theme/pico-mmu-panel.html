@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pico MMU Control Panel</title>
+<style>
+  :root {
+    --bg-primary: #1e1e2e;
+    --bg-secondary: #2a2a3d;
+    --bg-card: #313147;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0b0;
+    --accent: #5c6bc0;
+    --accent-hover: #7986cb;
+    --success: #4caf50;
+    --warning: #ff9800;
+    --error: #f44336;
+    --lane0: #f44336;
+    --lane1: #2196f3;
+    --lane2: #4caf50;
+    --lane3: #ff9800;
+    --border: #3d3d56;
+    --btn-bg: #3d3d56;
+    --btn-hover: #4e4e6a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 16px;
+  }
+  .panel {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-header h1 {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .panel-header .version {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: auto;
+  }
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--error);
+    flex-shrink: 0;
+  }
+  .status-dot.connected { background: var(--success); }
+  .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .panel-body {
+    background: var(--bg-secondary);
+    border-radius: 0 0 8px 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    letter-spacing: 0.5px;
+  }
+  .svg-container {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .svg-container svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .lane-btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .lane-btn {
+    flex: 1;
+    min-width: 80px;
+    max-width: 140px;
+    padding: 10px 8px;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .lane-btn:hover { border-color: var(--accent); background: var(--btn-hover); }
+  .lane-btn.active { border-color: currentColor; box-shadow: 0 0 8px currentColor; }
+  .lane-btn[data-lane="0"] { --lane-color: var(--lane0); }
+  .lane-btn[data-lane="1"] { --lane-color: var(--lane1); }
+  .lane-btn[data-lane="2"] { --lane-color: var(--lane2); }
+  .lane-btn[data-lane="3"] { --lane-color: var(--lane3); }
+  .lane-btn.active[data-lane="0"] { border-color: var(--lane0); color: var(--lane0); box-shadow: 0 0 8px var(--lane0); }
+  .lane-btn.active[data-lane="1"] { border-color: var(--lane1); color: var(--lane1); box-shadow: 0 0 8px var(--lane1); }
+  .lane-btn.active[data-lane="2"] { border-color: var(--lane2); color: var(--lane2); box-shadow: 0 0 8px var(--lane2); }
+  .lane-btn.active[data-lane="3"] { border-color: var(--lane3); color: var(--lane3); box-shadow: 0 0 8px var(--lane3); }
+  .lane-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .lane-btn[data-lane="0"] .lane-dot { background: var(--lane0); }
+  .lane-btn[data-lane="1"] .lane-dot { background: var(--lane1); }
+  .lane-btn[data-lane="2"] .lane-dot { background: var(--lane2); }
+  .lane-btn[data-lane="3"] .lane-dot { background: var(--lane3); }
+  .action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .action-btn {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--btn-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+  }
+  .action-btn:hover { background: var(--btn-hover); border-color: var(--accent); }
+  .action-btn:active { transform: scale(0.97); }
+  .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .action-btn.primary { background: var(--accent); border-color: var(--accent); }
+  .action-btn.primary:hover { background: var(--accent-hover); }
+  .action-btn.danger { border-color: var(--error); color: var(--error); }
+  .action-btn.danger:hover { background: rgba(244,67,54,0.15); }
+  .action-btn .icon { font-size: 14px; }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+  }
+  .info-item {
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .info-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .info-value {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .log-area {
+    background: var(--bg-primary);
+    border-radius: 6px;
+    padding: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  .log-area::-webkit-scrollbar { width: 6px; }
+  .log-area::-webkit-scrollbar-track { background: transparent; }
+  .log-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .log-entry { color: var(--text-secondary); }
+  .log-entry.error { color: var(--error); }
+  .log-entry.success { color: var(--success); }
+  .log-entry.warning { color: var(--warning); }
+  .log-entry .ts { color: var(--text-secondary); opacity: 0.6; margin-right: 6px; }
+  .confirm-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .confirm-overlay.show { display: flex; }
+  .confirm-dialog {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 360px;
+    width: 90%;
+    text-align: center;
+  }
+  .confirm-dialog h3 { margin-bottom: 12px; font-size: 16px; }
+  .confirm-dialog p { margin-bottom: 20px; color: var(--text-secondary); font-size: 13px; }
+  .confirm-dialog .btn-row { display: flex; gap: 8px; justify-content: center; }
+  .confirm-dialog .btn-row button { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 13px; font-weight: 500; }
+  .confirm-dialog .btn-cancel { background: var(--btn-bg); color: var(--text-primary); }
+  .confirm-dialog .btn-confirm { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (max-width: 600px) {
+    body { padding: 8px; }
+    .action-grid { grid-template-columns: repeat(2, 1fr); }
+    .info-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <div class="panel-header">
+    <div class="status-dot" id="statusDot"></div>
+    <h1>Pico MMU Control</h1>
+    <span class="version" id="connectionStatus">Disconnected</span>
+  </div>
+  <div class="panel-body">
+
+    <!-- SVG MMU Visualization -->
+    <div class="card">
+      <div class="card-title">MMU Status</div>
+      <div class="svg-container">
+        <svg id="mmuSvg" viewBox="0 0 520 170" width="520" height="170" xmlns="http://www.w3.org/2000/svg">
+          <!-- Background box -->
+          <rect x="1" y="1" width="518" height="168" rx="8" fill="#1e1e2e" stroke="#3d3d56" stroke-width="1.5"/>
+
+          <!-- Title label -->
+          <text x="260" y="22" text-anchor="middle" fill="#a0a0b0" font-size="11" font-family="sans-serif" font-weight="600">PICO MMU — 4 LANE</text>
+
+          <!-- Motor section -->
+          <rect x="14" y="36" width="60" height="100" rx="4" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="44" y="78" text-anchor="middle" fill="#a0a0b0" font-size="9" font-family="sans-serif">MOTOR</text>
+          <circle cx="44" cy="95" r="12" fill="none" stroke="#5c6bc0" stroke-width="1.5" id="motorIndicator"/>
+          <line x1="44" y1="83" x2="44" y2="95" stroke="#5c6bc0" stroke-width="1.5" id="motorShaft">
+            <animateTransform id="motorAnim" attributeName="transform" type="rotate" from="0 44 95" to="360 44 95" dur="1s" repeatCount="0" fill="freeze"/>
+          </line>
+
+          <!-- Drive gears -->
+          <rect x="80" y="36" width="30" height="100" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="95" y="56" text-anchor="middle" fill="#a0a0b0" font-size="8" font-family="sans-serif">GEARS</text>
+          <circle cx="95" cy="72" r="5" fill="none" stroke="#5c6bc0" stroke-width="1"/>
+          <circle cx="95" cy="86" r="5" fill="none" stroke="#5c6bc0" stroke-width="1"/>
+          <circle cx="95" cy="100" r="5" fill="none" stroke="#5c6bc0" stroke-width="1"/>
+          <circle cx="95" cy="114" r="5" fill="none" stroke="#5c6bc0" stroke-width="1"/>
+
+          <!-- Lane 0 -->
+          <g id="laneGroup0" class="lane-group" data-lane="0">
+            <rect x="118" y="36" width="80" height="22" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1" class="lane-bg"/>
+            <rect x="122" y="44" width="72" height="6" rx="3" fill="#1e1e2e" class="lane-channel"/>
+            <rect x="122" y="44" width="0" height="6" rx="3" fill="#f44336" opacity="0.7" class="lane-fill" id="laneFill0"/>
+            <text x="158" y="42" text-anchor="middle" fill="#f44336" font-size="8" font-family="sans-serif" font-weight="600">T0</text>
+            <!-- PTFE arrow to hub -->
+            <line x1="198" y1="47" x2="280" y2="47" stroke="#f44336" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4" class="lane-path"/>
+          </g>
+
+          <!-- Lane 1 -->
+          <g id="laneGroup1" class="lane-group" data-lane="1">
+            <rect x="118" y="62" width="80" height="22" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1" class="lane-bg"/>
+            <rect x="122" y="70" width="72" height="6" rx="3" fill="#1e1e2e" class="lane-channel"/>
+            <rect x="122" y="70" width="0" height="6" rx="3" fill="#2196f3" opacity="0.7" class="lane-fill" id="laneFill1"/>
+            <text x="158" y="68" text-anchor="middle" fill="#2196f3" font-size="8" font-family="sans-serif" font-weight="600">T1</text>
+            <line x1="198" y1="73" x2="280" y2="73" stroke="#2196f3" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4" class="lane-path"/>
+          </g>
+
+          <!-- Lane 2 -->
+          <g id="laneGroup2" class="lane-group" data-lane="2">
+            <rect x="118" y="88" width="80" height="22" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1" class="lane-bg"/>
+            <rect x="122" y="96" width="72" height="6" rx="3" fill="#1e1e2e" class="lane-channel"/>
+            <rect x="122" y="96" width="0" height="6" rx="3" fill="#4caf50" opacity="0.7" class="lane-fill" id="laneFill2"/>
+            <text x="158" y="94" text-anchor="middle" fill="#4caf50" font-size="8" font-family="sans-serif" font-weight="600">T2</text>
+            <line x1="198" y1="99" x2="280" y2="99" stroke="#4caf50" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4" class="lane-path"/>
+          </g>
+
+          <!-- Lane 3 -->
+          <g id="laneGroup3" class="lane-group" data-lane="3">
+            <rect x="118" y="114" width="80" height="22" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1" class="lane-bg"/>
+            <rect x="122" y="122" width="72" height="6" rx="3" fill="#1e1e2e" class="lane-channel"/>
+            <rect x="122" y="122" width="0" height="6" rx="3" fill="#ff9800" opacity="0.7" class="lane-fill" id="laneFill3"/>
+            <text x="158" y="120" text-anchor="middle" fill="#ff9800" font-size="8" font-family="sans-serif" font-weight="600">T3</text>
+            <line x1="198" y1="125" x2="280" y2="125" stroke="#ff9800" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4" class="lane-path"/>
+          </g>
+
+          <!-- Servo / Cam section -->
+          <rect x="206" y="36" width="36" height="100" rx="3" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="224" y="56" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">SERVO</text>
+          <text x="224" y="66" text-anchor="middle" fill="#5c6bc0" font-size="9" font-family="sans-serif" font-weight="600" id="servoAngleText">--°</text>
+
+          <!-- Cam indicator -->
+          <line x1="224" y1="76" x2="224" y2="130" stroke="#3d3d56" stroke-width="2"/>
+          <circle cx="224" cy="76" r="3" fill="#5c6bc0" id="camDot"/>
+
+          <!-- Filament Hub -->
+          <rect x="280" y="36" width="50" height="100" rx="6" fill="#2a2a3d" stroke="#5c6bc0" stroke-width="1.5"/>
+          <text x="305" y="56" text-anchor="middle" fill="#a0a0b0" font-size="8" font-family="sans-serif" font-weight="600">HUB</text>
+          <!-- Hub entry points -->
+          <circle cx="284" cy="47" r="3" fill="#1e1e2e" stroke="#f44336" stroke-width="1"/>
+          <circle cx="284" cy="73" r="3" fill="#1e1e2e" stroke="#2196f3" stroke-width="1"/>
+          <circle cx="284" cy="99" r="3" fill="#1e1e2e" stroke="#4caf50" stroke-width="1"/>
+          <circle cx="284" cy="125" r="3" fill="#1e1e2e" stroke="#ff9800" stroke-width="1"/>
+          <!-- Hub exit -->
+          <rect x="322" y="80" width="8" height="12" rx="2" fill="#5c6bc0" opacity="0.6"/>
+
+          <!-- Sensor -->
+          <rect x="345" y="72" width="30" height="28" rx="4" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="360" y="84" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">SENSOR</text>
+          <circle cx="360" cy="94" r="4" fill="#1e1e2e" stroke="#3d3d56" stroke-width="1" id="sensorDot"/>
+
+          <!-- PTFE to extruder -->
+          <line x1="330" y1="86" x2="345" y2="86" stroke="#5c6bc0" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.5"/>
+          <line x1="375" y1="86" x2="395" y2="86" stroke="#5c6bc0" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.5"/>
+
+          <!-- Extruder -->
+          <rect x="395" y="64" width="40" height="44" rx="5" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="415" y="82" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">EXTRUDER</text>
+          <text x="415" y="93" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">GEARS</text>
+
+          <!-- Hotend -->
+          <path d="M445,74 L470,74 L470,98 L445,98 Z" fill="#2a2a3d" stroke="#3d3d56" stroke-width="1"/>
+          <text x="457" y="84" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">HOT</text>
+          <text x="457" y="93" text-anchor="middle" fill="#a0a0b0" font-size="7" font-family="sans-serif">END</text>
+          <!-- Nozzle -->
+          <path d="M452,98 L465,98 L460,112 L457,112 Z" fill="#2a2a3d" stroke="#f44336" stroke-width="1" opacity="0.6"/>
+          <circle cx="458.5" cy="112" r="2" fill="#f44336" opacity="0.5" id="nozzleDot"/>
+
+          <!-- Active filament path overlay -->
+          <line x1="330" y1="86" x2="460" y2="86" stroke="none" stroke-width="2" opacity="0.5" id="activeFilamentPath" stroke-dasharray="4,2"/>
+
+          <!-- Status text -->
+          <text x="260" y="156" text-anchor="middle" fill="#a0a0b0" font-size="10" font-family="sans-serif" id="svgStatusText">Connecting...</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Lane Selection -->
+    <div class="card">
+      <div class="card-title">Lane Selection</div>
+      <div class="lane-btn-row">
+        <button class="lane-btn" data-lane="0" onclick="selectLane(0)">
+          <span class="lane-dot"></span> T0
+        </button>
+        <button class="lane-btn" data-lane="1" onclick="selectLane(1)">
+          <span class="lane-dot"></span> T1
+        </button>
+        <button class="lane-btn" data-lane="2" onclick="selectLane(2)">
+          <span class="lane-dot"></span> T2
+        </button>
+        <button class="lane-btn" data-lane="3" onclick="selectLane(3)">
+          <span class="lane-dot"></span> T3
+        </button>
+      </div>
+    </div>
+
+    <!-- Operations -->
+    <div class="card">
+      <div class="card-title">Operations</div>
+      <div class="action-grid">
+        <button class="action-btn primary" onclick="sendCmd('SP_HOME')">
+          <span class="icon">🏠</span> Home
+        </button>
+        <button class="action-btn" onclick="loadLane()">
+          <span class="icon">⬆️</span> Load Lane
+        </button>
+        <button class="action-btn" onclick="unloadLane()">
+          <span class="icon">⬇️</span> Unload Lane
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_LOAD_HUB LANE=' + selectedLane)">
+          <span class="icon">📥</span> Load Hub
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_UNLOAD_HUB LANE=' + selectedLane)">
+          <span class="icon">📤</span> Unload Hub
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_LOAD_EXTRUDER')">
+          <span class="icon">🔽</span> Load Extruder
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_UNLOAD_EXTRUDER')">
+          <span class="icon">🔼</span> Unload Extruder
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_LOAD_HOTEND')">
+          <span class="icon">🔥</span> Load Hotend
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_UNLOAD_HOTEND')">
+          <span class="icon">❄️</span> Unload Hotend
+        </button>
+        <button class="action-btn" onclick="confirmAction('Purge filament?', 'SP_LOAD_LANE LANE=' + selectedLane + ' PURGE=1')">
+          <span class="icon">💧</span> Purge
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_TEST_MMU')">
+          <span class="icon">🧪</span> Test MMU
+        </button>
+        <button class="action-btn danger" onclick="confirmAction('Initialize MMU? This clears variables and homes the unit.', 'SP_INIT')">
+          <span class="icon">🔄</span> Init MMU
+        </button>
+      </div>
+    </div>
+
+    <!-- Advanced -->
+    <div class="card">
+      <div class="card-title">Advanced</div>
+      <div class="action-grid">
+        <button class="action-btn" onclick="sendCmd('SP_TEST_SERVO ANGLE=' + prompt('Enter servo angle (0-140):', '0'))">
+          <span class="icon">🎯</span> Test Servo
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_FORCE_MOVE_LANE LANE=' + selectedLane + ' DIST=' + prompt('Distance in mm:', '10'))">
+          <span class="icon">↔️</span> Force Move
+        </button>
+        <button class="action-btn" onclick="confirmAction('Force set loaded lane to T' + selectedLane + '?', 'SP_FORCE_SET_LOADED_LANE LANE=' + selectedLane)">
+          <span class="icon">📌</span> Set Loaded
+        </button>
+        <button class="action-btn" onclick="sendCmd('SP_CLEAR_ERROR_CODES')">
+          <span class="icon">🧹</span> Clear Errors
+        </button>
+        <button class="action-btn" onclick="confirmAction('Perform full filament change?', 'SP_FILAMENT_CHANGE LANE=' + selectedLane + ' PURGE=1')">
+          <span class="icon">🔀</span> Filament Change
+        </button>
+        <button class="action-btn" onclick="sendCustomCmd()">
+          <span class="icon">⌨️</span> Custom Cmd
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Info -->
+    <div class="card">
+      <div class="card-title">Status</div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">Loaded Lane</span>
+          <span class="info-value" id="infoLoadedLane">--</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Filament Sensor</span>
+          <span class="info-value" id="infoSensor">--</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Servo Angle</span>
+          <span class="info-value" id="infoServoAngle">--</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Exit Code</span>
+          <span class="info-value" id="infoExitCode">--</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Changes</span>
+          <span class="info-value" id="infoChanges">0</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Errors</span>
+          <span class="info-value" id="infoErrors">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        Activity Log
+        <button class="action-btn" style="padding:4px 10px; font-size:11px;" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-area" id="logArea">
+        <div class="log-entry"><span class="ts">--:--:--</span> Panel loaded, connecting...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Confirmation Dialog -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-dialog">
+    <h3 id="confirmTitle">Confirm Action</h3>
+    <p id="confirmMsg">Are you sure?</p>
+    <div class="btn-row">
+      <button class="btn-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-confirm" id="confirmBtn" onclick="executeConfirm()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- State ---
+  let ws = null;
+  let selectedLane = 0;
+  let loadedLane = -1;
+  let pendingConfirmCmd = '';
+  let reconnectTimer = null;
+  let queryId = 1;
+  let rpcCallbacks = {};
+  const laneColors = ['#f44336', '#2196f3', '#4caf50', '#ff9800'];
+
+  // --- Moonraker connection ---
+  function getWsUrl() {
+    var loc = window.location;
+    var wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    return wsProto + '//' + loc.host + '/websocket';
+  }
+
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+    setConnectionState('connecting');
+    try {
+      ws = new WebSocket(getWsUrl());
+    } catch (e) {
+      addLog('WebSocket error: ' + e.message, 'error');
+      scheduleReconnect();
+      return;
+    }
+    ws.onopen = function() {
+      setConnectionState('connected');
+      addLog('Connected to Moonraker', 'success');
+      subscribeToUpdates();
+      queryState();
+    };
+    ws.onmessage = function(evt) {
+      try { handleMessage(JSON.parse(evt.data)); }
+      catch (e) { /* ignore parse errors */ }
+    };
+    ws.onclose = function() {
+      setConnectionState('disconnected');
+      addLog('Disconnected from Moonraker', 'warning');
+      scheduleReconnect();
+    };
+    ws.onerror = function() {
+      setConnectionState('disconnected');
+    };
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 3000);
+  }
+
+  function setConnectionState(state) {
+    var dot = document.getElementById('statusDot');
+    var txt = document.getElementById('connectionStatus');
+    dot.className = 'status-dot';
+    if (state === 'connected') { dot.classList.add('connected'); txt.textContent = 'Connected'; }
+    else if (state === 'connecting') { dot.classList.add('connecting'); txt.textContent = 'Connecting...'; }
+    else { txt.textContent = 'Disconnected'; }
+  }
+
+  // --- RPC ---
+  function rpcCall(method, params, callback) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    var id = queryId++;
+    var msg = { jsonrpc: '2.0', method: method, params: params || {}, id: id };
+    if (callback) rpcCallbacks[id] = callback;
+    ws.send(JSON.stringify(msg));
+  }
+
+  function subscribeToUpdates() {
+    rpcCall('printer.objects.subscribe', {
+      objects: {
+        'gcode_macro _SP_VARS': null,
+        'gcode_macro _SP_VARS_RUNTIME': null,
+        'filament_switch_sensor sp_sensor_runout': null,
+        'print_stats': null,
+        'save_variables': null
+      }
+    }, function(result) {
+      if (result && result.status) updateState(result.status);
+    });
+  }
+
+  function queryState() {
+    rpcCall('printer.objects.query', {
+      objects: {
+        'gcode_macro _SP_VARS': null,
+        'gcode_macro _SP_VARS_RUNTIME': null,
+        'filament_switch_sensor sp_sensor_runout': null,
+        'print_stats': null,
+        'save_variables': null
+      }
+    }, function(result) {
+      if (result && result.status) updateState(result.status);
+    });
+  }
+
+  // --- Message handling ---
+  function handleMessage(msg) {
+    // RPC response
+    if (msg.id && rpcCallbacks[msg.id]) {
+      rpcCallbacks[msg.id](msg.result);
+      delete rpcCallbacks[msg.id];
+    }
+    // Subscription update
+    if (msg.method === 'notify_status_update' && msg.params && msg.params.length) {
+      updateState(msg.params[0]);
+    }
+    // GCode responses
+    if (msg.method === 'notify_gcode_response' && msg.params && msg.params.length) {
+      var line = msg.params[0];
+      if (typeof line === 'string' && line.indexOf('SP:') !== -1) {
+        var cls = 'success';
+        if (/error|fail/i.test(line)) cls = 'error';
+        else if (/warn/i.test(line)) cls = 'warning';
+        addLog(line, cls);
+      }
+    }
+  }
+
+  function updateState(status) {
+    var rt = status['gcode_macro _SP_VARS_RUNTIME'];
+    var sp = status['gcode_macro _SP_VARS'];
+    var sensor = status['filament_switch_sensor sp_sensor_runout'];
+    var sv = status['save_variables'];
+
+    if (rt) {
+      if (rt.commanded_angle !== undefined) {
+        document.getElementById('infoServoAngle').textContent = rt.commanded_angle >= 0 ? rt.commanded_angle + '°' : 'Parked';
+        document.getElementById('servoAngleText').textContent = rt.commanded_angle >= 0 ? rt.commanded_angle + '°' : '--°';
+        updateCamPosition(rt.commanded_angle, rt.selected_servo_lane);
+      }
+      if (rt.exit_code !== undefined) {
+        var ec = document.getElementById('infoExitCode');
+        ec.textContent = rt.exit_code === 0 ? 'OK' : rt.exit_code === 1 ? 'Error' : rt.exit_code === 10 ? 'Warning' : rt.exit_code;
+        ec.style.color = rt.exit_code === 0 ? 'var(--success)' : rt.exit_code === 1 ? 'var(--error)' : 'var(--warning)';
+      }
+      if (rt.is_filament_in !== undefined) {
+        var si = document.getElementById('infoSensor');
+        var sd = document.getElementById('sensorDot');
+        if (rt.is_filament_in === 1) {
+          si.textContent = 'Detected';
+          si.style.color = 'var(--success)';
+          sd.setAttribute('fill', '#4caf50');
+        } else if (rt.is_filament_in === 0) {
+          si.textContent = 'Empty';
+          si.style.color = 'var(--text-secondary)';
+          sd.setAttribute('fill', '#1e1e2e');
+        } else {
+          si.textContent = '--';
+          si.style.color = '';
+          sd.setAttribute('fill', '#1e1e2e');
+        }
+      }
+      if (rt.counter_changes !== undefined) {
+        document.getElementById('infoChanges').textContent = rt.counter_changes;
+      }
+      if (rt.counter_errors !== undefined) {
+        var errEl = document.getElementById('infoErrors');
+        errEl.textContent = rt.counter_errors;
+        errEl.style.color = rt.counter_errors > 0 ? 'var(--error)' : '';
+      }
+      if (rt.loading_lane !== undefined && rt.loading_lane >= 0) {
+        updateSvgStatus('Loading Lane T' + rt.loading_lane + '...');
+      }
+      if (rt.unloading_lane !== undefined && rt.unloading_lane >= 0) {
+        updateSvgStatus('Unloading Lane T' + rt.unloading_lane + '...');
+      }
+    }
+
+    if (sensor) {
+      if (sensor.filament_detected !== undefined) {
+        var si2 = document.getElementById('infoSensor');
+        var sd2 = document.getElementById('sensorDot');
+        if (sensor.filament_detected) {
+          si2.textContent = 'Detected';
+          si2.style.color = 'var(--success)';
+          sd2.setAttribute('fill', '#4caf50');
+        } else {
+          si2.textContent = 'Empty';
+          si2.style.color = 'var(--text-secondary)';
+          sd2.setAttribute('fill', '#1e1e2e');
+        }
+      }
+    }
+
+    if (sv && sv.variables && sv.variables.last_loaded_lane !== undefined) {
+      loadedLane = parseInt(sv.variables.last_loaded_lane);
+      updateLoadedLane(loadedLane);
+    }
+  }
+
+  // --- UI Updates ---
+  function updateLoadedLane(lane) {
+    var el = document.getElementById('infoLoadedLane');
+    if (lane >= 0 && lane < 4) {
+      el.textContent = 'T' + lane;
+      el.style.color = laneColors[lane];
+      updateSvgLanes(lane);
+      updateSvgStatus('Lane T' + lane + ' loaded');
+    } else {
+      el.textContent = 'None';
+      el.style.color = 'var(--text-secondary)';
+      updateSvgLanes(-1);
+      updateSvgStatus('No lane loaded');
+    }
+    updateLaneButtons();
+  }
+
+  function updateLaneButtons() {
+    var btns = document.querySelectorAll('.lane-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var l = parseInt(btns[i].getAttribute('data-lane'));
+      btns[i].classList.toggle('active', l === loadedLane);
+    }
+  }
+
+  function updateSvgLanes(activeLane) {
+    var filPath = document.getElementById('activeFilamentPath');
+    for (var i = 0; i < 4; i++) {
+      var fill = document.getElementById('laneFill' + i);
+      var paths = document.querySelectorAll('#laneGroup' + i + ' .lane-path');
+      if (i === activeLane) {
+        fill.setAttribute('width', '72');
+        fill.setAttribute('opacity', '0.8');
+        for (var j = 0; j < paths.length; j++) { paths[j].setAttribute('opacity', '0.8'); paths[j].setAttribute('stroke-dasharray', 'none'); }
+        filPath.setAttribute('stroke', laneColors[i]);
+        filPath.style.display = '';
+      } else {
+        fill.setAttribute('width', '0');
+        for (var j2 = 0; j2 < paths.length; j2++) { paths[j2].setAttribute('opacity', '0.4'); paths[j2].setAttribute('stroke-dasharray', '4,3'); }
+      }
+    }
+    if (activeLane < 0 || activeLane >= 4) {
+      filPath.style.display = 'none';
+    }
+    // Hub entry indicators
+    for (var k = 0; k < 4; k++) {
+      var hubDots = document.querySelectorAll('#mmuSvg circle');
+      // Hub entries are at specific positions - update via fill
+    }
+  }
+
+  function updateCamPosition(angle, lane) {
+    var dot = document.getElementById('camDot');
+    if (lane >= 0 && lane < 4) {
+      var positions = [79, 92, 105, 118];
+      dot.setAttribute('cy', positions[lane]);
+      dot.setAttribute('fill', laneColors[lane]);
+    } else {
+      dot.setAttribute('cy', '76');
+      dot.setAttribute('fill', '#5c6bc0');
+    }
+  }
+
+  function updateSvgStatus(text) {
+    document.getElementById('svgStatusText').textContent = text;
+  }
+
+  // --- Commands ---
+  window.selectedLane = 0;
+  Object.defineProperty(window, 'selectedLane', {
+    get: function() { return selectedLane; },
+    set: function(v) { selectedLane = v; }
+  });
+
+  window.selectLane = function(lane) {
+    selectedLane = lane;
+    // Visual highlight on lane buttons (selection vs loaded)
+    var btns = document.querySelectorAll('.lane-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var l = parseInt(btns[i].getAttribute('data-lane'));
+      if (l === lane && l !== loadedLane) {
+        btns[i].style.borderStyle = 'dashed';
+      } else {
+        btns[i].style.borderStyle = 'solid';
+      }
+    }
+    addLog('Selected lane T' + lane);
+  };
+
+  window.sendCmd = function(cmd) {
+    if (!cmd || cmd.indexOf('null') !== -1 || cmd.indexOf('undefined') !== -1) {
+      addLog('Command cancelled', 'warning');
+      return;
+    }
+    addLog('Sending: ' + cmd);
+    rpcCall('printer.gcode.script', { script: cmd });
+  };
+
+  window.loadLane = function() {
+    sendCmd('SP_LOAD_LANE LANE=' + selectedLane + ' PURGE=0');
+  };
+
+  window.unloadLane = function() {
+    sendCmd('SP_UNLOAD_LANE');
+  };
+
+  window.sendCustomCmd = function() {
+    var cmd = prompt('Enter G-code command:', '');
+    if (cmd) sendCmd(cmd);
+  };
+
+  window.confirmAction = function(msg, cmd) {
+    pendingConfirmCmd = cmd;
+    document.getElementById('confirmMsg').textContent = msg;
+    document.getElementById('confirmOverlay').classList.add('show');
+  };
+
+  window.closeConfirm = function() {
+    document.getElementById('confirmOverlay').classList.remove('show');
+    pendingConfirmCmd = '';
+  };
+
+  window.executeConfirm = function() {
+    if (pendingConfirmCmd) sendCmd(pendingConfirmCmd);
+    closeConfirm();
+  };
+
+  // --- Log ---
+  function addLog(msg, cls) {
+    var area = document.getElementById('logArea');
+    var div = document.createElement('div');
+    div.className = 'log-entry' + (cls ? ' ' + cls : '');
+    var now = new Date();
+    var ts = now.toTimeString().split(' ')[0];
+    div.innerHTML = '<span class="ts">' + ts + '</span> ' + escapeHtml(msg);
+    area.appendChild(div);
+    area.scrollTop = area.scrollHeight;
+    // Limit entries
+    while (area.children.length > 200) area.removeChild(area.firstChild);
+  }
+
+  window.clearLog = function() {
+    document.getElementById('logArea').innerHTML = '';
+    addLog('Log cleared');
+  };
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // --- Query loop ---
+  function startQueryLoop() {
+    setInterval(function() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        queryState();
+      }
+    }, 5000);
+  }
+
+  // --- Init ---
+  connect();
+  startQueryLoop();
+  selectLane(0);
+
+})();
+</script>
+</body>
+</html>

@@ -14,5 +14,6 @@ KlipperMaintenance
 *.png
 chopper-resonance-tuner
 *.html
+!config/.theme/*.html
 klipper
 ShakeTune_results
