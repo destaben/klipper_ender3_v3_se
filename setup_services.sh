@@ -7,7 +7,7 @@ if ! command -v docker &> /dev/null; then
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh get-docker.sh
     rm get-docker.sh
-    sudo usermod -aG docker $USER
+    sudo usermod -aG docker "$USER"
     echo "Docker installed successfully. Please log out and log back in to apply group changes."
 else
     echo "Docker is already installed."

@@ -1,6 +1,6 @@
 name: Lint
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
@@ -29,10 +29,12 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile-klipper
+          failure-threshold: error
       - name: Lint Dockerfile-moonraker
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile-moonraker
+          failure-threshold: error
 
   docker-compose-validate:
     name: Docker Compose Validate
@@ -54,7 +56,8 @@ jobs:
           config_data: |
             extends: default
             rules:
+              document-start: disable
               line-length:
                 max: 150
               truthy:
-                allowed-values: ['true', 'false']
+                allowed-values: ['true', 'false', 'on', 'off']
