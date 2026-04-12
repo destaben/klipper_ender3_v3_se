@@ -740,7 +740,7 @@
         filPath.style.display = '';
       } else {
         fill.setAttribute('width', '0');
-        for (var j2 = 0; j2 < paths.length; j2++) { paths[j2].setAttribute('opacity', '0.4'); paths[j2].setAttribute('stroke-dasharray', '4,3'); }
+        for (var p = 0; p < paths.length; p++) { paths[p].setAttribute('opacity', '0.4'); paths[p].setAttribute('stroke-dasharray', '4,3'); }
       }
     }
     if (activeLane < 0 || activeLane >= 4) {
@@ -765,7 +765,6 @@
   }
 
   // --- Commands ---
-  window.selectedLane = 0;
   Object.defineProperty(window, 'selectedLane', {
     get: function() { return selectedLane; },
     set: function(v) { selectedLane = v; }
