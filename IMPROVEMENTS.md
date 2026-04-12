@@ -33,8 +33,8 @@ This document summarizes the analysis of the current Klipper configuration for t
 
 Standalone macros for loading and unloading filament without the MMU. These are among the most common macros found in community Klipper configurations and are essential for basic filament changes.
 
-- **LOAD_FILAMENT** — Heats the nozzle and pushes filament into the extruder with a small purge to confirm loading. Parameters: `TEMP`, `LENGTH`, `SPEED`, `PURGE`.
-- **UNLOAD_FILAMENT** — Heats the nozzle, shapes the filament tip, and retracts it from the extruder. Parameters: `TEMP`, `LENGTH`, `SPEED`.
+- **LOAD_FILAMENT** — Heats the nozzle and pushes filament into the extruder with a small purge to confirm loading. Parameters: `TEMP` (°C), `LENGTH` (mm), `SPEED` (mm/s), `PURGE` (mm).
+- **UNLOAD_FILAMENT** — Heats the nozzle, shapes the filament tip, and retracts it from the extruder. Parameters: `TEMP` (°C), `LENGTH` (mm), `SPEED` (mm/s).
 
 ### 2. Calibration Helper Macros (`config/macros/calibration.cfg`)
 
