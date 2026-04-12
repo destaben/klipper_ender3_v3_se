@@ -108,19 +108,19 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
+    labels:
+      traefik.enable: true
+      traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
+      traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
+      traefik.http.routers.nodeexporter.entrypoints: web
+      traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 128M
-      labels:
-        traefik.enable: true
-        traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
-        traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
-        traefik.http.routers.nodeexporter.entrypoints: web
-        traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
   
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
@@ -135,19 +135,19 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     privileged: true
+    labels:
+      traefik.enable: true
+      traefik.http.services.cadvisor.loadbalancer.server.port: 8080
+      traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
+      traefik.http.routers.cadvisor.entrypoints: web
+      traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
+      traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 128M
-      labels:
-        traefik.enable: true
-        traefik.http.services.cadvisor.loadbalancer.server.port: 8080
-        traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
-        traefik.http.routers.cadvisor.entrypoints: web
-        traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
 
   usb-watcher:
     image: python:3.11-slim
@@ -158,7 +158,7 @@ services:
       - ./usb_watcher.py:/usb_watcher.py:ro
     environment:
       MOONRAKER_URL: "http://moonraker:7125"
-      USB_ID: "1a86:7523,2341:0042" # Change this to match your printer's VID:PID
+      USB_IDS: "1a86:7523,2341:0042" # Change this to match your printer's VID:PID
     command: >
       sh -c "pip install pyudev requests && python /usb_watcher.py"
     deploy:

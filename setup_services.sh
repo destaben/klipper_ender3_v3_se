@@ -13,12 +13,12 @@ else
     echo "Docker is already installed."
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    echo "Installing Docker Compose..."
-    sudo apt install -y docker-compose
-    echo "Docker Compose installed successfully."
+if ! docker compose version &> /dev/null; then
+    echo "Docker Compose plugin not found. Installing..."
+    sudo apt install -y docker-compose-plugin
+    echo "Docker Compose plugin installed successfully."
 else
-    echo "Docker Compose is already installed."
+    echo "Docker Compose plugin is already available."
 fi
 
 # Aditional dependencies
