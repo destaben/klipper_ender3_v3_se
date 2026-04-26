@@ -183,6 +183,13 @@ sudo bash setup_services.sh
 
 VFA are periodic patterns visible on the surface of printed parts, caused by vibrations or irregular stepper-motor motion that gets imprinted into the extrusion.
 
+### Step 0 — Baseline: print a VFA test cube before any changes
+
+Print a calibration cube or a [VFA test cube](https://www.printables.com/model/224847-vfa-test-cube) with your current configuration and photograph all four walls in good lighting. Keep this photo — you will compare it to each subsequent print to track progress.
+
+> 📷 **Photo placeholder — Baseline print (before any changes)**  
+> *Replace this line with a photo of your test cube showing VFA on X/Y walls.*
+
 ### Root Causes Investigated
 
 | Cause | Details |
@@ -194,7 +201,7 @@ VFA are periodic patterns visible on the surface of printed parts, caused by vib
 
 ### Applied Fixes (in `config/printer.cfg`)
 
-#### 1. Enable TMC2208 interpolation for X and Y
+#### Fix 1 — Enable TMC2208 interpolation for X and Y
 
 The TMC2208 driver can interpolate a 16-microstep signal to an internal 256-microstep waveform, which produces a noticeably smoother current envelope and reduces the periodic forcing that causes VFA.
 
@@ -206,7 +213,12 @@ interpolate: True   # was False
 interpolate: True   # was False
 ```
 
-#### 2. Reduce `square_corner_velocity`
+After applying this change, do a `FIRMWARE_RESTART` (or "Save & Restart" in Mainsail), print the same test cube, and photograph the result.
+
+> 📷 **Photo placeholder — After Fix 1: TMC2208 interpolation enabled**  
+> *Replace this line with a photo of your test cube after enabling interpolation.*
+
+#### Fix 2 — Reduce `square_corner_velocity`
 
 ```ini
 [printer]
@@ -215,7 +227,12 @@ square_corner_velocity: 5.0   # was 18.0
 
 A value of `18.0 mm/s` allows large instantaneous velocity changes at corners, which excites resonances that appear as vertical artifacts on adjacent walls. `5.0 mm/s` is the Klipper default and provides a good balance between speed and print quality.
 
-#### 3. Add explicit `[input_shaper]` section
+After applying this change, print and photograph the test cube again.
+
+> 📷 **Photo placeholder — After Fix 2: square_corner_velocity reduced to 5.0**  
+> *Replace this line with a photo of your test cube after lowering square_corner_velocity.*
+
+#### Fix 3 — Add explicit `[input_shaper]` section
 
 The calibrated resonance-compensation values (obtained with Shake&Tune / LIS2DW) are now visible in the main config and documented inline. Klipper's `SAVE_CONFIG` will continue to update them automatically after each calibration run.
 
@@ -227,16 +244,26 @@ shaper_type_y: mzv
 shaper_freq_y: 38.4   # Hz – calibrated with LIS2DW
 ```
 
+### Final Result — Before vs After
+
+> 📷 **Photo placeholder — Before / After side-by-side comparison**  
+> *Replace this line with a side-by-side photo of the baseline cube (Step 0) and the final result cube (after all fixes). Include photos of all four walls.*
+
 ### Further Tuning Tips
 
 - **Re-run input shaper calibration** after any mechanical change (belt retension, stepper replacement, etc.) using the LIS2DW accelerometer and the `SHAPER_CALIBRATE` macro.
 - **Check belt tension**: Use the [Shake&Tune belt tension test](https://github.com/Frix-x/klippain-shaketune) (`AXES_MAP_CALIBRATION` / belt resonance graphs). Both X and Y belts should have similar and consistent resonance profiles.
+
+  > 📷 **Photo placeholder — Shake&Tune belt resonance graphs (X and Y)**  
+  > *Replace this line with screenshots of the X/Y belt resonance plots from Shake&Tune, showing even and consistent curves.*
+
 - **Pressure advance**: The current value of `0.08` is a reasonable starting point; fine-tune it if bulging corners coincide with the VFA pattern.
 - **Print speed**: Lowering the print speed reduces the vibration energy available to create VFA. If artifacts persist, try reducing `max_velocity` to `150 mm/s` temporarily for quality prints.
 
 ### References
 
 - [Klipper Resonance Compensation](https://www.klipper3d.org/Resonance_Compensation.html)
+- [Advanced TMC VFA Tuning Guide (3dwork.io)](https://klipper.3dwork.io/klipper/empezamos/ajustes-avanzados-tmc-vfa)
 - [VFA Test Cube (Printables)](https://www.printables.com/model/224847-vfa-test-cube)
 - [TMC2208 datasheet – interpolation](https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2208_datasheet_rev1.09.pdf)
 
