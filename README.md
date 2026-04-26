@@ -9,6 +9,7 @@ Includes:
 - Pre-made configuration for Ender 3 V3 SE
 - Docker Compose for Klipper, Moonraker, Mainsail, Traefik, and utilities
 - Integrations: [Shake&Tune](https://github.com/Frix-x/klippain-shaketune), [KlipperMaintenance](https://github.com/3DCoded/KlipperMaintenance), [Moonraker Timelapse](https://github.com/mainsail-crew/moonraker-timelapse), and [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner)
+- **AI print monitoring** via Tapo RTSP camera + [Obico ML API](https://github.com/TheSpaghettiDetective/obico-server) (`print-watcher` service)
 
 > **Multicolor printing:** See the [English Installation Guide](english_install_guide.md) or the [Guía de instalación en español](spanish_install_guide.md) for a complete walkthrough on setting up Klipper with Pico MMU for multicolor printing.
 
@@ -17,6 +18,7 @@ Includes:
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Services](#services)
+- [AI Print Monitoring (Tapo Camera)](#ai-print-monitoring-tapo-camera)
 - [Repository Structure](#repository-structure)
 - [Notes](#notes)
 - [FAQ](#faq)
@@ -108,6 +110,144 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - Monitors USB device connections and automatically sends a `firmware_restart` to Moonraker when the printer is reconnected.
 - Configure monitored USB vendor/product IDs via the `USB_IDS` environment variable in `docker-compose.yaml`.
 
+### 8. MediaMTX *(optional — AI monitoring)*
+
+- **Container Name**: `mediamtx`
+- **Image**: `bluenviron/mediamtx:latest`
+- Re-publishes the Tapo RTSP camera stream as HLS (port `8888`) and RTSP (port `8554`) so Mainsail and other clients can display the live feed.
+- Set `TAPO_RTSP_URL` in the environment before starting (see [AI Print Monitoring](#ai-print-monitoring-tapo-camera)).
+
+### 9. Obico ML API *(optional — AI monitoring)*
+
+- **Container Name**: `obico-ml-api`
+- **Image**: `thespaghettidetective/ml_api:latest`
+- Runs the [Obico](https://github.com/TheSpaghettiDetective/obico-server) AI failure-detection model locally. Accepts JPEG frames on `POST /p` and returns a failure probability score.
+
+### 10. Print Watcher *(optional — AI monitoring)*
+
+- **Container Name**: `print-watcher`
+- **Image**: Custom build from `Dockerfile-print-watcher` (Python 3.11 + ffmpeg)
+- Periodically captures a frame from the Tapo camera, sends it to the Obico ML API, and optionally pauses the print when failures are repeatedly detected.
+- Configurable via environment variables (see [AI Print Monitoring](#ai-print-monitoring-tapo-camera)).
+
+## AI Print Monitoring (Tapo Camera)
+
+The stack includes three optional Docker services that together enable AI-based print-failure detection using a **Tapo C200 / C210** (or any RTSP-capable) IP camera.
+
+### How it works
+
+```
+Tapo camera (RTSP)
+        │
+        ├──► mediamtx ──► HLS stream ──► Mainsail camera feed
+        │
+        └──► print-watcher
+                │  (ffmpeg frame capture, every N seconds)
+                ▼
+          obico-ml-api  (Obico failure-detection model)
+                │  failure score 0–1
+                ▼
+          Moonraker API  (optional: pause print on failure)
+```
+
+| Service | Purpose |
+|---|---|
+| `mediamtx` | Proxies the Tapo RTSP stream to HLS so Mainsail can display it |
+| `obico-ml-api` | Runs the Obico AI model locally (spaghetti detection) |
+| `print-watcher` | Captures frames, calls the ML API, pauses print on failures |
+
+### Prerequisites
+
+- Tapo camera with RTSP enabled (enable in the Tapo app under **Advanced > Camera Account**)
+- RTSP URL format: `rtsp://<camera_user>:<camera_password>@<camera_ip>/stream1`
+- The host machine must be on the same LAN as the camera
+
+### Setup
+
+1. **Enable RTSP on the Tapo camera**
+
+   Open the Tapo app → select your camera → **Settings → Advanced Settings → Camera Account**.  
+   Create a username/password; the RTSP URL will be:
+
+   ```
+   rtsp://<username>:<password>@<camera_ip>/stream1
+   ```
+
+   For lower-resolution stream use `/stream2`.
+
+2. **Configure the RTSP URL**
+
+   Create a `.env` file in the repository root (it is already git-ignored):
+
+   ```bash
+   # .env
+   TAPO_RTSP_URL=rtsp://admin:secret@192.168.1.100/stream1
+   ```
+
+   All three AI-monitoring services read this variable automatically via Docker Compose variable substitution.
+
+3. **Start the services**
+
+   ```bash
+   docker compose up -d mediamtx obico-ml-api print-watcher
+   ```
+
+   On first run, `obico-ml-api` downloads the model weights (~500 MB). Wait until the container logs show it is ready before expecting detection results.
+
+4. **Add the camera to Mainsail**
+
+   Edit `config/moonraker.conf`, uncomment the `[webcam tapo]` block, and replace `<HOST_IP>` with your host machine's LAN IP:
+
+   ```ini
+   [webcam tapo]
+   location: printer
+   enabled: True
+   service: hlsstream
+   target_fps: 15
+   target_fps_idle: 5
+   stream_url: http://<HOST_IP>:8888/tapo
+   snapshot_url: http://<HOST_IP>:8888/tapo/snapshot.jpg
+   flip_horizontal: False
+   flip_vertical: False
+   rotation: 0
+   aspect_ratio: 4:3
+   ```
+
+   Then restart Moonraker: `docker compose restart moonraker`.
+
+### Environment variables (print-watcher)
+
+| Variable | Default | Description |
+|---|---|---|
+| `TAPO_RTSP_URL` | *(empty)* | Full RTSP URL of the camera (takes priority over snapshot URL) |
+| `TAPO_SNAPSHOT_URL` | *(empty)* | HTTP snapshot URL (alternative when RTSP is not available) |
+| `DETECTION_INTERVAL` | `10` | Seconds between detection runs |
+| `CONFIDENCE_THRESHOLD` | `0.3` | Failure score (0–1) above which a failure is reported |
+| `ENABLE_AUTO_PAUSE` | `false` | Set to `true` to automatically pause the print on repeated failures |
+
+To enable auto-pause, add to your `.env`:
+
+```bash
+ENABLE_AUTO_PAUSE=true
+```
+
+### Adjusting sensitivity
+
+- **Lower `CONFIDENCE_THRESHOLD`** (e.g., `0.2`) → more sensitive, may produce false positives
+- **Higher `CONFIDENCE_THRESHOLD`** (e.g., `0.5`) → fewer alerts, may miss early failures
+- The print is paused only after **2 consecutive** detections above the threshold, reducing false positives
+
+### Hardware notes
+
+| Component | Recommended |
+|---|---|
+| Host CPU | Arm64 / x86_64 with at least 2 cores |
+| RAM | Minimum 2 GB free for `obico-ml-api` (~1 GB) + other services |
+| Camera | Tapo C200 or C210 (720p/1080p RTSP) |
+| Network | Camera and host on the same LAN (wired preferred for reliability) |
+
+> **Tip:** The `obico-ml-api` container is CPU-only by default. Each call to the ML API (one per `DETECTION_INTERVAL` while printing) consumes roughly 1–2 seconds of CPU time. On low-power hardware (e.g., Raspberry Pi 4) you may need to increase `DETECTION_INTERVAL` to `30` or more so that inference finishes well before the next capture is triggered, avoiding CPU saturation.
+
 ## Repository Structure
 
 ```
@@ -122,12 +262,14 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   └── helpers/               # Helper configuration files
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
+├── Dockerfile-print-watcher   # Dockerfile for the AI print-watcher container
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config
 ├── build_firmware.sh          # Script to build Klipper firmware
 ├── setup_services.sh          # Script to install Docker and start services
 ├── set_static_wifi.sh         # Script to set a static WiFi IP
 ├── usb_watcher.py             # USB reconnection watcher script
+├── print_watcher.py           # AI print failure detection script (Tapo + Obico)
 ├── english_install_guide.md   # Multicolor install guide (English)
 └── spanish_install_guide.md   # Multicolor install guide (Spanish)
 ```

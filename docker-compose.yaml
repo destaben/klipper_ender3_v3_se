@@ -166,3 +166,83 @@ services:
         limits:
           cpus: '0.2'
           memory: 64M
+
+  # ---------------------------------------------------------------------------
+  # AI-based print monitoring (Tapo RTSP camera + Obico ML API)
+  # ---------------------------------------------------------------------------
+  # Set TAPO_RTSP_URL in a .env file or export it before running docker compose.
+  # Example: TAPO_RTSP_URL=rtsp://admin:secret@192.168.1.100/stream1
+  #
+  # All three services below are optional. Remove any you don't need.
+  # ---------------------------------------------------------------------------
+
+  mediamtx:
+    # Re-publishes the Tapo RTSP stream as HLS and WebRTC so Mainsail can
+    # display it. HLS stream: http://<HOST_IP>:8888/tapo
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554"   # RTSP re-publish
+      - "8888:8888"   # HLS / WebRTC HTTP
+    environment:
+      MTX_PATHS_TAPO_SOURCE: "${TAPO_RTSP_URL:-}"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  obico-ml-api:
+    # Runs the Obico (formerly The Spaghetti Detective) AI failure-detection
+    # model locally. Listens on port 3333.
+    image: thespaghettidetective/ml_api:latest
+    container_name: obico-ml-api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  print-watcher:
+    # Periodically captures a frame from the Tapo camera, sends it to the
+    # Obico ML API, and optionally pauses the print when failures are detected.
+    build:
+      context: .
+      dockerfile: Dockerfile-print-watcher
+    container_name: print-watcher
+    restart: unless-stopped
+    environment:
+      MOONRAKER_URL: "http://moonraker:7125"
+      OBICO_ML_API_URL: "http://obico-ml-api:3333"
+      # Set TAPO_RTSP_URL or TAPO_SNAPSHOT_URL (RTSP takes priority)
+      TAPO_RTSP_URL: "${TAPO_RTSP_URL:-}"
+      TAPO_SNAPSHOT_URL: "${TAPO_SNAPSHOT_URL:-}"
+      # Seconds between detection runs (default: 10)
+      DETECTION_INTERVAL: "${DETECTION_INTERVAL:-10}"
+      # Failure score threshold 0–1; lower = more sensitive (default: 0.3)
+      CONFIDENCE_THRESHOLD: "${CONFIDENCE_THRESHOLD:-0.3}"
+      # Set to "true" to automatically pause when failures are detected
+      ENABLE_AUTO_PAUSE: "${ENABLE_AUTO_PAUSE:-false}"
+    depends_on: [moonraker, obico-ml-api]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
