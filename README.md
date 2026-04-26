@@ -20,6 +20,7 @@ Includes:
 - [Repository Structure](#repository-structure)
 - [Notes](#notes)
 - [FAQ](#faq)
+- [VFA (Vertical Fine Artifacts) Investigation & Fix](#vfa-vertical-fine-artifacts-investigation--fix)
 - [Customization](#customization)
 - [Static IP for WiFi (Raspberry Pi / Linux)](#static-ip-for-wifi-raspberry-pi--linux)
 - [Contributing](#contributing)
@@ -177,6 +178,67 @@ Pull the latest changes and restart the containers:
 git pull
 sudo bash setup_services.sh
 ```
+
+## VFA (Vertical Fine Artifacts) Investigation & Fix
+
+VFA are periodic patterns visible on the surface of printed parts, caused by vibrations or irregular stepper-motor motion that gets imprinted into the extrusion.
+
+### Root Causes Investigated
+
+| Cause | Details |
+|---|---|
+| TMC2208 interpolation disabled | With `interpolate: False`, the driver outputs raw 16-microstep pulses. Enabling internal 256-step interpolation smooths motion significantly. |
+| `square_corner_velocity` too high | The previous value of `18.0 mm/s` was far above the Klipper default of `5.0 mm/s`, causing excessive vibration at corners that propagated into the print walls. |
+| Input shaper not documented | Calibrated values only existed in the `SAVE_CONFIG` block and were not visible at a glance. |
+| Belt tension / hardware | Check that GT2 belts are tensioned evenly; no software fix compensates for slack or unevenly tensioned belts. |
+
+### Applied Fixes (in `config/printer.cfg`)
+
+#### 1. Enable TMC2208 interpolation for X and Y
+
+The TMC2208 driver can interpolate a 16-microstep signal to an internal 256-microstep waveform, which produces a noticeably smoother current envelope and reduces the periodic forcing that causes VFA.
+
+```ini
+[tmc2208 stepper_x]
+interpolate: True   # was False
+
+[tmc2208 stepper_y]
+interpolate: True   # was False
+```
+
+#### 2. Reduce `square_corner_velocity`
+
+```ini
+[printer]
+square_corner_velocity: 5.0   # was 18.0
+```
+
+A value of `18.0 mm/s` allows large instantaneous velocity changes at corners, which excites resonances that appear as vertical artifacts on adjacent walls. `5.0 mm/s` is the Klipper default and provides a good balance between speed and print quality.
+
+#### 3. Add explicit `[input_shaper]` section
+
+The calibrated resonance-compensation values (obtained with Shake&Tune / LIS2DW) are now visible in the main config and documented inline. Klipper's `SAVE_CONFIG` will continue to update them automatically after each calibration run.
+
+```ini
+[input_shaper]
+shaper_type_x: mzv
+shaper_freq_x: 49.6   # Hz – calibrated with LIS2DW
+shaper_type_y: mzv
+shaper_freq_y: 38.4   # Hz – calibrated with LIS2DW
+```
+
+### Further Tuning Tips
+
+- **Re-run input shaper calibration** after any mechanical change (belt retension, stepper replacement, etc.) using the LIS2DW accelerometer and the `SHAPER_CALIBRATE` macro.
+- **Check belt tension**: Use the [Shake&Tune belt tension test](https://github.com/Frix-x/klippain-shaketune) (`AXES_MAP_CALIBRATION` / belt resonance graphs). Both X and Y belts should have similar and consistent resonance profiles.
+- **Pressure advance**: The current value of `0.08` is a reasonable starting point; fine-tune it if bulging corners coincide with the VFA pattern.
+- **Print speed**: Lowering the print speed reduces the vibration energy available to create VFA. If artifacts persist, try reducing `max_velocity` to `150 mm/s` temporarily for quality prints.
+
+### References
+
+- [Klipper Resonance Compensation](https://www.klipper3d.org/Resonance_Compensation.html)
+- [VFA Test Cube (Printables)](https://www.printables.com/model/224847-vfa-test-cube)
+- [TMC2208 datasheet – interpolation](https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2208_datasheet_rev1.09.pdf)
 
 ## Customization
 
