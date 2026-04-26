@@ -16,7 +16,7 @@ services:
         limits:
           cpus: '1.0'
           memory: 128M
-  
+
   mainsail:
     image: ghcr.io/mainsail-crew/mainsail:v2.12.0
     restart: unless-stopped
@@ -58,7 +58,7 @@ services:
         limits:
           cpus: '1.0'
           memory: 384M
-    
+
     logging:
       driver: "json-file"
       options:
@@ -121,7 +121,7 @@ services:
         traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
         traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
         traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
-  
+
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
     container_name: cadvisor
@@ -158,7 +158,7 @@ services:
       - ./usb_watcher.py:/usb_watcher.py:ro
     environment:
       MOONRAKER_URL: "http://moonraker:7125"
-      USB_ID: "1a86:7523,2341:0042" # Change this to match your printer's VID:PID
+      USB_ID: "1a86:7523,2341:0042"  # Change this to match your printer's VID:PID
     command: >
       sh -c "pip install pyudev requests && python /usb_watcher.py"
     deploy:
