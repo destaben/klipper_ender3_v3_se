@@ -104,7 +104,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ### 7. USB Watcher
 
 - **Container Name**: `usb-watcher`
-- **Image**: `python:3.11-slim`
+- **Image**: Custom build from `Dockerfile-usb-watcher` (based on `python:3.11-slim`)
 - Monitors USB device connections and automatically sends a `firmware_restart` to Moonraker when the printer is reconnected.
 - Configure monitored USB vendor/product IDs via the `USB_IDS` environment variable in `docker-compose.yaml`.
 
@@ -122,6 +122,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   └── helpers/               # Helper configuration files
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
+├── Dockerfile-usb-watcher     # Dockerfile for the USB watcher container
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config
 ├── build_firmware.sh          # Script to build Klipper firmware
@@ -139,6 +140,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - The `build_firmware.sh` script automates the firmware build and uses the included configuration.
 - Traefik acts as a reverse proxy, exposing the services via HTTP on port 80.
 - The Klipper container uses the [jpcurti/ender3-v3-se-klipper-with-display](https://github.com/jpcurti/ender3-v3-se-klipper-with-display) fork, which adds display support for the Ender 3 V3 SE.
+- **Home Assistant integration**: `config/moonraker.conf` contains a `[power printer]` section that requires a Home Assistant long-lived access token. The placeholder `YOUR_HOMEASSISTANT_TOKEN_HERE` must be replaced with your own token before starting the services. Generate one in Home Assistant under **Profile → Long-Lived Access Tokens**. Never commit real tokens to version control.
 
 ## FAQ
 

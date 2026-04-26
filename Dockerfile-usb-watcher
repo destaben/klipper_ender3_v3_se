@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+
+RUN pip install --no-cache-dir pyudev requests
+
+COPY usb_watcher.py /usb_watcher.py
+
+CMD ["python", "/usb_watcher.py"]

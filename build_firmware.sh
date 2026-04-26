@@ -1,13 +1,13 @@
 #!/bin/bash
 
-set -e  # Stop the script if an error occurs
+set -euo pipefail  # Stop on error, treat unset variables as errors, propagate pipe failures
 
 # Variables
 KLIPPER_REPO="https://github.com/0xD34D/klipper_ender3_v3_se.git"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 CONFIG_FILE="config.ender3_v3_se"
 
-# Install dependencies para build de firmware
+# Install dependencies for firmware build
 sudo apt update
 sudo apt install -y git make gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi \
     libusb-1.0-0-dev dfu-util python3 python3-pip python3-virtualenv python3-dev
@@ -15,13 +15,13 @@ sudo apt install -y git make gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-
 # Clone Klipper fork
 if [ -d "klipper" ]; then
     echo "Klipper directory already exists. Updating..."
-    cd "klipper" && git pull
+    git -C "klipper" pull
 else
     git clone "$KLIPPER_REPO" "klipper"
-    cd "klipper"
 fi
+cd "klipper"
 
-# Create Python virtual environment for Klipper
+# Clean previous build artifacts
 make clean
 
 # Use a pre-configured .config file

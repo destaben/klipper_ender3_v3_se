@@ -3,6 +3,8 @@
 # Usage: sudo ./set_static_wifi.sh <connection_name> <ip_address> <gateway> <dns>
 # Example: sudo ./set_static_wifi.sh "MIWIFI_7A19" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
 
+set -euo pipefail  # Stop on error, treat unset variables as errors, propagate pipe failures
+
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root (sudo)"
   exit 1

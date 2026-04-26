@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e  # Stop the script if an error occurs
+set -euo pipefail  # Stop on error, treat unset variables as errors, propagate pipe failures
 
 if ! command -v docker &> /dev/null; then
     echo "Installing Docker..."
@@ -13,15 +13,15 @@ else
     echo "Docker is already installed."
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    echo "Installing Docker Compose..."
-    sudo apt install -y docker-compose
+if ! docker compose version &> /dev/null; then
+    echo "Installing Docker Compose plugin..."
+    sudo apt install -y docker-compose-plugin
     echo "Docker Compose installed successfully."
 else
     echo "Docker Compose is already installed."
 fi
 
-# Aditional dependencies
+# Additional dependencies
 declare -A repos=(
     ["chopper-resonance-tuner"]="https://github.com/MRX8024/chopper-resonance-tuner.git"
     ["KlipperMaintenance"]="https://github.com/3DCoded/KlipperMaintenance.git"
@@ -31,7 +31,7 @@ declare -A repos=(
 for repo in "${!repos[@]}"; do
     if [ -d "$repo" ]; then
         echo "$repo already exists. Updating..."
-        cd "$repo" && git pull && cd ..
+        (cd "$repo" && git pull)
     else
         git clone "${repos[$repo]}"
     fi
