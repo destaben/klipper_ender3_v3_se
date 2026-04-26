@@ -20,7 +20,10 @@ WORKDIR /home/klipper
 # Uncomment the next line to use the main Klipper repository
 # ARG GITHUB_FORK_URL=
 ARG GITHUB_FORK_URL=https://github.com/jpcurti/ender3-v3-se-klipper-with-display.git
-RUN git clone --depth=1 $GITHUB_FORK_URL /home/klipper/klipper
+# Pinned to last known-good commit (2025-08-04)
+ARG KLIPPER_COMMIT=cecc1bba1d8469253600f0d6c383549a8ac9b0aa
+RUN git clone $GITHUB_FORK_URL /home/klipper/klipper && \
+    git -C /home/klipper/klipper checkout $KLIPPER_COMMIT
 
 RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
     chown klipper:klipper -R /home/klipper && \
