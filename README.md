@@ -241,7 +241,7 @@ The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezam
 #### Key principles from the guide
 
 - **SpreadCycle mode** (`stealthchop_threshold: 0`) must be active on X/Y axes. StealthChop trades torque and accuracy for silence and can worsen VFA.
-- **`interpolate: False`** is the recommended setting when doing advanced chopper tuning. `interpolate: True` lets the driver smooth the waveform dynamically but can introduce micro-positioning imprecision. The current config uses `interpolate: True` as a simpler starting fix — if VFA persists after all quick fixes, switch to `interpolate: False` and apply the chopper values below.
+- **`interpolate: False`** is the recommended setting when doing advanced chopper tuning. `interpolate: True` lets the driver smooth the waveform dynamically but can introduce micro-positioning imprecision. The current config uses `interpolate: True` as a simpler starting fix — if VFA persists after all quick fixes, you can switch to `interpolate: False`. The chopper values below are generally independent of that choice and should usually stay the same, rather than being treated as a separate step that only applies when interpolation is disabled.
 - **Microstepping**: For entry/mid-range machines (Ender 3, Artillery, etc.) 16 microsteps is recommended. Higher counts increase system load and reduce torque without clear quality gains.
 - **Z axis**: StealthChop (`stealthchop_threshold: 999999`) is acceptable — Z moves slowly and precision is managed by homing/probing.
 - **Extruder**: Keep at 16 microsteps with standard settings. Use [Pressure Advance](https://www.klipper3d.org/Pressure_Advance.html) instead of driver tuning to improve extrusion quality.
