@@ -264,7 +264,7 @@ The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezam
    - `Icoil(peak)[A]` = motor peak current per datasheet
    - `toff` = 3 (initial value)
 
-4. Adjust `CS` (current scale) until the **RSENSE using VSENSE=1** cell equals your sense resistor value (`0.110 Ω` for standard Ender/Creality boards).
+4. Adjust `CS` (current scale) until the **RSENSE using VSENSE=1** cell equals the sense resistor value for your board / Klipper config. Check the existing `sense_resistor` in `config/printer.cfg` rather than assuming a default; this repository is currently configured for `0.150 Ω` on the TMC2209 sections.
 
 5. Read off the **blue CHOPCONF register bits** section:
    - `HSTRT` → `driver_HSTRT`
