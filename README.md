@@ -20,6 +20,7 @@ Includes:
 - [Repository Structure](#repository-structure)
 - [Notes](#notes)
 - [FAQ](#faq)
+- [VFA (Vertical Fine Artifacts) Investigation & Fix](#vfa-vertical-fine-artifacts-investigation--fix)
 - [Customization](#customization)
 - [Static IP for WiFi (Raspberry Pi / Linux)](#static-ip-for-wifi-raspberry-pi--linux)
 - [Contributing](#contributing)
@@ -179,6 +180,174 @@ Pull the latest changes and restart the containers:
 git pull
 sudo bash setup_services.sh
 ```
+
+## VFA (Vertical Fine Artifacts) Investigation & Fix
+
+> ⚠️ **Advanced tuning** — Only attempt the SpreadCycle section below if you are comfortable editing Klipper configuration and understand the risks of changing motor driver parameters. The quick-fix section is safe to apply to any Ender 3 V3 SE.
+
+VFA are periodic patterns visible on the surface of printed parts, caused by vibrations or irregular stepper-motor motion that gets imprinted into the extrusion.
+
+### Step 0 — Baseline: print a VFA test cube before any changes
+
+Print a calibration cube or a [VFA test cube](https://www.printables.com/model/224847-vfa-test-cube) with your current configuration and photograph all four walls in good lighting. Keep this photo — you will compare it to each subsequent print to track progress.
+
+> 📷 **Photo placeholder — Baseline print (before any changes)**  
+> *Replace this line with a photo of your test cube showing VFA on X/Y walls.*
+
+### Root Causes Investigated
+
+| Cause | Details |
+|---|---|
+| `square_corner_velocity` too high | The previous value of `18.0 mm/s` was far above the Klipper default of `5.0 mm/s`, causing excessive velocity changes at corners that excited resonances propagating into print walls. |
+| TMC2209 interpolation & chopper settings | With `interpolate: True` and generic chopper values the driver current waveform is not optimised for the specific motors on this machine. The guide recommends `interpolate: False` for X/Y motion axes in SpreadCycle mode; combined with calculated SpreadCycle chopper parameters (`driver_TBL/TOFF/HSTRT/HEND`) this produces a smoother waveform and lower vibration. |
+| Input shaper not documented | Calibrated values only existed in the `SAVE_CONFIG` block and were not visible at a glance. |
+| Belt tension / hardware | Check that GT2 belts are tensioned evenly; no software fix compensates for slack or unevenly tensioned belts. |
+
+### Quick Fixes (in `config/printer.cfg`)
+
+#### Fix 1 — Reduce `square_corner_velocity`
+
+```ini
+[printer]
+square_corner_velocity: 5.0   # was 18.0
+```
+
+A value of `18.0 mm/s` allows large instantaneous velocity changes at corners, which excites resonances that appear as vertical artifacts on adjacent walls. `5.0 mm/s` is the Klipper default and is the safest starting point for quality tuning. After applying this change, do a `FIRMWARE_RESTART` (or "Save & Restart" in Mainsail), print the test cube, and photograph the result.
+
+> 📷 **Photo placeholder — After Fix 1: square_corner_velocity reduced to 5.0**  
+> *Replace this line with a photo of your test cube after lowering square_corner_velocity.*
+
+#### Fix 2 — Confirm calibrated `[input_shaper]` values are in the main config
+
+An explicit `[input_shaper]` section is now present in `config/printer.cfg` (outside the auto-managed `SAVE_CONFIG` block), so the calibrated values are visible and editable:
+
+```ini
+[input_shaper]
+shaper_type_x: mzv
+shaper_freq_x: 49.6   # Hz – calibrated with LIS2DW
+shaper_type_y: mzv
+shaper_freq_y: 38.4   # Hz – calibrated with LIS2DW
+```
+
+> **Note:** After running `SHAPER_CALIBRATE` Klipper will write updated values to the `SAVE_CONFIG` block. When that happens, copy them back into this section so both stay in sync.
+
+After applying this change, print the test cube and photograph the result.
+
+> 📷 **Photo placeholder — After Fix 2: input_shaper values confirmed**  
+> *Replace this line with a photo of your test cube after verifying/applying input shaper calibration.*
+
+### Advanced TMC SpreadCycle Tuning
+
+> ⚠️ **This section is for advanced users.** The changes below directly affect how the TMC2209 drives the stepper motors. Incorrect values can cause missed steps, overheating, or reduced positioning accuracy. Always test and compare results using printed samples.
+
+The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezamos/ajustes-avanzados-tmc-vfa) (on which this section is based) describes how tuning the SpreadCycle chopper parameters (`driver_TBL`, `driver_TOFF`, `driver_HSTRT`, `driver_HEND`) for your specific motor model can significantly reduce VFA by optimising the current waveform at the source.
+
+#### Key principles from the guide
+
+- **SpreadCycle mode** (`stealthchop_threshold: 0`) must be active on X/Y axes. StealthChop trades torque and accuracy for silence and can worsen VFA.
+- **`interpolate: False`** is the recommended setting for X/Y axes in SpreadCycle mode, as explicitly advised by the guide. `interpolate: True` lets the driver dynamically adjust microstep interpolation up to 256, but this can introduce micro-positioning imprecision that may reduce the effectiveness of optimal chopper tuning. The current config applies `interpolate: False` on X and Y. The chopper values (`driver_TBL/TOFF/HSTRT/HEND`) are independent of this choice and do not need to change when switching from `True` to `False`.
+- **Microstepping**: For entry/mid-range machines (Ender 3, Artillery, etc.) 16 microsteps is recommended. Higher counts increase system load and reduce torque without clear quality gains.
+- **Z axis**: StealthChop (`stealthchop_threshold: 999999`) is acceptable — Z moves slowly and precision is managed by homing/probing.
+- **Extruder**: Keep at 16 microsteps with standard settings. Use [Pressure Advance](https://www.klipper3d.org/Pressure_Advance.html) instead of driver tuning to improve extrusion quality.
+
+#### How to calculate chopper values for your motors
+
+1. Find the **datasheet** for your stepper motors (check the motor label or manufacturer site). You will need:
+   - Phase resistance `Rcoil` (Ω)
+   - Phase inductance `L` (mH)
+   - Rated current (used to derive `Icoil_peak`)
+
+2. Download the **Trinamic chopper spreadsheet** for TMC2209 from the [Trinamic app-notes page](https://www.trinamic.com/support/app-notes/) (look under "Tools & Simulations" on the TMC2209 product page).
+
+3. In the spreadsheet's **Chopper Parameters** sheet, fill in the yellow cells:
+   - `fCLK` = 12 MHz (TMC2209 default)
+   - `VM[V]` = your supply voltage (typically 24 V)
+   - `TBL` = 1 (use 2 for motors above ~1.5 A or high-voltage setups)
+   - `L[H]` = motor inductance in H (e.g. 3 mH → `0.003`)
+   - `Rcoil[Ohm]` = motor phase resistance
+   - `Icoil(peak)[A]` = motor peak current per datasheet
+   - `toff` = 3 (initial value)
+
+4. Adjust `CS` (current scale) until the **RSENSE using VSENSE=1** cell equals the sense resistor value for your board / Klipper config. Check the existing `sense_resistor` in `config/printer.cfg` rather than assuming a default; this repository is currently configured for `0.150 Ω` on the TMC2209 sections.
+
+5. Read off the **blue CHOPCONF register bits** section:
+   - `HSTRT` → `driver_HSTRT`
+   - `HEND` → `driver_HEND`
+   - Use the spreadsheet-recommended values for `driver_TBL` and `driver_TOFF` (typically `TBL=1` for motors up to ~1.5 A and `TOFF=3` as a starting point; adjust as needed — see tuning tips below). **For this printer the reference values are `driver_TBL: 2` and `driver_TOFF: 3`** — see the example config immediately below.
+   - Use the **Icoil (RMS)[A]** value as `run_current`
+
+#### Current chopper configuration for this printer
+
+The values below were calculated for the stock Ender 3 V3 SE motors and are already applied in `config/printer.cfg`. They can serve as a starting point if you want to experiment or if you swap to different motors.
+
+```ini
+# X and Y motion axes — SpreadCycle, tuned chopper
+[tmc2209 stepper_x]
+stealthchop_threshold: 0    # SpreadCycle mode (required for X/Y)
+interpolate: False          # recommended per guide (precision > silent interpolation)
+driver_TBL: 2
+driver_TOFF: 3
+driver_HSTRT: 2
+driver_HEND: 0
+
+[tmc2209 stepper_y]
+stealthchop_threshold: 0    # SpreadCycle mode (required for X/Y)
+interpolate: False          # recommended per guide
+driver_TBL: 2
+driver_TOFF: 3
+driver_HSTRT: 2
+driver_HEND: 0
+
+# Z axis — StealthChop (slow axis, silence preferred over advanced tuning)
+[tmc2209 stepper_z]
+stealthchop_threshold: 999999   # StealthChop always active on Z
+interpolate: True               # acceptable on Z (no advanced chopper tuning needed)
+```
+
+After applying or modifying chopper values, print the test cube and photograph the result.
+
+> 📷 **Photo placeholder — After advanced TMC tuning**  
+> *Replace this line with a photo of your test cube after applying SpreadCycle chopper values.*
+
+#### Chopper parameter fine-tuning tips
+
+| Parameter | Range | Notes |
+|---|---|---|
+| `driver_TBL` | 0–3 | Blanking time. Start at 1 (or 2 for >1.5 A motors). Use 0 only when StealthChop is active. |
+| `driver_TOFF` | 0–15 | Slow-decay time. Start at 3. Try 1 or 2 at very high speeds. |
+| `driver_HSTRT` | 0–7 | Hysteresis start. Use the spreadsheet value. |
+| `driver_HEND` | 0–15 | Hysteresis end. Use the spreadsheet value. |
+
+#### Automated alternative: Chopper Resonance Tuner
+
+The [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner) is already integrated in this repo. It uses accelerometer data to assist with chopper tuning and can partially automate the process described above. It is more labour-intensive than manual calculation but can yield very accurate results for your specific hardware.
+
+### Final Result — Before vs After
+
+> 📷 **Photo placeholder — Before / After side-by-side comparison**  
+> *Replace this line with a side-by-side photo of the baseline cube (Step 0) and the final result cube (after all fixes). Include photos of all four walls.*
+
+### Further Tuning Tips
+
+- **Re-run input shaper calibration** after any mechanical change (belt re-tension, stepper replacement, etc.) using the LIS2DW accelerometer and the `SHAPER_CALIBRATE` macro.
+- **Check belt tension**: Use the [Shake&Tune belt tension test](https://github.com/Frix-x/klippain-shaketune) (`AXES_MAP_CALIBRATION` / belt resonance graphs). Both X and Y belts should have similar and consistent resonance profiles.
+
+  > 📷 **Photo placeholder — Shake&Tune belt resonance graphs (X and Y)**  
+  > *Replace this line with screenshots of the X/Y belt resonance plots from Shake&Tune, showing even and consistent curves.*
+
+- **Motor wiring**: A common and easy-to-miss issue is incorrect motor coil wiring. Cross-wired coil polarity can cause missed steps, excess noise, and VFA at mid/high speeds even when driver settings are correct. Verify your motor wiring matches the board pinout (A1/A2/B1/B2) per the motor datasheet.
+- **Pressure advance**: The current value of `0.08` is a reasonable starting point; fine-tune it if bulging corners coincide with the VFA pattern.
+- **Print speed**: Lowering the print speed reduces vibration energy. If artifacts persist, try reducing `max_velocity` to `150 mm/s` temporarily for quality prints.
+
+### References
+
+- [Klipper Resonance Compensation](https://www.klipper3d.org/Resonance_Compensation.html)
+- [Klipper TMC Drivers documentation](https://www.klipper3d.org/TMC_Drivers.html)
+- [Advanced TMC VFA Tuning Guide (3dwork.io)](https://klipper.3dwork.io/klipper/empezamos/ajustes-avanzados-tmc-vfa)
+- [Trinamic SpreadCycle App Note (PDF)](https://www.trinamic.com/fileadmin/assets/Support/AppNotes/AN001-SpreadCycle.pdf)
+- [TMC2209 datasheet](https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2209_Datasheet_V103.pdf)
+- [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner)
+- [VFA Test Cube (Printables)](https://www.printables.com/model/224847-vfa-test-cube)
 
 ## Customization
 

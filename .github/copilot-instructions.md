@@ -19,7 +19,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | MCU board | Creality 4.2.2 (STM32F103 or GD32F303) |
 | Display | Stock Ender 3 V3 SE display (managed by the Klipper fork) |
 | Probe | BLTouch (offset X:-23.0, Y:-14.5, Z:3.305) |
-| Steppers | TMC2208 (UART) on X, Y, Z, E |
+| Steppers | TMC2209 (UART) on X, Y, Z, E |
 | Accelerometer | LIS2DW (optional, disabled by default via `#[include lis2dw.cfg]`) |
 | Extruder | Direct drive, rotation_distance: 7.44 |
 | Build volume | 230×230×250 mm |
@@ -70,7 +70,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Pico MMU MCU serial**: `/dev/serial/by-id/usb-Klipper_stm32g0b1xx_5A00320017504D4636383420-if00`
 - **Firmware target**: STM32F103, 28KiB bootloader, USART1 (PA10/PA9) + USART2
 - **Bed mesh**: 5×5 bicubic, min (30,30) max (190,190)
-- **Input shaper** (calibrated): X=MZV@49.6 Hz, Y=MZV@37.0 Hz
+- **Input shaper** (calibrated): X=MZV@49.6 Hz, Y=MZV@38.4 Hz
 - **PID** (calibrated): extruder kp=20.070 ki=2.193 kd=45.909; bed kp=62.105 ki=0.519 kd=1856.165
 - **Pressure advance**: 0.08
 - **Firmware retraction**: 0.5 mm at 40 mm/s
