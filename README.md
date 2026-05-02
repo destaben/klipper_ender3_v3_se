@@ -197,7 +197,7 @@ Print a calibration cube or a [VFA test cube](https://www.printables.com/model/2
 | Cause | Details |
 |---|---|
 | `square_corner_velocity` too high | The previous value of `18.0 mm/s` was far above the Klipper default of `5.0 mm/s`, causing excessive velocity changes at corners that excited resonances propagating into print walls. |
-| TMC2209 interpolation & chopper settings | With `interpolate: True` and generic chopper values the driver current waveform is not optimised for the specific motors on this machine. Advanced SpreadCycle tuning (`driver_TBL/TOFF/HSTRT/HEND`) produces a smoother waveform and lower vibration. |
+| TMC2209 interpolation & chopper settings | With `interpolate: True` and generic chopper values the driver current waveform is not optimised for the specific motors on this machine. The guide recommends `interpolate: False` for X/Y motion axes in SpreadCycle mode; combined with calculated SpreadCycle chopper parameters (`driver_TBL/TOFF/HSTRT/HEND`) this produces a smoother waveform and lower vibration. |
 | Input shaper not documented | Calibrated values only existed in the `SAVE_CONFIG` block and were not visible at a glance. |
 | Belt tension / hardware | Check that GT2 belts are tensioned evenly; no software fix compensates for slack or unevenly tensioned belts. |
 
@@ -241,7 +241,7 @@ The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezam
 #### Key principles from the guide
 
 - **SpreadCycle mode** (`stealthchop_threshold: 0`) must be active on X/Y axes. StealthChop trades torque and accuracy for silence and can worsen VFA.
-- **`interpolate: False`** is the recommended setting when doing advanced chopper tuning. `interpolate: True` lets the driver smooth the waveform dynamically but can introduce micro-positioning imprecision. The current config uses `interpolate: True` as a simpler starting fix — if VFA persists after all quick fixes, you can switch to `interpolate: False`. The chopper values below are generally independent of that choice and should usually stay the same, rather than being treated as a separate step that only applies when interpolation is disabled.
+- **`interpolate: False`** is the recommended setting for X/Y axes in SpreadCycle mode, as explicitly advised by the guide. `interpolate: True` lets the driver dynamically adjust microstep interpolation up to 256, but this can introduce micro-positioning imprecision and is not compatible with optimal chopper tuning. The current config applies `interpolate: False` on X and Y. The chopper values (`driver_TBL/TOFF/HSTRT/HEND`) are independent of this choice and do not need to change when switching from `True` to `False`.
 - **Microstepping**: For entry/mid-range machines (Ender 3, Artillery, etc.) 16 microsteps is recommended. Higher counts increase system load and reduce torque without clear quality gains.
 - **Z axis**: StealthChop (`stealthchop_threshold: 999999`) is acceptable — Z moves slowly and precision is managed by homing/probing.
 - **Extruder**: Keep at 16 microsteps with standard settings. Use [Pressure Advance](https://www.klipper3d.org/Pressure_Advance.html) instead of driver tuning to improve extrusion quality.
@@ -279,24 +279,25 @@ The values below were calculated for the stock Ender 3 V3 SE motors and are alre
 ```ini
 # X and Y motion axes — SpreadCycle, tuned chopper
 [tmc2209 stepper_x]
-stealthchop_threshold: 0    # SpreadCycle mode
-interpolate: True           # set to False for full advanced tuning
+stealthchop_threshold: 0    # SpreadCycle mode (required for X/Y)
+interpolate: False          # recommended per guide (precision > silent interpolation)
 driver_TBL: 2
 driver_TOFF: 3
 driver_HSTRT: 2
 driver_HEND: 0
 
 [tmc2209 stepper_y]
-stealthchop_threshold: 0    # SpreadCycle mode
-interpolate: True           # set to False for full advanced tuning
+stealthchop_threshold: 0    # SpreadCycle mode (required for X/Y)
+interpolate: False          # recommended per guide
 driver_TBL: 2
 driver_TOFF: 3
 driver_HSTRT: 2
 driver_HEND: 0
 
-# Z axis — StealthChop acceptable (slow, low-vibration axis)
-# [tmc2209 stepper_z]
-# stealthchop_threshold: 999999
+# Z axis — StealthChop (slow axis, silence preferred over advanced tuning)
+[tmc2209 stepper_z]
+stealthchop_threshold: 999999   # StealthChop always active on Z
+interpolate: True               # acceptable on Z (no advanced chopper tuning needed)
 ```
 
 After applying or modifying chopper values, print the test cube and photograph the result.
