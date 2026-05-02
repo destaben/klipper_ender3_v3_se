@@ -215,9 +215,9 @@ A value of `18.0 mm/s` allows large instantaneous velocity changes at corners, w
 > 📷 **Photo placeholder — After Fix 1: square_corner_velocity reduced to 5.0**  
 > *Replace this line with a photo of your test cube after lowering square_corner_velocity.*
 
-#### Fix 2 — Copy calibrated `[input_shaper]` values into the main config
+#### Fix 2 — Confirm calibrated `[input_shaper]` values are in the main config
 
-The calibrated resonance-compensation values (obtained with Shake&Tune / LIS2DW) typically remain in Klipper's auto-managed `SAVE_CONFIG` block. If you want them to be visible and editable in the main config, copy the current calibrated values into an explicit `[input_shaper]` section outside `SAVE_CONFIG`. Klipper may still write updated values to `SAVE_CONFIG` after later calibration runs, so recopy them if you want the main config section to stay in sync.
+An explicit `[input_shaper]` section is now present in `config/printer.cfg` (outside the auto-managed `SAVE_CONFIG` block), so the calibrated values are visible and editable:
 
 ```ini
 [input_shaper]
@@ -226,6 +226,8 @@ shaper_freq_x: 49.6   # Hz – calibrated with LIS2DW
 shaper_type_y: mzv
 shaper_freq_y: 38.4   # Hz – calibrated with LIS2DW
 ```
+
+> **Note:** After running `SHAPER_CALIBRATE` Klipper will write updated values to the `SAVE_CONFIG` block. When that happens, copy them back into this section so both stay in sync.
 
 After applying this change, print the test cube and photograph the result.
 
