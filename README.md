@@ -197,7 +197,7 @@ Print a calibration cube or a [VFA test cube](https://www.printables.com/model/2
 | Cause | Details |
 |---|---|
 | `square_corner_velocity` too high | The previous value of `18.0 mm/s` was far above the Klipper default of `5.0 mm/s`, causing excessive velocity changes at corners that excited resonances propagating into print walls. |
-| TMC2208 interpolation & chopper settings | With `interpolate: True` and generic chopper values the driver current waveform is not optimised for the specific motors on this machine. Advanced SpreadCycle tuning (`driver_TBL/TOFF/HSTRT/HEND`) produces a smoother waveform and lower vibration. |
+| TMC2209 interpolation & chopper settings | With `interpolate: True` and generic chopper values the driver current waveform is not optimised for the specific motors on this machine. Advanced SpreadCycle tuning (`driver_TBL/TOFF/HSTRT/HEND`) produces a smoother waveform and lower vibration. |
 | Input shaper not documented | Calibrated values only existed in the `SAVE_CONFIG` block and were not visible at a glance. |
 | Belt tension / hardware | Check that GT2 belts are tensioned evenly; no software fix compensates for slack or unevenly tensioned belts. |
 
@@ -234,7 +234,7 @@ After applying this change, print the test cube and photograph the result.
 
 ### Advanced TMC SpreadCycle Tuning
 
-> ⚠️ **This section is for advanced users.** The changes below directly affect how the TMC2208 drives the stepper motors. Incorrect values can cause missed steps, overheating, or reduced positioning accuracy. Always test and compare results using printed samples.
+> ⚠️ **This section is for advanced users.** The changes below directly affect how the TMC2209 drives the stepper motors. Incorrect values can cause missed steps, overheating, or reduced positioning accuracy. Always test and compare results using printed samples.
 
 The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezamos/ajustes-avanzados-tmc-vfa) (on which this section is based) describes how tuning the SpreadCycle chopper parameters (`driver_TBL`, `driver_TOFF`, `driver_HSTRT`, `driver_HEND`) for your specific motor model can significantly reduce VFA by optimising the current waveform at the source.
 
@@ -253,10 +253,10 @@ The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezam
    - Phase inductance `L` (mH)
    - Rated current (used to derive `Icoil_peak`)
 
-2. Download the **Trinamic chopper spreadsheet** for TMC2208/TMC2209 from the [Trinamic app-notes page](https://www.trinamic.com/support/app-notes/) (look under "Tools & Simulations" on the TMC2209 product page).
+2. Download the **Trinamic chopper spreadsheet** for TMC2209 from the [Trinamic app-notes page](https://www.trinamic.com/support/app-notes/) (look under "Tools & Simulations" on the TMC2209 product page).
 
 3. In the spreadsheet's **Chopper Parameters** sheet, fill in the yellow cells:
-   - `fCLK` = 12 MHz (TMC2208/2209 default)
+   - `fCLK` = 12 MHz (TMC2209 default)
    - `VM[V]` = your supply voltage (typically 24 V)
    - `TBL` = 1 (use 2 for motors above ~1.5 A or high-voltage setups)
    - `L[H]` = motor inductance in H (e.g. 3 mH → `0.003`)
@@ -278,7 +278,7 @@ The values below were calculated for the stock Ender 3 V3 SE motors and are alre
 
 ```ini
 # X and Y motion axes — SpreadCycle, tuned chopper
-[tmc2208 stepper_x]
+[tmc2209 stepper_x]
 stealthchop_threshold: 0    # SpreadCycle mode
 interpolate: True           # set to False for full advanced tuning
 driver_TBL: 2
@@ -286,7 +286,7 @@ driver_TOFF: 3
 driver_HSTRT: 2
 driver_HEND: 0
 
-[tmc2208 stepper_y]
+[tmc2209 stepper_y]
 stealthchop_threshold: 0    # SpreadCycle mode
 interpolate: True           # set to False for full advanced tuning
 driver_TBL: 2
@@ -295,7 +295,7 @@ driver_HSTRT: 2
 driver_HEND: 0
 
 # Z axis — StealthChop acceptable (slow, low-vibration axis)
-# [tmc2208 stepper_z]
+# [tmc2209 stepper_z]
 # stealthchop_threshold: 999999
 ```
 
@@ -341,7 +341,6 @@ The [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner
 - [Advanced TMC VFA Tuning Guide (3dwork.io)](https://klipper.3dwork.io/klipper/empezamos/ajustes-avanzados-tmc-vfa)
 - [Trinamic SpreadCycle App Note (PDF)](https://www.trinamic.com/fileadmin/assets/Support/AppNotes/AN001-SpreadCycle.pdf)
 - [TMC2209 datasheet](https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2209_Datasheet_V103.pdf)
-- [TMC2208 datasheet](https://www.trinamic.com/fileadmin/assets/Products/ICs_Documents/TMC2208_datasheet_rev1.09.pdf)
 - [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner)
 - [VFA Test Cube (Printables)](https://www.printables.com/model/224847-vfa-test-cube)
 
