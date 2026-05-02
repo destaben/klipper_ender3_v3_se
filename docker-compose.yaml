@@ -85,7 +85,12 @@ services:
       - /run/dbus:/run/dbus
       # Moonraker configuration
       - ./config:/opt/printer_data/config
-      - ./config/moonraker.secrets:/opt/printer_data/moonraker.secrets:ro
+      - type: bind
+        source: ./config/moonraker.secrets
+        target: /opt/printer_data/moonraker.secrets
+        read_only: true
+        bind:
+          create_host_path: false
       - ./moonraker/database:/opt/printer_data/database
       - ./moonraker/logs:/opt/printer_data/logs
       - ./gcodes:/opt/printer_data/gcodes
