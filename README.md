@@ -215,9 +215,9 @@ A value of `18.0 mm/s` allows large instantaneous velocity changes at corners, w
 > 📷 **Photo placeholder — After Fix 1: square_corner_velocity reduced to 5.0**  
 > *Replace this line with a photo of your test cube after lowering square_corner_velocity.*
 
-#### Fix 2 — Add explicit `[input_shaper]` section
+#### Fix 2 — Copy calibrated `[input_shaper]` values into the main config
 
-The calibrated resonance-compensation values (obtained with Shake&Tune / LIS2DW) are now visible in the main config. Klipper's `SAVE_CONFIG` will continue to update them automatically after each calibration run.
+The calibrated resonance-compensation values (obtained with Shake&Tune / LIS2DW) typically remain in Klipper's auto-managed `SAVE_CONFIG` block. If you want them to be visible and editable in the main config, copy the current calibrated values into an explicit `[input_shaper]` section outside `SAVE_CONFIG`. Klipper may still write updated values to `SAVE_CONFIG` after later calibration runs, so recopy them if you want the main config section to stay in sync.
 
 ```ini
 [input_shaper]
