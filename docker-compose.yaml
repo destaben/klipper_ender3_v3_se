@@ -150,17 +150,16 @@ services:
         traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
 
   usb-watcher:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile-usb-watcher
     container_name: usb-watcher
     restart: unless-stopped
     volumes:
       - /dev:/dev
-      - ./usb_watcher.py:/usb_watcher.py:ro
     environment:
       MOONRAKER_URL: "http://moonraker:7125"
-      USB_ID: "1a86:7523,2341:0042"  # Change this to match your printer's VID:PID
-    command: >
-      sh -c "pip install pyudev requests && python /usb_watcher.py"
+      USB_IDS: "1a86:7523,2341:0042"  # Change this to match your printer's VID:PID
     deploy:
       resources:
         limits:

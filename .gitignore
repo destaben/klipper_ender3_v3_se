@@ -16,3 +16,4 @@ chopper-resonance-tuner
 *.html
 klipper
 ShakeTune_results
+config/moonraker.secrets
