@@ -269,7 +269,7 @@ The [3dwork.io Advanced TMC VFA Guide](https://klipper.3dwork.io/klipper/empezam
 5. Read off the **blue CHOPCONF register bits** section:
    - `HSTRT` → `driver_HSTRT`
    - `HEND` → `driver_HEND`
-   - Set `driver_TBL: 1` and `driver_TOFF: 3` (adjust as needed — see tuning tips below)
+   - Use the spreadsheet-recommended values for `driver_TBL` and `driver_TOFF` (typically `TBL=1` for motors up to ~1.5 A and `TOFF=3` as a starting point; adjust as needed — see tuning tips below). **For this printer the reference values are `driver_TBL: 2` and `driver_TOFF: 3`** — see the example config immediately below.
    - Use the **Icoil (RMS)[A]** value as `run_current`
 
 #### Current chopper configuration for this printer
