@@ -75,3 +75,7 @@ Cualquier duda podéis consultar conmigo o a través del [Discord oficial](https
 ## Soporte Pico
 
 Es un soporte para Pico MMU. Imprime [este modelo](https://www.printables.com/model/1222596-pico-mmu-holder-for-ender-3-v3-ke) y sujétalo a la máquina mediante un tornillo.
+
+## Nebula Smart Kit
+
+Si utilizas el **Creality Nebula Smart Kit** en lugar de un mini PC o Raspberry Pi, son necesarias modificaciones adicionales debido al fork personalizado de Klipper de Creality. Consulta la [guía de configuración para Nebula Smart Kit](nebula_setup_guide.md) (en inglés) para obtener un tutorial paso a paso que cubre la compilación del firmware, los parches necesarios y los cambios de configuración específicos para la Nebula Pad.

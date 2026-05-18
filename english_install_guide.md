@@ -75,3 +75,7 @@ If you have any questions, you can ask me or join the creator's [official Discor
 ## Pico Holder
 
 This is a holder for the Pico MMU. Print [this model](https://www.printables.com/model/1222596-pico-mmu-holder-for-ender-3-v3-ke) and attach it to the machine using a screw.
+
+## Nebula Smart Kit
+
+If you are using the **Creality Nebula Smart Kit** instead of a mini PC or Raspberry Pi, additional modifications are required due to Creality's custom Klipper fork. See the dedicated [Nebula Smart Kit Setup Guide](nebula_setup_guide.md) for a step-by-step walkthrough covering firmware compilation, patching, and config changes specific to the Nebula Pad.
