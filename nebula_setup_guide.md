@@ -2,6 +2,8 @@
 
 > **Note:** This guide covers the specific modifications required when running the Pico MMU on the **Creality Nebula Smart Kit** (Creality's custom Klipper fork, MIPS / Ingenic SoC). If you are using a standard mini PC or Raspberry Pi, follow the [standard installation guide](english_install_guide.md) instead.
 
+> **Credits:** This guide is based on the original work by [@L30n3D](https://github.com/L30n3D). Thank you for documenting these modifications.
+
 Personal build notes documenting every modification needed to get the LH-Stinger Pico MMU (4-lane) running on a Creality Ender 3 V3 SE equipped with the Nebula Smart Kit.
 
 This guide assumes the mechanical Pico MMU is already assembled and you have:
