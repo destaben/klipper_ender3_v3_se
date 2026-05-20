@@ -37,6 +37,7 @@ services:
     depends_on: [moonraker]
 
   klipper:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest
     build:
       context: .
       dockerfile: Dockerfile-klipper
@@ -66,6 +67,7 @@ services:
         max-file: "2"
 
   moonraker:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest
     build:
       context: .
       dockerfile: Dockerfile-moonraker
@@ -156,6 +158,7 @@ services:
         traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
 
   usb-watcher:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/usb-watcher:latest
     build:
       context: .
       dockerfile: Dockerfile-usb-watcher
