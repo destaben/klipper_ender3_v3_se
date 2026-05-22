@@ -155,6 +155,23 @@ services:
         traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
         traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
 
+  extruder-load-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile-extruder-exporter
+    container_name: extruder-load-exporter
+    restart: unless-stopped
+    environment:
+      MOONRAKER_URL: "http://moonraker:7125"
+      EXPORTER_PORT: "9101"
+      POLL_INTERVAL: "2"
+    depends_on: [moonraker]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 64M
+
   usb-watcher:
     build:
       context: .

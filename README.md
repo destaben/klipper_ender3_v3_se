@@ -349,6 +349,104 @@ The [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner
 - [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner)
 - [VFA Test Cube (Printables)](https://www.printables.com/model/224847-vfa-test-cube)
 
+## Extruder Jam Detection (TMC2209 StallGuard)
+
+This setup uses the TMC2209 StallGuard feature on the extruder motor to detect jams, clogs, or filament grinding during a print — and optionally exports the motor load as a Prometheus metric for long-term analysis.
+
+### How it works
+
+The TMC2209 `SG_RESULT` register reports motor load: **0 = high load (stall)**, **510 = no load (free spinning)**. During normal extrusion the value stays within a characteristic range. A sudden drop indicates a jam or excessive resistance.
+
+### Configuration
+
+The `[tmc2209 extruder]` section in `config/printer.cfg` enables UART communication and sets the initial StallGuard threshold:
+
+```ini
+[tmc2209 extruder]
+uart_pin: PC11
+run_current: 0.6
+sense_resistor: 0.150
+stealthchop_threshold: 0
+interpolate: True
+driver_SGTHRS: 60        # StallGuard threshold — tune this value
+```
+
+> ⚠️ **Important**: Verify that `uart_pin` matches your board's wiring for the extruder TMC2209 UART line. On many Creality 4.2.x boards this is `PC11`, but check your specific board schematic.
+
+### Klipper macros
+
+The file `config/macros/EXTRUDER_JAM_DETECTION.cfg` provides:
+
+| Macro | Description |
+|-------|-------------|
+| `ENABLE_JAM_DETECTION` | Start periodic monitoring (call in your `START_PRINT`) |
+| `DISABLE_JAM_DETECTION` | Stop monitoring (call in `END_PRINT` / `CANCEL_PRINT`) |
+| `QUERY_TMC_LOAD` | Print the current SG_RESULT to the console |
+| `SET_JAM_THRESHOLD VALUE=N` | Change the detection threshold at runtime |
+
+**Default parameters** (adjustable via `SET_GCODE_VARIABLE`):
+- `sg_threshold: 20` — values below this count as a "fail"
+- `check_interval: 2` — seconds between checks
+- `min_consecutive_fails: 3` — consecutive fails before triggering PAUSE
+
+### Tuning the threshold
+
+1. Start a test print and run `QUERY_TMC_LOAD` every few seconds to observe normal values.
+2. Deliberately induce a jam (e.g., hold the filament) and note how low `SG_RESULT` drops.
+3. Set `sg_threshold` to a value between normal and jammed readings.
+4. Use the Prometheus exporter (below) to record long-term data and refine the threshold.
+
+### Prometheus exporter
+
+A lightweight Python service (`extruder_load_exporter.py`) polls Moonraker's API and exposes:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `klipper_extruder_sg_result` | gauge | Current StallGuard result |
+| `klipper_extruder_temperature_celsius` | gauge | Actual hotend temp |
+| `klipper_extruder_target_temperature_celsius` | gauge | Target hotend temp |
+| `klipper_extruder_exporter_poll_errors_total` | counter | Failed poll count |
+| `klipper_extruder_exporter_poll_successes_total` | counter | Successful poll count |
+
+The service is defined in `docker-compose.yaml` as `extruder-load-exporter` and listens on port **9101**.
+
+#### Prometheus scrape config
+
+Add to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'klipper_extruder'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['<printer-ip>:9101']
+```
+
+#### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MOONRAKER_URL` | `http://moonraker:7125` | Moonraker API URL |
+| `EXPORTER_PORT` | `9101` | Metrics HTTP port |
+| `POLL_INTERVAL` | `2` | Seconds between Moonraker polls |
+
+### Alertmanager example
+
+Once you have data, you can alert on sustained low SG_RESULT:
+
+```yaml
+groups:
+  - name: klipper
+    rules:
+      - alert: ExtruderJamDetected
+        expr: klipper_extruder_sg_result < 20
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Extruder jam detected (SG_RESULT={{ $value }})"
+```
+
 ## Customization
 
 - You can adjust the services by editing the volumes and labels in `docker-compose.yaml`.
