@@ -379,15 +379,38 @@ The file `config/macros/EXTRUDER_JAM_DETECTION.cfg` provides:
 
 | Macro | Description |
 |-------|-------------|
-| `ENABLE_JAM_DETECTION` | Start periodic monitoring (call in your `START_PRINT`) |
+| `ENABLE_JAM_DETECTION` | Start periodic monitoring (call in your `START_PRINT`). Optional `MODE=monitor\|pause` |
 | `DISABLE_JAM_DETECTION` | Stop monitoring (call in `END_PRINT` / `CANCEL_PRINT`) |
+| `FILAMENT_CHANGE_DONE` | Enter burst-check mode — polls faster for a window after filament change |
 | `QUERY_TMC_LOAD` | Print the current SG_RESULT to the console |
 | `SET_JAM_THRESHOLD VALUE=N` | Change the detection threshold at runtime |
+| `SET_JAM_MODE MODE=monitor\|pause` | Switch between monitor-only and pause-on-jam |
 
 **Default parameters** (adjustable via `SET_GCODE_VARIABLE`):
 - `sg_threshold: 20` — values below this count as a "fail"
-- `check_interval: 2` — seconds between checks
-- `min_consecutive_fails: 3` — consecutive fails before triggering PAUSE
+- `check_interval: 2` — seconds between checks (normal mode)
+- `min_consecutive_fails: 3` — consecutive fails before acting
+- `mode: "monitor"` — log warnings only (use `"pause"` to auto-pause)
+- `post_change_interval: 0.5` — seconds between checks during burst mode
+- `post_change_duration: 30` — how long burst mode lasts after `FILAMENT_CHANGE_DONE`
+- `remediation_macro: ""` — (future) name of a macro to call for automatic remediation
+
+### Post-filament-change burst detection
+
+After a filament change, call `FILAMENT_CHANGE_DONE` (e.g., at the end of your M600 / tool-change macro). This switches to burst-check mode — polling every 0.5 s for 30 s — so a stuck filament is caught immediately. After the burst window expires, it reverts to the normal 2 s interval.
+
+```gcode
+# Example: at the end of your filament change resume sequence
+FILAMENT_CHANGE_DONE          ; burst-check for 30s
+FILAMENT_CHANGE_DONE DURATION=60   ; or specify a custom duration
+```
+
+### Future automatic remediation
+
+The architecture includes a `remediation_macro` variable. Once you have a working remediation strategy (e.g., retract + re-push, heat bump, partial unload/reload), you can:
+1. Create a macro (e.g., `_JAM_REMEDIATION`) that performs the recovery sequence
+2. Set: `SET_GCODE_VARIABLE MACRO=_JAM_DETECTION_VARS VARIABLE=remediation_macro VALUE="'_JAM_REMEDIATION'"`
+3. The detection loop will call it when a jam is confirmed (implementation pending)
 
 ### Tuning the threshold
 
