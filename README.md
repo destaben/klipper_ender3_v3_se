@@ -382,7 +382,6 @@ The file `config/macros/EXTRUDER_JAM_DETECTION.cfg` provides:
 | `ENABLE_JAM_DETECTION` | Start periodic monitoring (call in your `START_PRINT`). Optional `MODE=monitor\|pause` |
 | `DISABLE_JAM_DETECTION` | Stop monitoring (call in `END_PRINT` / `CANCEL_PRINT`) |
 | `FILAMENT_CHANGE_DONE` | Enter burst-check mode — polls faster for a window after filament change |
-| `VERIFY_EXTRUSION` | Synchronous check + auto-remediation — call after priming on the prime tower |
 | `QUERY_TMC_LOAD` | Print the current SG_RESULT to the console |
 | `SET_JAM_THRESHOLD VALUE=N` | Change the detection threshold at runtime |
 | `SET_JAM_MODE MODE=monitor\|pause` | Switch between monitor-only and pause-on-jam |
@@ -398,7 +397,7 @@ The file `config/macros/EXTRUDER_JAM_DETECTION.cfg` provides:
 
 ### Post-filament-change burst detection
 
-After a filament change, call `FILAMENT_CHANGE_DONE` (e.g., at the end of your M600 / tool-change macro). This switches to burst-check mode — polling every 0.5 s for 30 s — so a stuck filament is caught immediately. After the burst window expires, it reverts to the normal 2 s interval.
+After a filament change, call `FILAMENT_CHANGE_DONE` (e.g., at the end of your M600 / tool-change macro). This switches to burst-check mode — polling every 0.5 s for 30 s — so a stuck filament is caught quickly. Any sustained low SG_RESULT during this window is logged as a warning. After the burst window expires, it reverts to the normal 2 s interval. The print continues uninterrupted throughout.
 
 ```gcode
 # Example: at the end of your filament change resume sequence
@@ -406,35 +405,12 @@ FILAMENT_CHANGE_DONE          ; burst-check for 30s
 FILAMENT_CHANGE_DONE DURATION=60   ; or specify a custom duration
 ```
 
-### Synchronous extrusion verification (prime tower workflow)
-
-For multi-material prints using a prime tower, you need to verify extrusion **before** the toolhead moves from the prime tower to the actual model. `VERIFY_EXTRUSION` provides a synchronous (blocking) check with built-in remediation:
-
-1. Reads SG_RESULT immediately
-2. If below threshold → retracts 5 mm, waits, then re-pushes 7 mm (net +2 mm to clear any gap)
-3. Re-checks — retries up to N times
-4. If still failing after all retries → PAUSEs the print
-
-**Add to your slicer's tool-change end gcode** (after priming on the prime tower, before returning to the model):
+For multi-material prints with a prime tower, add `FILAMENT_CHANGE_DONE` to your slicer's tool-change end gcode so burst monitoring starts as soon as the new filament begins priming:
 
 ```gcode
 ; --- end of tool-change / prime tower sequence ---
-FILAMENT_CHANGE_DONE          ; start burst monitoring in background
-VERIFY_EXTRUSION              ; synchronous gate — won't proceed until OK or PAUSE
-; toolhead now moves to model only if extrusion is confirmed
-```
-
-**Parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `THRESHOLD` | `sg_threshold` (20) | SG_RESULT below this = fail |
-| `RETRIES` | `3` | Number of retract/re-push attempts before PAUSE |
-| `WAIT` | `0.5` | Seconds to wait after each re-push before re-reading SG |
-
-Example with custom values:
-```gcode
-VERIFY_EXTRUSION THRESHOLD=25 RETRIES=5 WAIT=1.0
+FILAMENT_CHANGE_DONE          ; monitor closely for the next 30s
+; print continues normally — warnings appear in console if extrusion is low
 ```
 
 ### Future automatic remediation
