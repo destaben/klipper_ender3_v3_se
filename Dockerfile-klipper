@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && \
     apt-get update --fix-missing && \
     apt-get install -y --no-install-recommends \
-      sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev && \
+      sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev \
+      ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
