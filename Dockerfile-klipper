@@ -5,9 +5,12 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies and set up environment
-RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && apt-get clean && \
+# hadolint ignore=DL3008
+RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && \
     apt-get update --fix-missing && \
-    apt-get install -y sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev
+    apt-get install -y --no-install-recommends \
+      sudo git curl zlib1g-dev libjpeg-dev libfreetype6-dev libatlas-base-dev libopenblas-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
 RUN mkdir /home/klipper/config
@@ -23,21 +26,23 @@ ARG GITHUB_FORK_URL=https://github.com/jpcurti/ender3-v3-se-klipper-with-display
 # Pinned to last known-good commit (2025-08-04)
 ARG KLIPPER_COMMIT=cecc1bba1d8469253600f0d6c383549a8ac9b0aa
 RUN git clone $GITHUB_FORK_URL /home/klipper/klipper && \
-    git -C /home/klipper/klipper checkout $KLIPPER_COMMIT
+    git -C /home/klipper/klipper checkout $KLIPPER_COMMIT && \
+    rm -rf /home/klipper/klipper/.git
 
 RUN echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
     chown klipper:klipper -R /home/klipper && \
     ln -s /bin/true /bin/systemctl
 
 #Shaketune download
-RUN git clone https://github.com/Frix-x/klippain-shaketune.git
+RUN git clone --depth 1 https://github.com/Frix-x/klippain-shaketune.git
 
 # Install dependencies
 USER klipper
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
-RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
-RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
-RUN /home/klipper/klippy-env/bin/pip install -r klippain-shaketune/requirements.txt  
+RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune && \
+    cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
+RUN /home/klipper/klippy-env/bin/pip install --no-cache-dir -r klippain-shaketune/requirements.txt && \
+    rm -rf /home/klipper/klippain-shaketune/.git
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
 # Run Klipper
