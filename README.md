@@ -16,6 +16,7 @@ Includes:
 
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
+- [Prebuilt Docker Images](#prebuilt-docker-images)
 - [Services](#services)
 - [Repository Structure](#repository-structure)
 - [Notes](#notes)
@@ -59,6 +60,55 @@ Includes:
 
 3. **Access the web interface:**
    - Mainsail: `http://<host_ip>/`
+
+## Prebuilt Docker Images
+
+Prebuilt multi-architecture images (targeting **`linux/amd64`** and **`linux/arm64`**, including Raspberry Pi 4+) are automatically built and published to the [GitHub Container Registry](https://ghcr.io/destaben/klipper_ender3_v3_se) on every push to `main` and on version tags.
+
+| Service | Image |
+|---|---|
+| Klipper | `ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest` |
+| Moonraker | `ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest` |
+| USB Watcher | `ghcr.io/destaben/klipper_ender3_v3_se/usb-watcher:latest` |
+
+### Available tags
+
+- `latest` — tracks the current `main` branch
+- `sha-<short_sha>` — pinned to a specific commit
+- `v<version>` / `<major>.<minor>` — published on version tag pushes (e.g. `v1.0.0`)
+
+### Using prebuilt images (no local build required)
+
+This is the recommended approach for Raspberry Pi 4+ deployments where building from source is slow.
+
+```bash
+git clone https://github.com/destaben/klipper_ender3_v3_se.git
+cd klipper_ender3_v3_se
+# Clone required plugin dependencies
+sudo bash setup_services.sh --no-build   # or manually clone deps (see setup_services.sh)
+# Pull prebuilt images from the registry
+docker compose pull klipper moonraker usb-watcher
+# Start everything
+docker compose up -d
+```
+
+> **Note:** On first pull, Docker will automatically select the correct architecture (`arm64` on Raspberry Pi 4, `amd64` on x86 machines).
+
+### Building images locally
+
+If you prefer to build the images yourself (or need to customise the Dockerfiles):
+
+```bash
+docker compose up -d --build
+```
+
+### CI/CD pipeline
+
+The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) workflow runs on every push to `main` and on version tags. It:
+
+1. Cross-compiles images for `linux/amd64` and `linux/arm64` using QEMU.
+2. Pushes images to `ghcr.io/destaben/klipper_ender3_v3_se/<service>`.
+3. Applies `latest`, commit-SHA, and version tags automatically.
 
 ## Services
 

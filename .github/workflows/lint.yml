@@ -35,6 +35,11 @@ jobs:
         with:
           dockerfile: Dockerfile-moonraker
           failure-threshold: error
+      - name: Lint Dockerfile-usb-watcher
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile-usb-watcher
+          failure-threshold: error
 
   docker-compose-validate:
     name: Docker Compose Validate
