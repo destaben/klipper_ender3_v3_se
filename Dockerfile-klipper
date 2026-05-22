@@ -5,6 +5,7 @@ USER root
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies and set up environment
+# hadolint ignore=DL3008
 RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && \
     apt-get update --fix-missing && \
     apt-get install -y --no-install-recommends \
@@ -38,8 +39,8 @@ RUN git clone --depth 1 https://github.com/Frix-x/klippain-shaketune.git
 # Install dependencies
 USER klipper
 RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
-RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune
-RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
+RUN mkdir -p /home/klipper/klipper/klippy/extras/shaketune && \
+    cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/
 RUN /home/klipper/klippy-env/bin/pip install --no-cache-dir -r klippain-shaketune/requirements.txt && \
     rm -rf /home/klipper/klippain-shaketune/.git
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
