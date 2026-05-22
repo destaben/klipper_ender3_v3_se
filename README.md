@@ -441,8 +441,9 @@ Add to your `prometheus.yml`:
 scrape_configs:
   - job_name: 'klipper_extruder'
     scrape_interval: 5s
+    metrics_path: /extruderexporter/metrics
     static_configs:
-      - targets: ['<printer-ip>:9101']
+      - targets: ['<printer-ip>:80']
 ```
 
 #### Environment variables

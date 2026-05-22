@@ -4,10 +4,7 @@ Exposes the StallGuard result (SG_RESULT) from the extruder TMC2209 driver
 as a Prometheus gauge metric. This enables long-term recording of motor load
 data to determine reliable thresholds for automatic jam detection.
 
-Usage:
-    python extruder_load_exporter.py [--moonraker-url URL] [--port PORT] [--interval SECONDS]
-
-Environment variables (override defaults):
+Configuration is via environment variables:
     MOONRAKER_URL   - Moonraker API base URL (default: http://localhost:7125)
     EXPORTER_PORT   - Port to expose metrics on (default: 9101)
     POLL_INTERVAL   - Seconds between polls (default: 2)
