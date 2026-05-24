@@ -166,19 +166,20 @@ services:
       EXPORTER_PORT: "9101"
       POLL_INTERVAL: "2"
     depends_on: [moonraker]
+    labels:
+      traefik.enable: true
+      traefik.http.services.extruderexporter.loadbalancer.server.port: 9101
+      traefik.http.routers.extruderexporter.rule: PathPrefix(`/extruderexporter`)
+      traefik.http.routers.extruderexporter.entrypoints: web
+      traefik.http.routers.extruderexporter.middlewares: extruderexporter-stripprefix,extruderexporter-ratelimit
+      traefik.http.middlewares.extruderexporter-stripprefix.stripprefix.prefixes: /extruderexporter
+      traefik.http.middlewares.extruderexporter-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.extruderexporter-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.2'
           memory: 64M
-      labels:
-        traefik.enable: true
-        traefik.http.services.extruderexporter.loadbalancer.server.port: 9101
-        traefik.http.routers.extruderexporter.rule: PathPrefix(`/extruderexporter`)
-        traefik.http.routers.extruderexporter.entrypoints: web
-        traefik.http.routers.extruderexporter.middlewares: extruderexporter-ratelimit
-        traefik.http.middlewares.extruderexporter-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.extruderexporter-ratelimit.ratelimit.burst: 2
 
   usb-watcher:
     build:
