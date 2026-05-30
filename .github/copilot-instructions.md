@@ -9,7 +9,6 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Mainsail** — web UI (v2.12.0) exposed via Traefik on port 80
 - **Traefik** (v3.2) — reverse proxy and HTTP router
 - **Node Exporter** + **cAdvisor** — host and container metrics
-- **USB Watcher** — Python service that sends `firmware_restart` to Moonraker when the printer reconnects via USB
 
 ## Hardware
 
@@ -61,7 +60,6 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── build_firmware.sh             # Builds Klipper .bin for flashing
 ├── setup_services.sh             # Installs Docker, clones deps, starts stack
 ├── set_static_wifi.sh            # Sets static WiFi IP via nmcli
-└── usb_watcher.py                # USB reconnect watcher
 ```
 
 ## Key Configuration Facts
