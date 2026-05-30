@@ -91,7 +91,7 @@ docker compose pull klipper moonraker
 docker compose up -d
 ```
 
-> **Note:** On first pull, Docker will automatically select the correct architecture (`arm64` on Raspberry Pi 4 and later with 64-bit OS, `arm/v7` on Raspberry Pi 3B+ or any Pi running a 32-bit OS, `amd64` on x86 machines).
+> **Note:** On first pull, Docker will automatically select the correct architecture (`arm64` on Raspberry Pi 3B+ and later with a 64-bit OS, `arm/v7` on any Pi running a 32-bit OS, `amd64` on x86 machines).
 
 ### Building images locally
 
