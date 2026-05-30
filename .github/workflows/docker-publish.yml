@@ -22,8 +22,6 @@ jobs:
             dockerfile: Dockerfile-klipper
           - image: moonraker
             dockerfile: Dockerfile-moonraker
-          - image: usb-watcher
-            dockerfile: Dockerfile-usb-watcher
 
     steps:
       - name: Checkout repository

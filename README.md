@@ -69,7 +69,6 @@ Prebuilt multi-architecture images (targeting **`linux/amd64`** and **`linux/arm
 |---|---|
 | Klipper | `ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest` |
 | Moonraker | `ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest` |
-| USB Watcher | `ghcr.io/destaben/klipper_ender3_v3_se/usb-watcher:latest` |
 
 ### Available tags
 
@@ -87,7 +86,7 @@ cd klipper_ender3_v3_se
 # Clone required plugin dependencies
 sudo bash setup_services.sh --no-build   # or manually clone deps (see setup_services.sh)
 # Pull prebuilt images from the registry
-docker compose pull klipper moonraker usb-watcher
+docker compose pull klipper moonraker
 # Start everything
 docker compose up -d
 ```
@@ -152,13 +151,6 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - **Image**: `gcr.io/cadvisor/cadvisor:v0.52.0`
 - Exposes per-container resource usage metrics.
 
-### 7. USB Watcher
-
-- **Container Name**: `usb-watcher`
-- **Image**: Custom build from `Dockerfile-usb-watcher` (based on `python:3.11-slim`)
-- Monitors USB device connections and automatically sends a `firmware_restart` to Moonraker when the printer is reconnected.
-- Configure monitored USB vendor/product IDs via the `USB_IDS` environment variable in `docker-compose.yaml`.
-
 ## Repository Structure
 
 ```
@@ -173,13 +165,11 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   └── helpers/               # Helper configuration files
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
-├── Dockerfile-usb-watcher     # Dockerfile for the USB watcher container
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config
 ├── build_firmware.sh          # Script to build Klipper firmware
 ├── setup_services.sh          # Script to install Docker and start services
 ├── set_static_wifi.sh         # Script to set a static WiFi IP
-├── usb_watcher.py             # USB reconnection watcher script
 ├── english_install_guide.md   # Multicolor install guide (English)
 └── spanish_install_guide.md   # Multicolor install guide (Spanish)
 ```
