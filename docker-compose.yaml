@@ -116,19 +116,20 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
+    labels:
+      traefik.enable: true
+      traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
+      traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
+      traefik.http.routers.nodeexporter.entrypoints: web
+      traefik.http.routers.nodeexporter.middlewares: nodeexporter-stripprefix,nodeexporter-ratelimit
+      traefik.http.middlewares.nodeexporter-stripprefix.stripprefix.prefixes: /nodeexporter
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 128M
-      labels:
-        traefik.enable: true
-        traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
-        traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
-        traefik.http.routers.nodeexporter.entrypoints: web
-        traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
