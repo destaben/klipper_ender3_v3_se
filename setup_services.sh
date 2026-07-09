@@ -55,7 +55,6 @@ if [ -f "$CMDLINE" ]; then
         echo "cgroup memory already enabled in $CMDLINE."
     fi
 fi
-
 echo "Starting Docker containers..."
 # Add user to docker group if missing (requires sudo)
 if ! id -nG "$USER" | grep -qw docker; then

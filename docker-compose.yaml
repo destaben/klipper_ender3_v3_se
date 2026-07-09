@@ -37,6 +37,7 @@ services:
     depends_on: [moonraker]
 
   klipper:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest
     build:
       context: .
       dockerfile: Dockerfile-klipper
@@ -66,6 +67,7 @@ services:
         max-file: "2"
 
   moonraker:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest
     build:
       context: .
       dockerfile: Dockerfile-moonraker
@@ -114,19 +116,20 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
+    labels:
+      traefik.enable: true
+      traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
+      traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
+      traefik.http.routers.nodeexporter.entrypoints: web
+      traefik.http.routers.nodeexporter.middlewares: nodeexporter-stripprefix,nodeexporter-ratelimit
+      traefik.http.middlewares.nodeexporter-stripprefix.stripprefix.prefixes: /nodeexporter
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 128M
-      labels:
-        traefik.enable: true
-        traefik.http.services.nodeexporter.loadbalancer.server.port: 9100
-        traefik.http.routers.nodeexporter.rule: PathPrefix(`/nodeexporter`)
-        traefik.http.routers.nodeexporter.entrypoints: web
-        traefik.http.routers.nodeexporter.middlewares: nodeexporter-ratelimit
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.nodeexporter-ratelimit.ratelimit.burst: 2
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.0
@@ -141,19 +144,20 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     privileged: true
+    labels:
+      traefik.enable: true
+      traefik.http.services.cadvisor.loadbalancer.server.port: 8080
+      traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
+      traefik.http.routers.cadvisor.entrypoints: web
+      traefik.http.routers.cadvisor.middlewares: cadvisor-stripprefix,cadvisor-ratelimit
+      traefik.http.middlewares.cadvisor-stripprefix.stripprefix.prefixes: /cadvisor
+      traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
+      traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
     deploy:
       resources:
         limits:
           cpus: '0.5'
           memory: 128M
-      labels:
-        traefik.enable: true
-        traefik.http.services.cadvisor.loadbalancer.server.port: 8080
-        traefik.http.routers.cadvisor.rule: PathPrefix(`/cadvisor`)
-        traefik.http.routers.cadvisor.entrypoints: web
-        traefik.http.routers.cadvisor.middlewares: cadvisor-ratelimit
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.average: 1
-        traefik.http.middlewares.cadvisor-ratelimit.ratelimit.burst: 2
 
   extruder-load-exporter:
     build:
