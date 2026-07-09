@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY extruder_load_exporter.py .
+
+USER nobody
+
+ENTRYPOINT ["python", "-u", "extruder_load_exporter.py"]

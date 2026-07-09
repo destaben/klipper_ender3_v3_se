@@ -17,3 +17,5 @@ chopper-resonance-tuner
 klipper
 ShakeTune_results
 config/moonraker.secrets
+__pycache__/
+*.pyc
