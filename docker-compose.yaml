@@ -184,20 +184,3 @@ services:
         limits:
           cpus: '0.2'
           memory: 64M
-
-  usb-watcher:
-    build:
-      context: .
-      dockerfile: Dockerfile-usb-watcher
-    container_name: usb-watcher
-    restart: unless-stopped
-    volumes:
-      - /dev:/dev
-    environment:
-      MOONRAKER_URL: "http://moonraker:7125"
-      USB_IDS: "1a86:7523,2341:0042"  # Change this to match your printer's VID:PID
-    deploy:
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 64M
