@@ -19,6 +19,7 @@ RUN apt-get update && \
 
 RUN useradd -ms /bin/bash klipper && \
     echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
+    chmod 0440 /etc/sudoers.d/klipper && \
     ln -s /bin/true /bin/systemctl
 
 WORKDIR /home/klipper
@@ -65,6 +66,7 @@ RUN apt-get update && \
 RUN useradd -ms /bin/bash klipper && \
     adduser klipper dialout && \
     echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
+    chmod 0440 /etc/sudoers.d/klipper && \
     ln -s /bin/true /bin/systemctl && \
     mkdir -p /opt/printer_data/config && \
     chown klipper:klipper /opt/printer_data/config
