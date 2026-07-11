@@ -1,6 +1,8 @@
-logs
 gcodes
-database
+moonraker/logs/*
+!moonraker/logs/.gitkeep
+moonraker/database/*
+!moonraker/database/.gitkeep
 klippy_uds
 printer-*.cfg
 !printer.cfg
