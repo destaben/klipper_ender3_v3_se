@@ -44,6 +44,12 @@ services:
     restart: unless-stopped
     container_name: klipper
     privileged: true
+    command:
+      - /home/klipper/klippy-env/bin/python
+      - /home/klipper/klipper/klippy/klippy.py
+      - /opt/printer_data/config/printer.cfg
+      - -a
+      - /opt/printer_data/config/klippy_uds
     volumes:
       - /dev:/dev
       # Klipper configuration
