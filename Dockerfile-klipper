@@ -14,7 +14,7 @@ RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
-RUN mkdir -p /opt/printer_data/config
+RUN mkdir -p /opt/printer_data/config && chown klipper:klipper /opt/printer_data/config
 VOLUME /opt/printer_data/config
 
 WORKDIR /home/klipper
