@@ -58,8 +58,8 @@ def poll_tmc_status() -> None:
         )
         result = data.get("result", {}).get("status", {})
 
-        tmc_status = result.get("tmc2209 extruder", {})
-        sg = tmc_status.get("drv_status", {}).get("sg_result")
+        tmc_status = result.get("tmc2209 extruder") or {}
+        sg = (tmc_status.get("drv_status") or {}).get("sg_result")
         if sg is not None:
             _sg_result = float(sg)
 
