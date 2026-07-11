@@ -47,7 +47,7 @@ services:
     volumes:
       - /dev:/dev
       # Klipper configuration
-      - ./config:/home/klipper/config
+      - ./config:/opt/printer_data/config
       - ./gcodes:/opt/printer_data/gcodes
       # Maintenance script
       - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py

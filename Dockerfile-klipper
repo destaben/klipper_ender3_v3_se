@@ -14,8 +14,8 @@ RUN rm -rf /var/lib/apt/lists/* /tmp/apt-dpkg-install-* && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd -ms /bin/bash klipper && adduser klipper dialout
-RUN mkdir /home/klipper/config
-VOLUME /home/klipper/config
+RUN mkdir -p /opt/printer_data/config
+VOLUME /opt/printer_data/config
 
 WORKDIR /home/klipper
 
@@ -47,4 +47,4 @@ RUN /home/klipper/klippy-env/bin/pip install --no-cache-dir -r klippain-shaketun
 RUN mkdir -p /home/klipper/printer_data && chown klipper:klipper /home/klipper/printer_data
 
 # Run Klipper
-CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/home/klipper/config/printer.cfg", "-a", "/home/klipper/config/klippy_uds"]
+CMD ["/home/klipper/klippy-env/bin/python", "/home/klipper/klipper/klippy/klippy.py", "/opt/printer_data/config/printer.cfg", "-a", "/opt/printer_data/config/klippy_uds"]
