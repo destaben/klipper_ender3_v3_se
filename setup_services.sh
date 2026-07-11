@@ -56,6 +56,11 @@ if [ -f "$CMDLINE" ]; then
     fi
 fi
 echo "Starting Docker containers..."
+# Create bind-mount host directories for moonraker so the container user can write to them.
+# The permissions set inside the Dockerfile are masked by bind mounts, so they must be
+# created here before the containers start.
+mkdir -p moonraker/logs moonraker/database
+chmod 777 moonraker/logs moonraker/database
 # Add user to docker group if missing (requires sudo)
 if ! id -nG "$USER" | grep -qw docker; then
     echo "Adding '$USER' to the docker group..."
