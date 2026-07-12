@@ -22,6 +22,8 @@ jobs:
             dockerfile: Dockerfile-klipper
           - image: moonraker
             dockerfile: Dockerfile-moonraker
+          - image: extruder-exporter
+            dockerfile: Dockerfile-extruder-exporter
 
     steps:
       - name: Checkout repository

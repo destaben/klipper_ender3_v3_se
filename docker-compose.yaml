@@ -160,9 +160,7 @@ services:
           memory: 128M
 
   extruder-load-exporter:
-    build:
-      context: .
-      dockerfile: Dockerfile-extruder-exporter
+    image: ghcr.io/destaben/klipper_ender3_v3_se/extruder-exporter:latest
     container_name: extruder-load-exporter
     restart: unless-stopped
     environment:
