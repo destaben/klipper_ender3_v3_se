@@ -3,19 +3,14 @@ FROM mkuf/moonraker:v0.9.3-3-gccfe32f
 
 USER root
 
-# Install ffmpeg and clean up the APT cache
+# Install ffmpeg, create required directories, and clean up in a single layer
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
-
-# Ensure logs directory exists with correct permissions
-RUN mkdir -p /opt/printer_data/logs && \
-    chown moonraker:moonraker /opt/printer_data/logs
-
-# Create Klipper config examples and docs directories so Moonraker
-# file_manager does not warn about missing paths
-RUN mkdir -p /home/klipper/klipper/config /home/klipper/klipper/docs
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/printer_data/logs && \
+    chown moonraker:moonraker /opt/printer_data/logs && \
+    mkdir -p /home/klipper/klipper/config /home/klipper/klipper/docs
 
 USER moonraker
 

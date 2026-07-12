@@ -1,0 +1,42 @@
+# Version control
+.git
+.github
+
+# Documentation and images
+*.md
+*.jpg
+*.png
+english_install_guide.md
+spanish_install_guide.md
+nebula_setup_guide.md
+
+# Local runtime data
+logs/
+gcodes/
+database/
+moonraker/
+ShakeTune_results/
+__pycache__/
+*.pyc
+
+# Klipper config backups
+printer-*.cfg
+moonraker-*.cfg
+*.bkp
+
+# Plugin repos (mounted at runtime via volumes)
+KlipperMaintenance/
+chopper-resonance-tuner/
+moonraker-timelapse/
+klippain-shaketune/
+klipper/
+
+# Build/flash scripts not needed in container
+build_firmware.sh
+setup_services.sh
+set_static_wifi.sh
+patch_configfile.sh
+config.ender3_v3_se
+
+# Secrets
+config/moonraker.secrets

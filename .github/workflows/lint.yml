@@ -35,6 +35,11 @@ jobs:
         with:
           dockerfile: Dockerfile-moonraker
           failure-threshold: error
+      - name: Lint Dockerfile-extruder-exporter
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile-extruder-exporter
+          failure-threshold: error
   docker-compose-validate:
     name: Docker Compose Validate
     runs-on: ubuntu-latest
