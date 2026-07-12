@@ -1,9 +1,0 @@
-FROM python:3.11-alpine
-
-WORKDIR /app
-
-COPY extruder_load_exporter.py .
-
-USER nobody
-
-ENTRYPOINT ["python", "-u", "extruder_load_exporter.py"]
