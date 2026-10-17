@@ -36,30 +36,76 @@ jobs:
   review:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event.issue.pull_request != null &&
-       contains(github.event.comment.body, '@claude review'))
+       contains(github.event.comment.body, '@claude review') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                github.event.comment.author_association))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run bug-hunter and documenter review
+        id: review
         uses: anthropics/claude-code-action@v1
         with:
           # Pick exactly one of these two secrets; see the header comment.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use the workflow's own token instead of the OIDC exchange for the
+          # Claude GitHub App token, which needs `id-token: write` and the
+          # app installed on the repo.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: '--model claude-haiku-5-5 --effort low'
+          claude_args: >-
+            --model claude-haiku-5-5 --effort low
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"
+            --disallowedTools "Read(.git/**)"
           prompt: |
-            Review this pull request using the bug-hunter agent defined in
+            Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
+            of this repository (HEAD is detached, so use this number with
+            `gh pr view`/`gh pr diff`; run commands from the repo root with
+            relative paths, no `git -C`). Review it using the bug-hunter agent defined in
             .claude/agents/bug-hunter.md and the severity definitions in
             .claude/skills/release-policy/SKILL.md. Then run the documenter
             agent defined in .claude/agents/documenter.md to check whether
             docs need updating for this change. Post the combined findings
-            as a PR review comment. If there are no findings, post a short
-            comment saying so instead of staying silent.
+            as Markdown in your FINAL message, and make that message the review
+            itself (no preamble such as "I posted..."): a later workflow step
+            posts it as the PR comment. If there are no findings, say so
+            briefly instead of leaving it empty.
+            In this run you can only read the code: you cannot write files,
+            run tests (CI already runs them), or post to GitHub. The documenter reports only, and the
+            bug-hunter reviews the diff without running the suite.
+            Run the agents in the foreground and wait for their results: this
+            is a non-interactive run that ends when you stop, so do not end
+            your turn until you have written the final review message.
+
+      # The agent has no write tools and no `gh pr comment`: its final message
+      # is the review and this step posts it. That removes the "run gh with
+      # arbitrary content" path, but not influence: an injected diff can still
+      # make the review say anything (including "no findings"), and the
+      # `@claude review` comment path also runs on fork PRs when a trusted user
+      # asks for it. Treat the review as advisory. A workflow_dispatch run has
+      # no PR number, so there is nothing to post to and it is skipped.
+      - name: Post the review
+        if: always() && (github.event.pull_request.number || github.event.issue.number)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          if [ -f "$EXECUTION_FILE" ]; then
+            jq -r '[.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))] | last | .result // empty' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
+          fi
+          if [ -s "$RUNNER_TEMP/review.md" ]; then
+            gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
+          else
+            echo "no final review message found; nothing to post"
+          fi
 
 # Before relying on this workflow, re-check the action's current input names
 # (`claude_code_oauth_token`, `anthropic_api_key`, `prompt`, `claude_args`)
