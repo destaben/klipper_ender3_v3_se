@@ -1,0 +1,80 @@
+# Automatic PR review using the bug-hunter and documenter agents
+# (.claude/agents/bug-hunter.md, .claude/agents/documenter.md).
+#
+# INACTIVE until you add a secret. Two auth options:
+#   - CLAUDE_CODE_OAUTH_TOKEN (recommended for a personal repo): generate with
+#     `claude setup-token`. Runs bill against your Claude subscription quota,
+#     not pay-per-token API billing — confirmed at
+#     https://code.claude.com/docs/en/github-actions. Tied to the account that
+#     ran `claude setup-token`; fine here since this is a personal repo.
+#   - ANTHROPIC_API_KEY: pay-per-token API billing, decoupled from your
+#     subscription's weekly/session cap. Use this if CI review would otherwise
+#     compete with your own interactive usage for the same quota — see
+#     docs/decisions/0007-pro-plan-cost-sustainability.md.
+#
+# Runs on every PR (opened/synchronize/reopened), not just on an
+# `@claude review` comment: see docs/decisions/0011-propagated-auto-pr-review.md,
+# which narrows 0007's comment-only trigger now that the review runs on
+# Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
+# acceptable against the shared subscription quota. The comment and manual
+# triggers stay as a fallback.
+name: claude-pr-review
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch: {}
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '@claude review'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run bug-hunter and documenter review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Pick exactly one of these two secrets; see the header comment.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--model claude-haiku-5-5 --effort low'
+          prompt: |
+            Review this pull request using the bug-hunter agent defined in
+            .claude/agents/bug-hunter.md and the severity definitions in
+            .claude/skills/release-policy/SKILL.md. Then run the documenter
+            agent defined in .claude/agents/documenter.md to check whether
+            docs need updating for this change. Post the combined findings
+            as a PR review comment. If there are no findings, post a short
+            comment saying so instead of staying silent.
+
+# Before relying on this workflow, re-check the action's current input names
+# (`claude_code_oauth_token`, `anthropic_api_key`, `prompt`, `claude_args`)
+# against https://code.claude.com/docs/en/github-actions — this was
+# scaffolded from documentation current as of 2026-10-17 and the action may
+# have moved on.
+#
+# To reuse this in a DIFFERENT repo: this file itself (project-specific CI)
+# and .claude/agents/{bug-hunter,documenter}.md + .claude/skills/release-policy/
+# must all be committed into that repo. A GitHub Actions runner only checks
+# out the target repo, not your ~/.claude — user-scope install isn't visible
+# to it. Run `python3 scripts/install.py --mode project --target <path-to-that-repo>`
+# from this dotclaude repo to install the agents/skills there, then copy this
+# workflow file in too. `destaben/github-config`'s `apply.sh` automates the
+# `CLAUDE_CODE_OAUTH_TOKEN` secret for every public repo tagged with the
+# `github-config` topic, but not the agent/skill files or this workflow file
+# itself — those still need `install.py --mode project` plus a manual copy
+# per target repo.
