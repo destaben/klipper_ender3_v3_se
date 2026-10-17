@@ -39,7 +39,7 @@ The `build_firmware.sh` script:
 1. Never manually edit `config.ender3_v3_se` unless intentionally changing the firmware configuration (e.g., enabling/disabling serial ports).
 2. If `make menuconfig` is needed for changes, run it inside the `klipper/` directory, then copy `.config` back to `config.ender3_v3_se`.
 3. The `build_firmware.sh` script uses `set -e` — any error aborts the build.
-4. The Klipper fork (`0xD34D/klipper_ender3_v3_se`) adds display support — do not replace it with mainline Klipper unless the display feature is no longer needed.
+4. The Klipper fork (`0xD34D/klipper_ender3_v3_se`) adds printer-specific extras (dirzctl, hx711s, prtouch, filter) but has no Ender 3 V3 SE display support — do not replace it with mainline Klipper unless those extras are no longer needed.
 
 ## Rebuilding from Scratch
 

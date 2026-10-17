@@ -4,7 +4,7 @@
 
 This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firmware with a full Docker Compose stack. The stack includes:
 
-- **Klipper** — firmware host (custom fork with display support: [jpcurti/ender3-v3-se-klipper-with-display](https://github.com/jpcurti/ender3-v3-se-klipper-with-display))
+- **Klipper** — firmware host (custom fork: [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se), no stock-display support)
 - **Moonraker** — Klipper API server (v0.9.3)
 - **Mainsail** — web UI (v2.12.0) exposed via Traefik on port 80
 - **Traefik** (v3.2) — reverse proxy and HTTP router
@@ -16,7 +16,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 |---|---|
 | Printer | Creality Ender 3 V3 SE |
 | MCU board | Creality 4.2.2 (STM32F103 or GD32F303) |
-| Display | Stock Ender 3 V3 SE display (managed by the Klipper fork) |
+| Display | Not driven by Klipper (fork has no display support) |
 | Probe | BLTouch (offset X:-23.0, Y:-14.5, Z:3.305) |
 | Steppers | TMC2209 (UART) on X, Y, Z, E |
 | Accelerometer | LIS2DW (optional, disabled by default via `#[include lis2dw.cfg]`) |
