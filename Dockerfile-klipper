@@ -24,9 +24,11 @@ RUN useradd -ms /bin/bash klipper && \
 
 WORKDIR /home/klipper
 
-# Clone Klipper (pinned to known-good commit)
-ARG GITHUB_FORK_URL=https://github.com/jpcurti/ender3-v3-se-klipper-with-display.git
-ARG KLIPPER_COMMIT=cecc1bba1d8469253600f0d6c383549a8ac9b0aa
+# Clone Klipper (pinned to the same version previously used via the
+# jpcurti/ender3-v3-se-klipper-with-display fork, now sourced directly from
+# 0xD34D/klipper_ender3_v3_se)
+ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
+ARG KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
 RUN git clone "$GITHUB_FORK_URL" /home/klipper/klipper && \
     git -C /home/klipper/klipper checkout "$KLIPPER_COMMIT" && \
     rm -rf /home/klipper/klipper/.git

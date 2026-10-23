@@ -116,7 +116,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ### 1. Klipper
 
 - **Container Name**: `klipper`
-- **Image**: Custom build from `Dockerfile-klipper` (based on the [Ender 3 V3 SE display fork](https://github.com/jpcurti/ender3-v3-se-klipper-with-display))
+- **Image**: Custom build from `Dockerfile-klipper` (based on the [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se) fork)
 - Includes [Shake&Tune](https://github.com/Frix-x/klippain-shaketune) for resonance analysis.
 - Volumes mount the local `config/` directory and additional plugins ([KlipperMaintenance](https://github.com/3DCoded/KlipperMaintenance), [Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner)).
 
@@ -180,7 +180,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - The `config.ender3_v3_se` file is already prepared for the Ender 3 V3 SE and enables both serial ports (USART1 and USART2). You can edit it if your hardware only uses one of them.
 - The `build_firmware.sh` script automates the firmware build and uses the included configuration.
 - Traefik acts as a reverse proxy, exposing the services via HTTP on port 80.
-- The Klipper container uses the [jpcurti/ender3-v3-se-klipper-with-display](https://github.com/jpcurti/ender3-v3-se-klipper-with-display) fork, which adds display support for the Ender 3 V3 SE.
+- The Klipper container uses the [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se) fork. This fork does not include the stock Ender 3 V3 SE display support that the previous `jpcurti/ender3-v3-se-klipper-with-display` fork provided (on-screen filament-lane macros, etc.).
 - **Home Assistant integration**: `config/moonraker.conf` contains a `[power printer]` section that requires a Home Assistant long-lived access token. The placeholder `YOUR_HOMEASSISTANT_TOKEN_HERE` must be replaced with your own token before starting the services. Generate one in Home Assistant under **Profile → Long-Lived Access Tokens**. Never commit real tokens to version control.
 
 ## FAQ
