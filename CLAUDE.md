@@ -37,10 +37,12 @@ docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dock
 docker compose config --quiet
 ```
 
-### yamllint (whole repo, same ruleset as CI)
-The CI job relaxes a few yamllint defaults (see the `yamllint` job in
-`.github/workflows/lint.yml`): no required `---` document start, 150-char
-line length, and `on`/`off` accepted as booleans. Reproduce it locally:
+### yamllint (tracked YAML files, same ruleset as CI)
+The ruleset below is copied from the `yamllint` job's `config_data` in
+`.github/workflows/lint.yml` — if that job's config changes, update this too.
+It relaxes a few yamllint defaults: no required `---` document start,
+150-char line length, and `on`/`off` accepted as booleans. Reproduce it
+locally, scoped to tracked files like every other check here:
 ```bash
 docker run --rm -v "$PWD:/data" -w /data cytopia/yamllint \
   -d "extends: default
@@ -49,7 +51,7 @@ rules:
   line-length:
     max: 150
   truthy:
-    allowed-values: ['true', 'false', 'on', 'off']" .
+    allowed-values: ['true', 'false', 'on', 'off']" $(git ls-files '*.yml' '*.yaml')
 ```
 
 If any of these fail, fix the issue — even in a file your change didn't

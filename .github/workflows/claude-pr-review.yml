@@ -9,15 +9,13 @@
 #     ran `claude setup-token`; fine here since this is a personal repo.
 #   - ANTHROPIC_API_KEY: pay-per-token API billing, decoupled from your
 #     subscription's weekly/session cap. Use this if CI review would otherwise
-#     compete with your own interactive usage for the same quota — see
-#     docs/decisions/0007-pro-plan-cost-sustainability.md.
+#     compete with your own interactive usage for the same quota.
 #
 # Runs on every PR (opened/synchronize/reopened), not just on an
-# `@claude review` comment: see docs/decisions/0011-propagated-auto-pr-review.md,
-# which narrows 0007's comment-only trigger now that the review runs on
-# Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
-# acceptable against the shared subscription quota. The comment and manual
-# triggers stay as a fallback.
+# `@claude review` comment, because the review runs on Haiku 5.5 at low
+# effort — cheap enough per run that the per-push cost is acceptable against
+# the shared subscription quota. The comment and manual triggers stay as a
+# fallback.
 name: claude-pr-review
 
 on:

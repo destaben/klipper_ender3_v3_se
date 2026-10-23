@@ -5,9 +5,11 @@ set -euo pipefail  # Stop on error, treat unset variables as errors, propagate p
 if ! command -v docker &> /dev/null; then
     echo "Installing Docker..."
     curl -fsSL https://get.docker.com -o get-docker.sh
-    # Sanity-check the download before running it as root: it must be a
-    # non-empty shell script, not an empty/truncated file from a flaky network.
-    if [ ! -s get-docker.sh ] || ! head -n 1 get-docker.sh | grep -q '^#!/'; then
+    # Sanity-check the download before running it as root. curl -f already
+    # aborts on an HTTP error, but a connection cut mid-transfer can still
+    # leave a short, truncated-but-valid-looking file; the real install
+    # script is tens of KB, so a short file is a reliable truncation signal.
+    if [ "$(wc -c < get-docker.sh)" -lt 2000 ] || ! head -n 1 get-docker.sh | grep -q '^#!/'; then
         echo "ERROR: downloaded Docker install script looks invalid or truncated. Aborting." >&2
         rm -f get-docker.sh
         exit 1
@@ -39,9 +41,14 @@ declare -A repos=(
 for repo in "${!repos[@]}"; do
     if [ -d "$repo" ]; then
         echo "$repo already exists. Updating..."
-        # Discard the local maintain.py patch (applied below) before pulling,
-        # otherwise git pull aborts on local changes to a tracked file.
-        (cd "$repo" && git checkout -- . && git pull)
+        if [ "$repo" = "KlipperMaintenance" ]; then
+            # Discard only the local maintain.py patch (re-applied below)
+            # before pulling, not the whole working tree: a blanket discard
+            # would also silently wipe any other local edit in this clone.
+            (cd "$repo" && git checkout -- maintain.py && git pull)
+        else
+            (cd "$repo" && git pull)
+        fi
     else
         git clone "${repos[$repo]}"
     fi
@@ -84,17 +91,28 @@ fi
 # created here before the containers start.
 mkdir -p moonraker/logs moonraker/database
 # Match ownership to the moonraker container's UID/GID instead of making the
-# directories world-writable. Falls back to a permissive chmod if detection fails
-# (e.g. first run before the image can be built). Uses sg so the just-added
+# directories world-writable. Build and run the image directly (bypassing
+# `docker compose run`'s volumes) so this works even before config/moonraker.secrets
+# exists, since that bind mount has create_host_path: false and would otherwise
+# make this whole detection fail on a fresh install. Uses sg so the just-added
 # docker group membership above applies without requiring a new login session.
-MOONRAKER_IDS=$(sg docker -c "docker compose run --rm --no-deps --build --entrypoint sh moonraker -c 'id -u; id -g'" 2>/dev/null | tr -d '\r' || true)
+sg docker -c "docker compose build moonraker"
+MOONRAKER_IMAGE=$(sg docker -c "docker compose config --images moonraker")
+MOONRAKER_IDS=$(sg docker -c "docker run --rm --entrypoint sh '$MOONRAKER_IMAGE' -c 'id -u; id -g'" | tr -d '\r' || true)
 if [ "$(printf '%s\n' "$MOONRAKER_IDS" | wc -l)" -ge 2 ]; then
     MOONRAKER_UID=$(printf '%s\n' "$MOONRAKER_IDS" | sed -n '1p')
     MOONRAKER_GID=$(printf '%s\n' "$MOONRAKER_IDS" | sed -n '2p')
     sudo chown -R "${MOONRAKER_UID}:${MOONRAKER_GID}" moonraker/logs moonraker/database
     chmod 770 moonraker/logs moonraker/database
+    # Also let the host login user read/write these directly (e.g. `cat
+    # moonraker/logs/moonraker.log`) without sudo, instead of falling back
+    # to a world-writable chmod 777.
+    if ! command -v setfacl &> /dev/null; then
+        sudo apt-get install -y acl
+    fi
+    sudo setfacl -R -m "u:${USER}:rwX,d:u:${USER}:rwX" moonraker/logs moonraker/database
 else
-    echo "WARNING: could not determine moonraker container UID/GID; falling back to permissive chmod 777."
+    echo "WARNING: could not determine moonraker container UID/GID (see build/run output above); falling back to permissive chmod 777."
     chmod 777 moonraker/logs moonraker/database
 fi
 # Use sg to apply docker group membership without requiring a new login session
