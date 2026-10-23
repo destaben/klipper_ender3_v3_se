@@ -135,7 +135,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ### 4. Traefik
 
 - **Container Name**: `traefik`
-- **Image**: `traefik:3.2`
+- **Image**: `traefik:3.6`
 - **Ports**:
   - `80:80`: Reverse proxy routing HTTP traffic to Mainsail, Moonraker, and monitoring services.
 

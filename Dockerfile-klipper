@@ -55,7 +55,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      sudo \
       python3 python3-venv \
       libatlas3-base libopenblas0 \
       libjpeg8 libfreetype6 zlib1g \
@@ -65,9 +64,6 @@ RUN apt-get update && \
 
 RUN useradd -ms /bin/bash klipper && \
     adduser klipper dialout && \
-    echo 'klipper ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/klipper && \
-    chmod 0440 /etc/sudoers.d/klipper && \
-    ln -s /bin/true /bin/systemctl && \
     mkdir -p /opt/printer_data/config && \
     chown klipper:klipper /opt/printer_data/config
 

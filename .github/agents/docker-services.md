@@ -10,13 +10,12 @@ Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Doc
 
 | Service | Image | Port / URL |
 |---|---|---|
-| `traefik` | `traefik:3.2` | `:80` (reverse proxy) |
+| `traefik` | `traefik:3.6` | `:80` (reverse proxy) |
 | `mainsail` | `ghcr.io/mainsail-crew/mainsail:v2.12.0` | `http://<host_ip>/` |
 | `klipper` | Custom (`Dockerfile-klipper`) | internal |
 | `moonraker` | Custom (`Dockerfile-moonraker`) | `http://<host_ip>/printer` etc. |
 | `node-exporter` | `prom/node-exporter:v1.9.1` | `http://<host_ip>/nodeexporter` |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.52.0` | `http://<host_ip>/cadvisor` |
-| `usb-watcher` | `python:3.11-slim` | internal |
 
 ## Routing Rules (Traefik)
 
@@ -42,7 +41,6 @@ These directories must exist at the project root for the stack to start:
 3. The `moonraker` container uses `pid: host` and mounts `/run/systemd` and `/run/dbus` for power management.
 4. Resource limits are defined per service — keep them when editing.
 5. Rate limiting is configured on all public-facing Traefik routes — do not remove it.
-6. The `usb-watcher` uses `USB_IDS` env var (`VID:PID` pairs, comma-separated) to filter printer reconnects. Default: `1a86:7523,2341:0042`.
 
 ## Common Commands
 

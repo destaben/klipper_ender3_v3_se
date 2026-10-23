@@ -28,7 +28,7 @@ Help with all tasks related to Klipper and Moonraker configuration files in `con
 |---|---|
 | BLTouch Z offset | 3.305 |
 | Input shaper X | MZV @ 49.6 Hz |
-| Input shaper Y | MZV @ 37.0 Hz |
+| Input shaper Y | MZV @ 38.4 Hz |
 | Extruder PID | kp=20.070 ki=2.193 kd=45.909 |
 | Bed PID | kp=62.105 ki=0.519 kd=1856.165 |
 | Pressure advance | 0.08 |
