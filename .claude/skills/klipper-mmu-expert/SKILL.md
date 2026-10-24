@@ -14,8 +14,8 @@ This skill covers two things: **general Klipper expertise** and **deep knowledge
 1. **Read before you answer.** If the question involves a specific variable, macro, or behavior, grep/read the real file (`config/printer.cfg`, `config/macros/*.cfg`) rather than relying on memory of this skill text — values here are examples/snapshots, not the live source of truth.
 2. **Never tell the user to edit the `#*# <--- SAVE_CONFIG --->` block** in `printer.cfg` — Klipper owns it (input shaper, PID, Z-offset, bed mesh are saved there via `SAVE_CONFIG`).
 3. **Config changes → `FIRMWARE_RESTART`** in Mainsail. Only structural changes (new include files, volume-mounted file renames) need `docker compose restart klipper`.
-4. Prefer pointing the user at **`sp_mmu.cfg`** (user-tunable variables and hook macros) over **`sp_mmu_code.cfg`** (vendored core logic, 80k+ chars, upgraded wholesale from upstream LH Stinger releases — don't suggest hand-editing it unless the user is explicitly patching/upgrading the vendored code).
-5. When a macro name or variable you need isn't in this file, run `grep -n "^\[gcode_macro" config/macros/sp_mmu_code.cfg` (or `sp_mmu.cfg`) to confirm it exists and find its line before describing its behavior.
+4. Prefer pointing the user at **`sp_mmu.cfg`** (user-tunable variables and hook macros) over **`sp_mmu/sp_mmu_code.cfg`** (vendored core logic, 80k+ chars, upgraded wholesale from upstream LH Stinger releases — don't suggest hand-editing it unless the user is explicitly patching/upgrading the vendored code).
+5. When a macro name or variable you need isn't in this file, run `grep -n "^\[gcode_macro" config/macros/sp_mmu/sp_mmu_code.cfg` (or `sp_mmu.cfg`) to confirm it exists and find its line before describing its behavior.
 
 ## General Klipper knowledge to apply
 
@@ -30,8 +30,8 @@ This skill covers two things: **general Klipper expertise** and **deep knowledge
 Source/vendor: https://github.com/lhndo/LH-Stinger/wiki/Pico-MMU — this is a **4-lane** build (`variable_lanes: 4`) using a second MCU named `PICO_MMU` (a BTT EBB42-class board) that drives one `manual_stepper` (the shared feed motor) and one `servo` (lane selector + optional filament stop), plus a single `filament_switch_sensor` used as both runout sensor and loading endstop.
 
 Files:
-- **`config/macros/sp_mmu.cfg`** — hardware pin mapping (`[mcu PICO_MMU]`, `[servo sp_servo]`, `[manual_stepper sp_motor]`, `[tmc2209 manual_stepper sp_motor]`, `[filament_switch_sensor sp_sensor_runout]`), all user-tunable `variable_*` in `_SP_VARS` and `_SP_TIP_FORMING_DEFAULTS`, the three **user hook macros** (`_SP_BEFORE_CHANGE`, `_SP_AFTER_CHANGE`, `_SP_TIP_FORM`), the `T0`–`T5` tool macros, and `[include sp_mmu_code.cfg]` at the very end.
-- **`config/macros/sp_mmu_code.cfg`** — vendored core logic (~90 macros, all `SP_*`/`_SP_*`). Don't suggest editing it for routine tuning; routine tuning lives in `sp_mmu.cfg`'s `_SP_VARS`.
+- **`config/macros/sp_mmu.cfg`** — hardware pin mapping (`[mcu PICO_MMU]`, `[servo sp_servo]`, `[manual_stepper sp_motor]`, `[tmc2209 manual_stepper sp_motor]`, `[filament_switch_sensor sp_sensor_runout]`), all user-tunable `variable_*` in `_SP_VARS` and `_SP_TIP_FORMING_DEFAULTS`, the three **user hook macros** (`_SP_BEFORE_CHANGE`, `_SP_AFTER_CHANGE`, `_SP_TIP_FORM`), the `T0`–`T5` tool macros, and `[include sp_mmu/sp_mmu_code.cfg]` at the very end.
+- **`config/macros/sp_mmu/sp_mmu_code.cfg`** — vendored core logic (kept out of the `macros/*.cfg` glob so it loads once, via `sp_mmu.cfg`) (~90 macros, all `SP_*`/`_SP_*`). Don't suggest editing it for routine tuning; routine tuning lives in `sp_mmu.cfg`'s `_SP_VARS`.
 - **`config/macros/servo_cutter.cfg`** — separate servo (`my_servo`, `PICO_MMU: PB3`) driving the filament cutter blade, plus `CUT_COUNT_INCREMENT`/`CUT_COUNT_STATUS`/`RESET_CUT_COUNT` blade-life tracking (`variable_blade_max_cuts: 5000`, warns every 500 cuts and errors at the max — tell users to run `RESET_CUT_COUNT` only after actually swapping the blade).
 - **`config/macros/MMU_SELECT_PURGE.cfg`** — simple manual test macros (`CHANGE0`–`CHANGE3`): select a lane, heat to 220°C, purge 100 mm. Useful for quick bench testing, not part of the automatic toolchange path.
 - **`config/macros/KAMP_Settings.cfg`** + **`LINE_PURGE.cfg`** — KAMP's adaptive purge-line macro (`LINE_PURGE`), independent of the MMU's own purge mechanism. If a user has both KAMP's `LINE_PURGE` in their slicer's "before layer change"/purge G-code *and* `variable_park_purge: 1` in `_SP_VARS`, they're purging twice — flag that when diagnosing excess purge/oozing complaints.
@@ -60,7 +60,7 @@ Calibration order when something's off: 1) `rotation_distance` on `[manual_stepp
 
 ### Pause / Resume / Runout
 
-`_SP_PAUSE` / `_SP_RESUME` (and the overridden `RESUME` macro in `sp_mmu_code.cfg`) handle park, fan control (`pause_fan_speed`), and small retract/push (`pause_retract`) around any pause — manual or filament-change-triggered. `_SP_SENSOR_IN`/`_SP_SENSOR_OUT` feed the `sp_sensor_runout` filament sensor into `_SP_RUNOUT` → `_SP_RUNOUT_CHECK*` (a 10-step polling chain, `_SP_CHECK_1`..`_SP_CHECK_10`/`_SP_CHECK_END`, each waiting longer before giving up — this is the "why did my MMU wait ~30s then pause" mechanism). `variable_infinite_spool: 1` auto-advances to the next lane on runout instead of pausing (guest lanes excluded; always forces a pause-park during the swap).
+`_SP_PAUSE` / `_SP_RESUME` (and the overridden `RESUME` macro in `sp_mmu/sp_mmu_code.cfg`, which wraps Mainsail's `_MAINSAIL_RESUME` → `RESUME_BASE`) handle park, fan control (`pause_fan_speed`), and small retract/push (`pause_retract`) around any pause — manual or filament-change-triggered. `_SP_SENSOR_IN`/`_SP_SENSOR_OUT` feed the `sp_sensor_runout` filament sensor into `_SP_RUNOUT` → `_SP_RUNOUT_CHECK*` (a 10-step polling chain, `_SP_CHECK_1`..`_SP_CHECK_10`/`_SP_CHECK_END`, each waiting longer before giving up — this is the "why did my MMU wait ~30s then pause" mechanism). `variable_infinite_spool: 1` auto-advances to the next lane on runout instead of pausing (guest lanes excluded; always forces a pause-park during the swap).
 
 ### Debug & test tools
 
@@ -68,7 +68,7 @@ Calibration order when something's off: 1) `rotation_distance` on `[manual_stepp
 - `SP_TEST_SERVO`, `SP_TEST_MMU`, `SP_TEST_LOAD_UNLOAD_EXTRUDER`, `SP_TEST_MANUAL_TIP_FORMING` — safe bench-test macros, recommend these before a full print when a user changed hardware/calibration.
 - `SP_FORCE_MOVE_LANE` / `SP_FORCE_SET_LOADED_LANE` — manual motor moves and state override for calibration without going through the full load/unload logic.
 - `SP_CLEAR_ERROR_CODES` / `_SP_SET_EXIT_CODE` — clears MMU error state after a manual fix.
-- `_CHECK_SETTINGS_VERSION_SP` compares `_SP_VARS.version` against the code's required version — if a user updates `sp_mmu_code.cfg` from upstream LH Stinger and gets a version-mismatch error/notify, tell them to diff upstream's current `sp_mmu.cfg` template against theirs for new/renamed variables before bumping `variable_version`.
+- `_CHECK_SETTINGS_VERSION_SP` compares `_SP_VARS.version` against the code's required version — if a user updates `sp_mmu/sp_mmu_code.cfg` from upstream LH Stinger and gets a version-mismatch error/notify, tell them to diff upstream's current `sp_mmu.cfg` template against theirs for new/renamed variables before bumping `variable_version`.
 - Persisted MMU state (e.g. cut count, loaded-lane memory) lives in `~/printer_data/sp_mmu_data.cfg` via `[save_variables]` — don't suggest changing its `filename:` path casually, other macros assume it.
 
 ## How to answer
