@@ -4,6 +4,8 @@ set -euo pipefail  # Stop on error, treat unset variables as errors, propagate p
 
 # Variables
 KLIPPER_REPO="https://github.com/0xD34D/klipper_ender3_v3_se.git"
+# Same commit as KLIPPER_COMMIT in Dockerfile-klipper, so both build paths use one source.
+KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 CONFIG_FILE="config.ender3_v3_se"
 
@@ -14,11 +16,13 @@ sudo apt install -y git make gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-
 
 # Clone Klipper fork
 if [ -d "klipper" ]; then
-    echo "Klipper directory already exists. Updating..."
-    git -C "klipper" pull
+    echo "Klipper directory already exists. Fetching..."
+    # Fetch rather than pull: the checkout below leaves the clone on a detached commit.
+    git -C "klipper" fetch origin
 else
     git clone "$KLIPPER_REPO" "klipper"
 fi
+git -C "klipper" checkout "$KLIPPER_COMMIT"
 cd "klipper"
 
 # Clean previous build artifacts

@@ -33,8 +33,10 @@ RUN git clone "$GITHUB_FORK_URL" /home/klipper/klipper && \
     git -C /home/klipper/klipper checkout "$KLIPPER_COMMIT" && \
     rm -rf /home/klipper/klipper/.git
 
-# Clone Shake&Tune
-RUN git clone --depth 1 https://github.com/Frix-x/klippain-shaketune.git && \
+# Clone Shake&Tune, pinned to a fixed commit so rebuilds are reproducible
+ARG SHAKETUNE_COMMIT=354ee4be6db218715239f7b9411c2c37fdea23dd
+RUN git clone https://github.com/Frix-x/klippain-shaketune.git && \
+    git -C klippain-shaketune checkout "$SHAKETUNE_COMMIT" && \
     rm -rf /home/klipper/klippain-shaketune/.git
 
 RUN chown -R klipper:klipper /home/klipper

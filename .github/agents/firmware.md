@@ -21,7 +21,7 @@ Help with all tasks related to building and flashing Klipper firmware: `build_fi
 The `build_firmware.sh` script:
 
 1. Installs build dependencies (`gcc-arm-none-eabi`, `binutils-arm-none-eabi`, etc.)
-2. Clones or updates the Klipper fork from `https://github.com/0xD34D/klipper_ender3_v3_se.git`
+2. Clones or fetches the Klipper fork from `https://github.com/0xD34D/klipper_ender3_v3_se.git`, then checks out the pinned `KLIPPER_COMMIT` (the same commit `Dockerfile-klipper` uses)
 3. Copies `config.ender3_v3_se` as `.config` inside the `klipper/` directory
 4. Runs `make` to produce `klipper/out/klipper.bin`
 5. Renames it to `klipper/out/klipper_<timestamp>.bin`
