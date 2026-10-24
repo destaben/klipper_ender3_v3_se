@@ -188,10 +188,10 @@ index 00000000..43272679
 +}
 diff --git a/src/linux/tmcuart_virtual.c b/src/linux/tmcuart_virtual.c
 new file mode 100644
-index 00000000..a932a5eb
+index 00000000..128b9a16
 --- /dev/null
 +++ b/src/linux/tmcuart_virtual.c
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,167 @@
 +// Virtual TMC2209 single-wire UART for the simulator
 +//
 +// Replaces the bit-banged tmcuart when CONFIG_LINUX_VIRTUAL_GPIO is set.
@@ -311,15 +311,22 @@ index 00000000..a932a5eb
 +
 +    uint8_t msg[TMC_WRITE_MSG_LEN];
 +    uint8_t n = tmc_unpack(write, write_len, msg, sizeof(msg));
-+    if (n < TMC_READ_MSG_LEN || msg[0] != TMC_SYNC_READ
-+        || msg[1] >= TMC_ADDR_COUNT)
++    if (n < TMC_READ_MSG_LEN) {
++        output("tmcuart: bad serial framing, %u bytes", write_len);
 +        return;
++    }
++    if (msg[0] != TMC_SYNC_READ || msg[1] >= TMC_ADDR_COUNT) {
++        output("tmcuart: bad sync %u or addr %u", msg[0], msg[1]);
++        return;
++    }
 +    uint8_t addr = msg[1], reg = msg[2] & 0x7f;
 +
 +    if (n == TMC_WRITE_MSG_LEN && (msg[2] & 0x80)) {
 +        // Write request: sync, addr, reg|0x80, 4 data bytes, crc
-+        if (tmc_crc8(msg, 7) != msg[7])
++        if (tmc_crc8(msg, 7) != msg[7]) {
++            output("tmcuart: write crc mismatch reg %u", reg);
 +            return;
++        }
 +        tmc_regs[addr][reg] = ((uint32_t)msg[3] << 24)
 +            | ((uint32_t)msg[4] << 16) | ((uint32_t)msg[5] << 8) | msg[6];
 +        tmc_ifcnt[addr]++;
@@ -329,8 +336,15 @@ index 00000000..a932a5eb
 +    }
 +    if (n == TMC_READ_MSG_LEN && !(msg[2] & 0x80)) {
 +        // Read request: sync, addr, reg, crc
-+        if (tmc_crc8(msg, 3) != msg[3] || read_len != TMC_DATA_LEN)
++        if (tmc_crc8(msg, 3) != msg[3]) {
++            output("tmcuart: read crc mismatch reg %u", reg);
 +            return;
++        }
++        if (read_len != TMC_DATA_LEN) {
++            output("tmcuart: read length %u, expected %u", read_len,
++                   TMC_DATA_LEN);
++            return;
++        }
 +        uint32_t val = tmc_read_reg(addr, reg);
 +        uint8_t reply[TMC_REPLY_LEN] = {
 +            TMC_SYNC_REPLY, TMC_REPLY_ADDR, reg,
@@ -340,6 +354,8 @@ index 00000000..a932a5eb
 +        uint8_t data[TMC_DATA_LEN];
 +        tmc_pack(reply, TMC_REPLY_LEN, data);
 +        sendf("tmcuart_response oid=%c read=%*s", args[0], TMC_DATA_LEN, data);
++        return;
 +    }
++    output("tmcuart: unsupported request, %u bytes", n);
 +}
 +DECL_COMMAND(command_tmcuart_send, "tmcuart_send oid=%c write=%*s read=%c");

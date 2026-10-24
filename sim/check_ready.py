@@ -22,7 +22,13 @@ def query_state(path):
             if not chunk:
                 raise OSError("API socket closed")
             buf += chunk
-    return json.loads(buf[:-1])["result"]
+    reply = json.loads(buf[:-1])
+    if "error" in reply:
+        message = reply["error"].get("message", "unknown API error")
+        raise ValueError("API error: %s" % message.strip())
+    if "result" not in reply:
+        raise ValueError("API reply has no result: %r" % reply)
+    return reply["result"]
 
 
 def main():

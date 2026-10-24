@@ -8,7 +8,6 @@
 #
 # Usage: gen_sim_config.py <config-src-dir> <config-dst-dir>
 
-import glob
 import os
 import re
 import shutil
@@ -75,20 +74,22 @@ def main():
     for rel in DROP_FILES:
         os.remove(os.path.join(dst, rel))
 
-    for path in glob.glob(os.path.join(dst, "**", "*.cfg"), recursive=True):
-        edit(path, drop_sections)
-
     def printer_overrides(text):
         for old, new in PRINTER_REPLACEMENTS:
             text = replace_exact(text, old, new, "printer.cfg")
         return text
+
+    def printer_transform(text):
+        # The dropped sections are only defined in printer.cfg; an unrelated
+        # file never loses a section, so its errors still reach Klippy
+        return printer_overrides(drop_sections(text))
 
     def mmu_overrides(text):
         for old, new in MMU_REPLACEMENTS:
             text = replace_exact(text, old, new, "macros/sp_mmu.cfg")
         return text
 
-    edit(os.path.join(dst, "printer.cfg"), printer_overrides)
+    edit(os.path.join(dst, "printer.cfg"), printer_transform)
     edit(os.path.join(dst, "macros", "sp_mmu.cfg"), mmu_overrides)
     print("generated simulator config in %s" % dst)
 

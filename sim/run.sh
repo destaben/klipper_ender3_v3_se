@@ -24,7 +24,22 @@ python3 "$SIM_DIR/gen_sim_config.py" /printer-config "$SIM_CONFIG"
 MCU_PID=$!
 "$KLIPPER_DIR/out/klipper.elf" -I /tmp/klipper_pico_mmu >"$LOG_DIR/mcu_pico.log" 2>&1 &
 PICO_PID=$!
-sleep 2
+
+# Each virtual MCU creates its serial pty link when it starts. Klippy must not
+# connect before the link exists, so wait for it instead of sleeping.
+wait_for_pty() {
+    waited=0
+    while [ ! -e "$1" ]; do
+        waited=$((waited + 1))
+        if [ "$waited" -gt 30 ]; then
+            echo "MCU serial port $1 did not appear" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+}
+wait_for_pty /tmp/klipper_host_mcu
+wait_for_pty /tmp/klipper_pico_mmu
 
 KLIPPY_PID=""
 cd "$KLIPPER_DIR"

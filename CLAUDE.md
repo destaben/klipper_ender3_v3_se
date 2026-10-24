@@ -23,13 +23,14 @@ Only run this before a PR, not after every individual edit.
 git ls-files '*.sh' | xargs docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable
 ```
 
-### Hadolint (both Dockerfiles)
+### Hadolint (all Dockerfiles)
 The CI action runs with `failure-threshold: error`, so info-level findings
 (e.g. `DL3066` on a non-numeric `USER`) don't fail the job — pass the same
 threshold locally or you'll chase findings CI doesn't actually care about:
 ```bash
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-klipper
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-moonraker
+docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < sim/Dockerfile-sim
 ```
 
 ### docker compose config validation
