@@ -295,7 +295,7 @@ With filament inserted it must report `filament detected`; with filament removed
 
 ## Step 7 — Disable the original runout pause in printer.cfg
 
-`printer.cfg` already has:
+If your `printer.cfg` contains the stock filament sensor section (this repo's `printer.cfg` does not), it looks like:
 
 ```ini
 [filament_switch_sensor filament_sensor]

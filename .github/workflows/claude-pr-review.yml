@@ -9,15 +9,12 @@
 #     ran `claude setup-token`; fine here since this is a personal repo.
 #   - ANTHROPIC_API_KEY: pay-per-token API billing, decoupled from your
 #     subscription's weekly/session cap. Use this if CI review would otherwise
-#     compete with your own interactive usage for the same quota — see
-#     docs/decisions/0007-pro-plan-cost-sustainability.md.
+#     compete with your own interactive usage for the same quota.
 #
 # Runs on every PR (opened/synchronize/reopened), not just on an
-# `@claude review` comment: see docs/decisions/0011-propagated-auto-pr-review.md,
-# which narrows 0007's comment-only trigger now that the review runs on
-# Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
-# acceptable against the shared subscription quota. The comment and manual
-# triggers stay as a fallback.
+# `@claude review` comment. The review runs on Haiku 5.5 at low effort, which
+# keeps the per-push cost acceptable against the shared subscription quota.
+# The comment and manual triggers stay as a fallback.
 name: claude-pr-review
 
 on:
@@ -44,14 +41,14 @@ jobs:
                 github.event.comment.author_association))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Run bug-hunter and documenter review
         id: review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@16f9f71ab9c490faf367f94dd294897edc25be33  # v1
         with:
           # Pick exactly one of these two secrets; see the header comment.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

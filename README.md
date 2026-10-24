@@ -84,7 +84,7 @@ This is the recommended approach for Raspberry Pi 3B+ and later deployments wher
 git clone https://github.com/destaben/klipper_ender3_v3_se.git
 cd klipper_ender3_v3_se
 # Clone required plugin dependencies
-sudo bash setup_services.sh --no-build   # or manually clone deps (see setup_services.sh)
+sudo bash setup_services.sh   # clones the plugin dependencies; see the script for details
 # Pull prebuilt images from the registry
 docker compose pull klipper moonraker
 # Start everything
@@ -171,7 +171,10 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── setup_services.sh          # Script to install Docker and start services
 ├── set_static_wifi.sh         # Script to set a static WiFi IP
 ├── english_install_guide.md   # Multicolor install guide (English)
-└── spanish_install_guide.md   # Multicolor install guide (Spanish)
+├── spanish_install_guide.md   # Multicolor install guide (Spanish)
+├── nebula_setup_guide.md      # Creality Nebula Smart Kit setup guide
+├── patch_configfile.sh        # Helper for patching the Klipper config
+└── .github/                   # CI workflows and AI agent/skill definitions
 ```
 
 ## Notes
@@ -181,7 +184,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - The `build_firmware.sh` script automates the firmware build and uses the included configuration.
 - Traefik acts as a reverse proxy, exposing the services via HTTP on port 80.
 - The Klipper container uses the [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se) fork. This fork does not include the stock Ender 3 V3 SE display support that the previous `jpcurti/ender3-v3-se-klipper-with-display` fork provided (on-screen filament-lane macros, etc.).
-- **Home Assistant integration**: `config/moonraker.conf` contains a `[power printer]` section that requires a Home Assistant long-lived access token. The placeholder `YOUR_HOMEASSISTANT_TOKEN_HERE` must be replaced with your own token before starting the services. Generate one in Home Assistant under **Profile → Long-Lived Access Tokens**. Never commit real tokens to version control.
+- **Home Assistant integration**: `config/moonraker.conf` contains a `[power printer]` section that requires a Home Assistant long-lived access token. Copy `config/moonraker.secrets.example` to `config/moonraker.secrets` and replace `YOUR_HOMEASSISTANT_TOKEN_HERE` with your own token before starting the services. `docker-compose.yaml` mounts that file, and Moonraker will not start without it. Generate one in Home Assistant under **Profile → Long-Lived Access Tokens**. Never commit real tokens to version control.
 
 ## FAQ
 
