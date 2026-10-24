@@ -25,8 +25,9 @@ def query_state(path):
             buf += chunk
     reply = json.loads(buf[:-1])
     if "error" in reply:
-        message = reply["error"].get("message", "unknown API error")
-        raise ValueError("API error: %s" % message.strip())
+        error = reply["error"]
+        message = error.get("message") if isinstance(error, dict) else error
+        raise ValueError("API error: %s" % str(message or "unknown").strip())
     if "result" not in reply:
         raise ValueError("API reply has no result: %r" % reply)
     return reply["result"]
@@ -57,7 +58,7 @@ def main():
         try:
             info = query_state(path)
             state = info.get("state")
-            message = info.get("state_message", "").replace("\n", " ")
+            message = (info.get("state_message") or "").replace("\n", " ")
             print("klippy_state: %s | %s" % (state, message[:200]), flush=True)
             if state == "ready":
                 return 0

@@ -54,6 +54,8 @@ if [ "$status" -ne 0 ]; then
     echo "--- klippy.log (errors and last lines)" >&2
     grep -E "Config error|Traceback|Error|error" "$LOG_DIR/klippy.log" | grep -v "RESPOND\|{" | tail -30 >&2 || true
     tail -20 "$LOG_DIR/klippy.log" >&2 || true
+    echo "--- virtual MCU logs (last lines)" >&2
+    tail -5 "$LOG_DIR/mcu.log" "$LOG_DIR/mcu_pico.log" >&2 || true
 fi
 
 kill "$KLIPPY_PID" "$MCU_PID" "$PICO_PID" 2>/dev/null || true

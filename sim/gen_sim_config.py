@@ -23,9 +23,6 @@ DROP_SECTIONS = {
     "temperature_sensor Ender3V3SE_MCU",
     "temperature_sensor Pico_MMU",
 }
-# Whole files the simulator does not load. Empty: [maintain] comes from
-# KlipperMaintenance, which Dockerfile-sim installs.
-DROP_FILES = []
 
 PRINTER_REPLACEMENTS = [
     ("serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
@@ -52,18 +49,25 @@ def drop_sections(text):
     # A dropped section runs until the next section header or the SAVE_CONFIG
     # block ("#*#" lines). Blank lines do not end it, so a blank line inside
     # the section cannot leave its options attached to the previous section.
-    out, skip = [], False
+    out, skip, found = [], False, set()
     for line in text.splitlines(True):
         match = re.match(r"^\[([^\]]+)\]", line)
         if match:
-            skip = match.group(1).strip() in DROP_SECTIONS
+            name = match.group(1).strip()
+            skip = name in DROP_SECTIONS
             if skip:
+                found.add(name)
                 print("sim: not loaded, unsupported in virtual printer: [%s]"
-                      % match.group(1).strip())
+                      % name)
         elif line.startswith("#*#"):
             skip = False
         if not skip:
             out.append(line)
+    # A renamed sensor would otherwise stay loaded without any notice
+    missing = DROP_SECTIONS - found
+    if missing:
+        sys.exit("sim: sections to drop not found in printer.cfg: %s"
+                 % ", ".join(sorted(missing)))
     return "".join(out)
 
 
@@ -80,10 +84,6 @@ def main():
     src, dst = sys.argv[1], sys.argv[2]
     shutil.rmtree(dst, ignore_errors=True)
     shutil.copytree(src, dst)
-
-    for rel in DROP_FILES:
-        print("sim: not loaded, unsupported in virtual printer: %s" % rel)
-        os.remove(os.path.join(dst, rel))
 
     def printer_overrides(text):
         for old, new in PRINTER_REPLACEMENTS:
