@@ -58,8 +58,8 @@ services:
       # Maintenance script
       - ./KlipperMaintenance/maintain.py:/home/klipper/klipper/klippy/extras/maintain.py
       # Chopper Resonance Tuner configuration
-      - ./chopper-resonance-tuner/gcode_shell_command.py:/klipper/klippy/extras/gcode_shell_command.py
-      - ./chopper-resonance-tuner:/home/klippy/chopper-resonance-tuner
+      - ./chopper-resonance-tuner/gcode_shell_command.py:/home/klipper/klipper/klippy/extras/gcode_shell_command.py
+      - ./chopper-resonance-tuner:/home/klipper/chopper-resonance-tuner
     deploy:
       resources:
         limits:

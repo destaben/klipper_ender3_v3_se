@@ -1,7 +1,7 @@
 #!/bin/bash
 # Set a static IP for a NetworkManager-managed WiFi connection on Linux
 # Usage: sudo ./set_static_wifi.sh <connection_name> <ip_address> <gateway> <dns>
-# Example: sudo ./set_static_wifi.sh "MIWIFI_7A19" 192.168.1.225/24 192.168.1.1 "192.168.1.1 8.8.8.8"
+# Example: sudo ./set_static_wifi.sh "my-wifi" 192.168.1.50/24 192.168.1.1 "192.168.1.1 8.8.8.8"
 
 set -euo pipefail  # Stop on error, treat unset variables as errors, propagate pipe failures
 
@@ -24,5 +24,7 @@ nmcli con mod "$CONN_NAME" ipv4.addresses "$IP"
 nmcli con mod "$CONN_NAME" ipv4.gateway "$GATEWAY"
 nmcli con mod "$CONN_NAME" ipv4.dns "$DNS"
 nmcli con mod "$CONN_NAME" ipv4.method manual
-nmcli con down "$CONN_NAME"
+# Re-activating the connection applies the modified settings in one step.
+# A separate "down" followed by "up" would leave the link down for good if
+# the session is running over this same Wi-Fi connection and "up" never runs.
 nmcli con up "$CONN_NAME"
