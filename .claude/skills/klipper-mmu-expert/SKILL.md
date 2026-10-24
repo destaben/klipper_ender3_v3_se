@@ -60,7 +60,7 @@ Calibration order when something's off: 1) `rotation_distance` on `[manual_stepp
 
 ### Pause / Resume / Runout
 
-`_SP_PAUSE` / `_SP_RESUME` (and the overridden `RESUME` macro in `sp_mmu/sp_mmu_code.cfg`, which wraps Mainsail's `_MAINSAIL_RESUME` → `RESUME_BASE`) handle park, fan control (`pause_fan_speed`), and small retract/push (`pause_retract`) around any pause — manual or filament-change-triggered. `_SP_SENSOR_IN`/`_SP_SENSOR_OUT` feed the `sp_sensor_runout` filament sensor into `_SP_RUNOUT` → `_SP_RUNOUT_CHECK*` (a 10-step polling chain, `_SP_CHECK_1`..`_SP_CHECK_10`/`_SP_CHECK_END`, each waiting longer before giving up — this is the "why did my MMU wait ~30s then pause" mechanism). `variable_infinite_spool: 1` auto-advances to the next lane on runout instead of pausing (guest lanes excluded; always forces a pause-park during the swap).
+`_SP_PAUSE` / `_SP_RESUME` (and the overridden `RESUME` macro in `sp_mmu/sp_mmu_code.cfg`, which renames the built-in `RESUME` to `RESUME_BASE` and wraps Mainsail's `_MAINSAIL_RESUME`, which calls `RESUME_BASE`) handle park, fan control (`pause_fan_speed`), and small retract/push (`pause_retract`) around any pause — manual or filament-change-triggered. `_SP_SENSOR_IN`/`_SP_SENSOR_OUT` feed the `sp_sensor_runout` filament sensor into `_SP_RUNOUT` → `_SP_RUNOUT_CHECK*` (a 10-step polling chain, `_SP_CHECK_1`..`_SP_CHECK_10`/`_SP_CHECK_END`, each waiting longer before giving up — this is the "why did my MMU wait ~30s then pause" mechanism). `variable_infinite_spool: 1` auto-advances to the next lane on runout instead of pausing (guest lanes excluded; always forces a pause-park during the swap).
 
 ### Debug & test tools
 
