@@ -2,6 +2,9 @@
 # Set a static IP for a NetworkManager-managed WiFi connection on Linux
 # Usage: sudo ./set_static_wifi.sh <connection_name> <ip_address> <gateway> <dns>
 # Example: sudo ./set_static_wifi.sh "my-wifi" 192.168.1.50/24 192.168.1.1 "192.168.1.1 8.8.8.8"
+# Note: the IP can change mid-run. If you are connected over SSH on this same
+# Wi-Fi, run it from a local console or under setsid/nohup, or the session may
+# drop before the activation finishes. The connection stays configured either way.
 
 set -euo pipefail  # Stop on error, treat unset variables as errors, propagate pipe failures
 
