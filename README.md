@@ -109,7 +109,7 @@ The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) work
 2. Pushes images to `ghcr.io/destaben/klipper_ender3_v3_se/<service>`.
 3. Applies `latest`, commit-SHA, and version tags automatically.
 
-The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/` or `sim/`. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion.
+The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion.
 
 ## Services
 

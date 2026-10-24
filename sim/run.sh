@@ -48,7 +48,7 @@ cd "$KLIPPER_DIR"
 KLIPPY_PID=$!
 
 status=0
-/opt/klippy-env/bin/python "$SIM_DIR/check_ready.py" "$API_SOCKET" "$TIMEOUT" || status=$?
+/opt/klippy-env/bin/python "$SIM_DIR/check_ready.py" "$API_SOCKET" "$TIMEOUT" "$KLIPPY_PID" || status=$?
 
 if [ "$status" -ne 0 ]; then
     echo "--- klippy.log (errors and last lines)" >&2

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Poll a Klippy API socket until the printer reports ready or the timeout ends.
 #
-# Usage: check_ready.py <api-socket> <timeout-seconds>
-# Exit status 0 when klippy_state is "ready", 1 otherwise.
+# Usage: check_ready.py <api-socket> <timeout-seconds> [klippy-pid]
+# Exit status 0 when klippy_state is "ready", 1 otherwise. With a pid, a
+# Klippy process that exits first fails the check at once.
 
 import json
 import socket
@@ -31,11 +32,28 @@ def query_state(path):
     return reply["result"]
 
 
+def process_running(pid):
+    # A dead child stays a zombie until its parent reaps it, and kill(pid, 0)
+    # still succeeds for a zombie, so read the state from /proc instead
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            stat = f.read()
+    except OSError:
+        return False
+    state = stat.rsplit(")", 1)[1].split()[0]
+    return state not in ("Z", "X")
+
+
 def main():
     path, timeout = sys.argv[1], float(sys.argv[2])
+    pid = int(sys.argv[3]) if len(sys.argv) > 3 else None
     deadline = time.monotonic() + timeout
     state = None
     while time.monotonic() < deadline:
+        if pid is not None and not process_running(pid):
+            print("klippy process %d exited before reporting ready" % pid,
+                  flush=True)
+            return 1
         try:
             info = query_state(path)
             state = info.get("state")

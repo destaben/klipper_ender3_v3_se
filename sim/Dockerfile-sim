@@ -27,18 +27,21 @@ RUN git clone "$GITHUB_FORK_URL" klipper && \
     git -C klipper checkout "$KLIPPER_COMMIT" && \
     rm -rf klipper/.git
 
+# -F0: fail on any hunk that does not apply exactly, instead of fuzzing it in
 COPY sim/patches /tmp/sim-patches
-RUN patch -d /opt/klipper -p1 < /tmp/sim-patches/0001-virtual-gpio-and-tmcuart.patch
+RUN patch -F0 -d /opt/klipper -p1 < /tmp/sim-patches/0001-virtual-gpio-and-tmcuart.patch
 
 # Shake&Tune is part of the printer config ([shaketune] sections), as in Dockerfile-klipper
 RUN git clone "$SHAKETUNE_URL" shaketune && \
     git -C shaketune checkout "$SHAKETUNE_COMMIT" && \
     cp -r shaketune/shaketune klipper/klippy/extras/
 
+# constraints.txt pins every package to the versions the boot check was run with
+COPY sim/constraints.txt /tmp/constraints.txt
 RUN python3 -m venv /opt/klippy-env && \
-    /opt/klippy-env/bin/pip install --no-cache-dir \
+    /opt/klippy-env/bin/pip install --no-cache-dir -c /tmp/constraints.txt \
       greenlet cffi pyserial jinja2 markupsafe && \
-    /opt/klippy-env/bin/pip install --no-cache-dir \
+    /opt/klippy-env/bin/pip install --no-cache-dir -c /tmp/constraints.txt \
       -r /opt/shaketune/requirements.txt && \
     rm -rf /opt/shaketune
 

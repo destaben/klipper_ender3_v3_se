@@ -2,9 +2,12 @@
 # Copy the printer config and apply the overrides the virtual printer needs.
 #
 # Only hardware the simulator cannot provide is changed: serial ports, host
-# sensors, MCU temperature sensors and the Klipper fork-only option that the
-# virtual pty ignores. Every replacement must match, so a config change that
-# makes an override stale fails the check instead of passing silently.
+# sensors, MCU temperature sensors, and restart_method on the main MCU (the
+# fork ignores it on a /tmp/klipper_host_* pty and rejects it as unused). The
+# MMU MCU's pty does not match that prefix, so the fork reads its
+# restart_method and the option is kept there. Every replacement must match
+# exactly once, so a config change that makes an override stale fails the
+# check instead of passing silently.
 #
 # Usage: gen_sim_config.py <config-src-dir> <config-dst-dir>
 
@@ -45,6 +48,9 @@ def replace_exact(text, old, new, path):
 
 
 def drop_sections(text):
+    # A dropped section runs until the next section header or the SAVE_CONFIG
+    # block ("#*#" lines). Blank lines do not end it, so a blank line inside
+    # the section cannot leave its options attached to the previous section.
     out, skip = [], False
     for line in text.splitlines(True):
         match = re.match(r"^\[([^\]]+)\]", line)
@@ -53,7 +59,7 @@ def drop_sections(text):
             if skip:
                 print("sim: not loaded, unsupported in virtual printer: [%s]"
                       % match.group(1).strip())
-        elif skip and line.strip() == "":
+        elif line.startswith("#*#"):
             skip = False
         if not skip:
             out.append(line)
@@ -61,7 +67,7 @@ def drop_sections(text):
 
 
 def edit(path, transform):
-    with open(path, errors="ignore") as f:
+    with open(path) as f:
         text = f.read()
     new = transform(text)
     if new != text:

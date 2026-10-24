@@ -55,5 +55,16 @@ rules:
     allowed-values: ['true', 'false', 'on', 'off']" $(git ls-files '*.yml' '*.yaml')
 ```
 
+### Virtual printer boot check (if you touched `config/` or `sim/`)
+`.github/workflows/sim-boot.yml` boots `config/` in a virtual printer and
+fails if Klippy does not reach `ready`. Run the same check locally:
+```bash
+docker build -f sim/Dockerfile-sim -t klipper-sim . && \
+docker run --rm -v "$PWD/config:/printer-config:ro" klipper-sim
+```
+It does not cover what the sim skips, which the run prints as `sim: not
+loaded, ...` (currently `helpers/maintain.cfg` and two MCU temperature
+sensors). Heating and motion are not simulated.
+
 If any of these fail, fix the issue — even in a file your change didn't
 touch — before pushing.
