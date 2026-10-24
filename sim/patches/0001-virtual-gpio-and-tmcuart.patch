@@ -1,0 +1,345 @@
+diff --git a/src/Makefile b/src/Makefile
+index fb8f7da0..58a79876 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -10,7 +10,9 @@ src-$(CONFIG_WANT_HARD_PWM) += pwmcmds.c
+ src-$(CONFIG_HAVE_GPIO_SDIO) += sdiocmds.c
+ 
+ src-$(CONFIG_WANT_BUTTONS) += buttons.c
++ifneq ($(CONFIG_LINUX_VIRTUAL_GPIO),y)
+ src-$(CONFIG_WANT_TMCUART) += tmcuart.c
++endif
+ src-$(CONFIG_WANT_NEOPIXEL) += neopixel.c
+ src-$(CONFIG_WANT_PULSE_COUNTER) += pulse_counter.c
+ src-$(CONFIG_WANT_ST7920) += lcd_st7920.c
+diff --git a/src/linux/Kconfig b/src/linux/Kconfig
+index 661f3c30..472eedf3 100644
+--- a/src/linux/Kconfig
++++ b/src/linux/Kconfig
+@@ -16,6 +16,10 @@ config BOARD_DIRECTORY
+     string
+     default "linux"
+ 
++config LINUX_VIRTUAL_GPIO
++    bool "Virtual GPIO and ADC (simulator, no hardware)"
++    default n
++
+ config CLOCK_FREQ
+     int
+     default 50000000
+diff --git a/src/linux/Makefile b/src/linux/Makefile
+index 7c1de7c1..88553729 100644
+--- a/src/linux/Makefile
++++ b/src/linux/Makefile
+@@ -3,10 +3,17 @@
+ dirs-y += src/linux src/generic
+ 
+ src-y += linux/main.c linux/timer.c linux/console.c linux/watchdog.c
+-src-y += linux/pca9685.c linux/spidev.c linux/analog.c linux/hard_pwm.c
+-src-y += linux/i2c.c linux/gpio.c generic/crc16_ccitt.c generic/alloc.c
++src-y += linux/pca9685.c linux/spidev.c linux/hard_pwm.c
++src-y += linux/i2c.c generic/crc16_ccitt.c generic/alloc.c
+ src-y += linux/sensor_ds18b20.c
+ 
++ifeq ($(CONFIG_LINUX_VIRTUAL_GPIO),y)
++src-y += linux/gpio_virtual.c
++src-$(CONFIG_WANT_TMCUART) += linux/tmcuart_virtual.c
++else
++src-y += linux/gpio.c linux/analog.c
++endif
++
+ CFLAGS_klipper.elf += -lutil -lrt -lpthread
+ 
+ flash: $(OUT)klipper.elf
+diff --git a/src/linux/gpio_virtual.c b/src/linux/gpio_virtual.c
+new file mode 100644
+index 00000000..43272679
+--- /dev/null
++++ b/src/linux/gpio_virtual.c
+@@ -0,0 +1,129 @@
++// Virtual GPIO and ADC for running the firmware without real hardware
++//
++// Pins live in memory, so the host does not need /dev/gpiochipN or IIO
++// devices. Pin names match the STM32 ports used by the printer config.
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#include <stdint.h> // uint8_t
++#include "command.h" // shutdown
++#include "gpio.h" // gpio_out_write
++#include "sched.h" // sched_shutdown
++
++#define VGPIO_PINS_PER_PORT 16
++#define VGPIO_PORTS 8
++#define VGPIO_COUNT (VGPIO_PINS_PER_PORT * VGPIO_PORTS)
++
++#define VGPIO_MODE_NONE 0
++#define VGPIO_MODE_OUT 1
++#define VGPIO_MODE_IN 2
++
++DECL_CONSTANT("ADC_MAX", 4095); // Assume 12bit adc
++
++DECL_ENUMERATION_RANGE("pin", "PA0", 0 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PB0", 1 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PC0", 2 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PD0", 3 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PE0", 4 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PF0", 5 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PG0", 6 * VGPIO_PINS_PER_PORT, 16);
++DECL_ENUMERATION_RANGE("pin", "PH0", 7 * VGPIO_PINS_PER_PORT, 16);
++
++struct gpio_line {
++    uint8_t mode;
++    uint8_t value;
++};
++static struct gpio_line vgpio[VGPIO_COUNT];
++
++// Simulated ADC readings, one per pin. Default to room temperature on setup.
++// 25C with an EPCOS 100K thermistor and the default 4.7k pullup (ADC_MAX 4095)
++#define VADC_ROOM 3911
++static uint16_t vadc[VGPIO_COUNT];
++
++static struct gpio_line *
++vgpio_get(uint32_t pin)
++{
++    if (pin >= VGPIO_COUNT)
++        shutdown("Invalid virtual gpio pin");
++    return &vgpio[pin];
++}
++
++struct gpio_out
++gpio_out_setup(uint32_t pin, uint8_t val)
++{
++    struct gpio_line *line = vgpio_get(pin);
++    line->mode = VGPIO_MODE_OUT;
++    line->value = !!val;
++    return (struct gpio_out){ .line = line };
++}
++
++void
++gpio_out_reset(struct gpio_out g, uint8_t val)
++{
++    g.line->mode = VGPIO_MODE_OUT;
++    g.line->value = !!val;
++}
++
++void
++gpio_out_write(struct gpio_out g, uint8_t val)
++{
++    g.line->value = !!val;
++}
++
++void
++gpio_out_toggle_noirq(struct gpio_out g)
++{
++    g.line->value ^= 1;
++}
++
++void
++gpio_out_toggle(struct gpio_out g)
++{
++    g.line->value ^= 1;
++}
++
++struct gpio_in
++gpio_in_setup(uint32_t pin, int8_t pull_up)
++{
++    struct gpio_line *line = vgpio_get(pin);
++    line->mode = VGPIO_MODE_IN;
++    return (struct gpio_in){ .line = line };
++}
++
++void
++gpio_in_reset(struct gpio_in g, int8_t pull_up)
++{
++    g.line->mode = VGPIO_MODE_IN;
++}
++
++uint8_t
++gpio_in_read(struct gpio_in g)
++{
++    return g.line->value;
++}
++
++struct gpio_adc
++gpio_adc_setup(uint32_t pin)
++{
++    vgpio_get(pin);
++    if (!vadc[pin])
++        vadc[pin] = VADC_ROOM;
++    return (struct gpio_adc){ .fd = pin };
++}
++
++uint32_t
++gpio_adc_sample(struct gpio_adc g)
++{
++    return 0;
++}
++
++uint16_t
++gpio_adc_read(struct gpio_adc g)
++{
++    return vadc[g.fd];
++}
++
++void
++gpio_adc_cancel_sample(struct gpio_adc g)
++{
++}
+diff --git a/src/linux/tmcuart_virtual.c b/src/linux/tmcuart_virtual.c
+new file mode 100644
+index 00000000..a932a5eb
+--- /dev/null
++++ b/src/linux/tmcuart_virtual.c
+@@ -0,0 +1,151 @@
++// Virtual TMC2209 single-wire UART for the simulator
++//
++// Replaces the bit-banged tmcuart when CONFIG_LINUX_VIRTUAL_GPIO is set.
++// Requests are decoded from the same serial-framed bytes the host sends and
++// answered from an in-memory register file for each driver address, so the
++// driver initialization path runs without a real TMC2209 on the line.
++//
++// This file may be distributed under the terms of the GNU GPLv3 license.
++
++#include <string.h> // memset
++#include "basecmd.h" // oid_alloc
++#include "command.h" // DECL_COMMAND
++
++#define TMC_ADDR_COUNT 4
++#define TMC_REG_COUNT 128
++#define TMC_REG_IFCNT 0x02
++#define TMC_SYNC_READ 0xf5
++#define TMC_SYNC_REPLY 0x05
++#define TMC_REPLY_ADDR 0xff
++#define TMC_READ_MSG_LEN 4
++#define TMC_WRITE_MSG_LEN 8
++#define TMC_REPLY_LEN 8
++#define TMC_DATA_LEN 10
++
++struct tmcuart_s {
++    uint8_t allocated;
++};
++
++// Simulated register file, one per driver address
++static uint32_t tmc_regs[TMC_ADDR_COUNT][TMC_REG_COUNT];
++static uint8_t tmc_ifcnt[TMC_ADDR_COUNT];
++
++static uint8_t
++tmc_crc8(const uint8_t *data, uint8_t len)
++{
++    uint8_t crc = 0, i;
++    for (; len; len--, data++) {
++        uint8_t b = *data;
++        for (i = 0; i < 8; i++) {
++            if ((crc >> 7) ^ (b & 0x01))
++                crc = (crc << 1) ^ 0x07;
++            else
++                crc = (crc << 1);
++            b >>= 1;
++        }
++    }
++    return crc;
++}
++
++// Recover bytes from the serial framing: 10 bits per byte, start bit 0
++// first, eight data bits LSB first, stop bit 1. Returns 0 on bad framing.
++static uint8_t
++tmc_unpack(const uint8_t *bits, uint8_t nbytes, uint8_t *out, uint8_t max)
++{
++    uint8_t n = (nbytes * 8) / 10, k, j;
++    if (n > max)
++        return 0;
++    for (k = 0; k < n; k++) {
++        uint16_t v = 0;
++        for (j = 0; j < 10; j++) {
++            uint16_t p = k * 10 + j;
++            v |= (uint16_t)((bits[p / 8] >> (p % 8)) & 1) << j;
++        }
++        if ((v & 1) || !(v & 0x200))
++            return 0;
++        out[k] = (v >> 1) & 0xff;
++    }
++    return n;
++}
++
++// Frame bytes with start and stop bits, the inverse of tmc_unpack
++static void
++tmc_pack(const uint8_t *in, uint8_t n, uint8_t *bits)
++{
++    uint8_t k, j;
++    memset(bits, 0, (n * 10 + 7) / 8);
++    for (k = 0; k < n; k++) {
++        uint16_t b = ((uint16_t)in[k] << 1) | 0x200;
++        for (j = 0; j < 10; j++) {
++            uint16_t p = k * 10 + j;
++            if ((b >> j) & 1)
++                bits[p / 8] |= 1 << (p % 8);
++        }
++    }
++}
++
++static uint32_t
++tmc_read_reg(uint8_t addr, uint8_t reg)
++{
++    if (reg == TMC_REG_IFCNT)
++        return tmc_ifcnt[addr];
++    return tmc_regs[addr][reg];
++}
++
++void
++command_config_tmcuart(uint32_t *args)
++{
++    // Pins are ignored: the virtual driver is not wired to any pin
++    struct tmcuart_s *t = oid_alloc(args[0], command_config_tmcuart
++                                    , sizeof(*t));
++    t->allocated = 1;
++}
++DECL_COMMAND(command_config_tmcuart,
++             "config_tmcuart oid=%c rx_pin=%u pull_up=%c"
++             " tx_pin=%u bit_time=%u");
++
++// Decode a request, update the register file and answer like the driver
++void
++command_tmcuart_send(uint32_t *args)
++{
++    oid_lookup(args[0], command_config_tmcuart);
++    uint8_t write_len = args[1];
++    uint8_t *write = command_decode_ptr(args[2]);
++    uint8_t read_len = args[3];
++    if (write_len > TMC_DATA_LEN || read_len > TMC_DATA_LEN)
++        shutdown("tmcuart data too large");
++
++    uint8_t msg[TMC_WRITE_MSG_LEN];
++    uint8_t n = tmc_unpack(write, write_len, msg, sizeof(msg));
++    if (n < TMC_READ_MSG_LEN || msg[0] != TMC_SYNC_READ
++        || msg[1] >= TMC_ADDR_COUNT)
++        return;
++    uint8_t addr = msg[1], reg = msg[2] & 0x7f;
++
++    if (n == TMC_WRITE_MSG_LEN && (msg[2] & 0x80)) {
++        // Write request: sync, addr, reg|0x80, 4 data bytes, crc
++        if (tmc_crc8(msg, 7) != msg[7])
++            return;
++        tmc_regs[addr][reg] = ((uint32_t)msg[3] << 24)
++            | ((uint32_t)msg[4] << 16) | ((uint32_t)msg[5] << 8) | msg[6];
++        tmc_ifcnt[addr]++;
++        // The host waits on a response to every request; writes return none
++        sendf("tmcuart_response oid=%c read=%*s", args[0], 0, msg);
++        return;
++    }
++    if (n == TMC_READ_MSG_LEN && !(msg[2] & 0x80)) {
++        // Read request: sync, addr, reg, crc
++        if (tmc_crc8(msg, 3) != msg[3] || read_len != TMC_DATA_LEN)
++            return;
++        uint32_t val = tmc_read_reg(addr, reg);
++        uint8_t reply[TMC_REPLY_LEN] = {
++            TMC_SYNC_REPLY, TMC_REPLY_ADDR, reg,
++            val >> 24, val >> 16, val >> 8, val,
++        };
++        reply[7] = tmc_crc8(reply, 7);
++        uint8_t data[TMC_DATA_LEN];
++        tmc_pack(reply, TMC_REPLY_LEN, data);
++        sendf("tmcuart_response oid=%c read=%*s", args[0], TMC_DATA_LEN, data);
++    }
++}
++DECL_COMMAND(command_tmcuart_send, "tmcuart_send oid=%c write=%*s read=%c");

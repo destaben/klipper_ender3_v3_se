@@ -1,0 +1,52 @@
+# Virtual printer: Klipper host plus two linux-process MCUs running the
+# virtual GPIO/TMC firmware. Used by .github/workflows/sim-boot.yml to check
+# that the printer config boots to "ready". Build context is the repo root.
+#
+# The fork is cloned at a pinned commit and sim/patches is applied on top,
+# so nothing is maintained in the fork itself.
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates git patch python3 python3-dev python3-venv \
+      build-essential libffi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
+ARG KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
+ARG SHAKETUNE_URL=https://github.com/Frix-x/klippain-shaketune.git
+ARG SHAKETUNE_COMMIT=354ee4be6db218715239f7b9411c2c37fdea23dd
+
+WORKDIR /opt
+
+RUN git clone "$GITHUB_FORK_URL" klipper && \
+    git -C klipper checkout "$KLIPPER_COMMIT" && \
+    rm -rf klipper/.git
+
+COPY sim/patches /tmp/sim-patches
+RUN patch -d /opt/klipper -p1 < /tmp/sim-patches/0001-virtual-gpio-and-tmcuart.patch
+
+# Shake&Tune is part of the printer config ([shaketune] sections), as in Dockerfile-klipper
+RUN git clone "$SHAKETUNE_URL" shaketune && \
+    git -C shaketune checkout "$SHAKETUNE_COMMIT" && \
+    cp -r shaketune/shaketune klipper/klippy/extras/
+
+RUN python3 -m venv /opt/klippy-env && \
+    /opt/klippy-env/bin/pip install --no-cache-dir \
+      greenlet cffi pyserial jinja2 markupsafe && \
+    /opt/klippy-env/bin/pip install --no-cache-dir \
+      -r /opt/shaketune/requirements.txt && \
+    rm -rf /opt/shaketune
+
+RUN printf 'CONFIG_MACH_LINUX=y\nCONFIG_LINUX_VIRTUAL_GPIO=y\n' > /opt/klipper/.config && \
+    make -C /opt/klipper olddefconfig && \
+    make -C /opt/klipper -j"$(nproc)"
+
+COPY sim /opt/sim
+RUN chmod +x /opt/sim/run.sh
+
+ENTRYPOINT ["/opt/sim/run.sh"]
