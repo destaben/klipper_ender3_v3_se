@@ -50,6 +50,9 @@ def drop_sections(text):
         match = re.match(r"^\[([^\]]+)\]", line)
         if match:
             skip = match.group(1).strip() in DROP_SECTIONS
+            if skip:
+                print("sim: not loaded, unsupported in virtual printer: [%s]"
+                      % match.group(1).strip())
         elif skip and line.strip() == "":
             skip = False
         if not skip:
@@ -72,6 +75,7 @@ def main():
     shutil.copytree(src, dst)
 
     for rel in DROP_FILES:
+        print("sim: not loaded, unsupported in virtual printer: %s" % rel)
         os.remove(os.path.join(dst, rel))
 
     def printer_overrides(text):
