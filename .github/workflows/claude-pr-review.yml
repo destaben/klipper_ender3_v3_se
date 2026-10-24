@@ -99,7 +99,10 @@ jobs:
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           if [ -f "$EXECUTION_FILE" ]; then
-            jq -r '[.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))] | last | .result // empty' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
+            jq -r '
+              [.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))]
+              | last | .result // empty
+            ' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
           fi
           if [ -s "$RUNNER_TEMP/review.md" ]; then
             gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
