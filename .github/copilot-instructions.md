@@ -7,7 +7,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Klipper** — firmware host (custom fork: [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se), no stock-display support)
 - **Moonraker** — Klipper API server (v0.9.3)
 - **Mainsail** — web UI (v2.12.0) exposed via Traefik on port 80
-- **Traefik** (v3.2) — reverse proxy and HTTP router
+- **Traefik** (v3.6) — reverse proxy and HTTP router
 - **Node Exporter** + **cAdvisor** — host and container metrics
 
 ## Hardware
@@ -86,7 +86,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 
 | Host path | Container path | Service |
 |---|---|---|
-| `./config` | `/home/klipper/config` | klipper |
+| `./config` | `/opt/printer_data/config` | klipper |
 | `./config` | `/opt/printer_data/config` | moonraker |
 | `./gcodes` | `/opt/printer_data/gcodes` | klipper, moonraker |
 | `./moonraker/database` | `/opt/printer_data/database` | moonraker |
