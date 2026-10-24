@@ -46,7 +46,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 │   │   ├── END_PRINT.cfg
 │   │   ├── M600.cfg
 │   │   ├── sp_mmu.cfg            # Pico MMU settings & user macros
-│   │   ├── sp_mmu_code.cfg       # Pico MMU core logic
+│   │   ├── sp_mmu/
+│   │   │   └── sp_mmu_code.cfg  # Pico MMU core logic (not globbed; included by sp_mmu.cfg)
 │   │   ├── servo_cutter.cfg      # Servo filament cutter
 │   │   └── ...
 │   └── helpers/                  # Helper configs
