@@ -20,6 +20,8 @@ ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
 ARG KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
 ARG SHAKETUNE_URL=https://github.com/Frix-x/klippain-shaketune.git
 ARG SHAKETUNE_COMMIT=354ee4be6db218715239f7b9411c2c37fdea23dd
+ARG KLIPPERMAINT_URL=https://github.com/3dcoded/KlipperMaintenance.git
+ARG KLIPPERMAINT_COMMIT=243fca19bf380421276b68241bc1dab28324e782
 
 WORKDIR /opt
 
@@ -35,6 +37,13 @@ RUN patch -F0 -d /opt/klipper -p1 < /tmp/sim-patches/0001-virtual-gpio-and-tmcua
 RUN git clone "$SHAKETUNE_URL" shaketune && \
     git -C shaketune checkout "$SHAKETUNE_COMMIT" && \
     cp -r shaketune/shaketune klipper/klippy/extras/
+
+# KlipperMaintenance provides the [maintain] sections in config/helpers/maintain.cfg.
+# It is a single Klipper extra that uses only the Python standard library.
+RUN git clone "$KLIPPERMAINT_URL" maintenance && \
+    git -C maintenance checkout "$KLIPPERMAINT_COMMIT" && \
+    cp maintenance/maintain.py klipper/klippy/extras/maintain.py && \
+    rm -rf maintenance
 
 # constraints.txt pins every package to the versions the boot check was run with
 COPY sim/constraints.txt /tmp/constraints.txt

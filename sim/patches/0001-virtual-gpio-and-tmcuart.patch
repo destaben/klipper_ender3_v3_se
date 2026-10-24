@@ -53,10 +53,10 @@ index 7c1de7c1..88553729 100644
  flash: $(OUT)klipper.elf
 diff --git a/src/linux/gpio_virtual.c b/src/linux/gpio_virtual.c
 new file mode 100644
-index 00000000..43272679
+index 00000000..07060b70
 --- /dev/null
 +++ b/src/linux/gpio_virtual.c
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,130 @@
 +// Virtual GPIO and ADC for running the firmware without real hardware
 +//
 +// Pins live in memory, so the host does not need /dev/gpiochipN or IIO
@@ -70,7 +70,9 @@ index 00000000..43272679
 +#include "sched.h" // sched_shutdown
 +
 +#define VGPIO_PINS_PER_PORT 16
-+#define VGPIO_PORTS 8
++// STM32F103xE has ports A-G (G only on the 144-pin package). Port H does not
++// exist on this chip, so a config that uses it must fail as it does on hardware.
++#define VGPIO_PORTS 7
 +#define VGPIO_COUNT (VGPIO_PINS_PER_PORT * VGPIO_PORTS)
 +
 +#define VGPIO_MODE_NONE 0
@@ -86,7 +88,6 @@ index 00000000..43272679
 +DECL_ENUMERATION_RANGE("pin", "PE0", 4 * VGPIO_PINS_PER_PORT, 16);
 +DECL_ENUMERATION_RANGE("pin", "PF0", 5 * VGPIO_PINS_PER_PORT, 16);
 +DECL_ENUMERATION_RANGE("pin", "PG0", 6 * VGPIO_PINS_PER_PORT, 16);
-+DECL_ENUMERATION_RANGE("pin", "PH0", 7 * VGPIO_PINS_PER_PORT, 16);
 +
 +struct gpio_line {
 +    uint8_t mode;

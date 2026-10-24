@@ -23,8 +23,9 @@ DROP_SECTIONS = {
     "temperature_sensor Ender3V3SE_MCU",
     "temperature_sensor Pico_MMU",
 }
-# [maintain] is not provided by the Klipper fork or the Dockerfile
-DROP_FILES = ["helpers/maintain.cfg"]
+# Whole files the simulator does not load. Empty: [maintain] comes from
+# KlipperMaintenance, which Dockerfile-sim installs.
+DROP_FILES = []
 
 PRINTER_REPLACEMENTS = [
     ("serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
