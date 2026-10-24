@@ -35,6 +35,11 @@ jobs:
         with:
           dockerfile: Dockerfile-moonraker
           failure-threshold: error
+      - name: Lint sim/Dockerfile-sim
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
+        with:
+          dockerfile: sim/Dockerfile-sim
+          failure-threshold: error
 
   docker-compose-validate:
     name: Docker Compose Validate

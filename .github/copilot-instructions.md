@@ -55,6 +55,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 │       └── shakeandtune.cfg      # Shake&Tune resonance analysis
 ├── Dockerfile-klipper
 ├── Dockerfile-moonraker
+├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
 ├── build_firmware.sh             # Builds Klipper .bin for flashing

@@ -109,6 +109,8 @@ The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) work
 2. Pushes images to `ghcr.io/destaben/klipper_ender3_v3_se/<service>`.
 3. Applies `latest`, commit-SHA, and version tags automatically.
 
+The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion.
+
 ## Services
 
 All services are defined in `docker-compose.yaml` and managed via Docker Compose.
@@ -165,6 +167,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   └── helpers/               # Helper configuration files
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
+├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config
 ├── build_firmware.sh          # Script to build Klipper firmware

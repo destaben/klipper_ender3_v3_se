@@ -1,0 +1,33 @@
+name: Virtual Printer Boot
+
+"on":
+  push:
+    branches: [main]
+    paths: ['config/**', 'sim/**', '.github/workflows/sim-boot.yml']
+  pull_request:
+    branches: [main]
+    paths: ['config/**', 'sim/**', '.github/workflows/sim-boot.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  sim-boot:
+    name: Printer config boots to ready
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Build virtual printer image
+        run: docker build -f sim/Dockerfile-sim -t klipper-sim .
+
+      - name: Boot printer config in the virtual printer
+        run: |
+          docker run --rm \
+            -v "$PWD/config:/printer-config:ro" \
+            -e SIM_READY_TIMEOUT=180 \
+            klipper-sim
