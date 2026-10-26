@@ -1,23 +1,23 @@
 # Automatic PR review using the bug-hunter and documenter agents
 # (.claude/agents/bug-hunter.md, .claude/agents/documenter.md).
 #
-# INACTIVE until you add a secret. Two auth options:
-#   - CLAUDE_CODE_OAUTH_TOKEN (recommended for a personal repo): generate with
-#     `claude setup-token`. Runs bill against your Claude subscription quota,
-#     not pay-per-token API billing — confirmed at
-#     https://code.claude.com/docs/en/github-actions. Tied to the account that
-#     ran `claude setup-token`; fine here since this is a personal repo.
-#   - ANTHROPIC_API_KEY: pay-per-token API billing, decoupled from your
-#     subscription's weekly/session cap. Use this if CI review would otherwise
-#     compete with your own interactive usage for the same quota — see
-#     docs/decisions/0007-pro-plan-cost-sustainability.md.
+# INACTIVE until you add the CLAUDE_CODE_OAUTH_TOKEN secret: generate it with
+# `claude setup-token`. Runs bill against your Claude subscription quota, not
+# pay-per-token API billing — confirmed at
+# https://code.claude.com/docs/en/github-actions. It is tied to the account that
+# ran `claude setup-token`; fine here since this is a personal repo. There is
+# deliberately no API-key fallback: when the quota runs out, runs fail and post
+# nothing — see docs/decisions/0002-cost-and-quota.md.
 #
-# Runs on every PR (opened/synchronize/reopened), not just on an
-# `@claude review` comment: see docs/decisions/0011-propagated-auto-pr-review.md,
-# which narrows 0007's comment-only trigger now that the review runs on
+# Runs on every same-repo, non-draft PR (opened/synchronize/reopened/
+# ready_for_review), not just on an
+# `@claude review` comment: see docs/decisions/0002-cost-and-quota.md,
+# which relaxes the old comment-only trigger now that the review runs on
 # Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
 # acceptable against the shared subscription quota. The comment and manual
-# triggers stay as a fallback.
+# triggers stay as a fallback. To bound that draw, draft PRs are skipped until
+# marked ready, and a newer run on the same PR cancels the one in progress, so
+# a burst of pushes costs one review, not one per push.
 name: claude-pr-review
 
 on:
@@ -25,7 +25,7 @@ on:
     types: [created]
   workflow_dispatch: {}
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -37,11 +37,26 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
        github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event.issue.pull_request != null &&
        contains(github.event.comment.body, '@claude review') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
                 github.event.comment.author_association))
+    # One live review per PR. Comments that don't ask for a review, or come from someone
+    # who may not (and the manual trigger) get a unique group so they can never cancel a real one;
+    # whether a job skipped by `if` joins its group is not documented, so this
+    # doesn't depend on it.
+    concurrency:
+      group: >-
+        ${{ (github.event_name == 'workflow_dispatch' ||
+             (github.event_name == 'issue_comment' &&
+              !(contains(github.event.comment.body, '@claude review') &&
+                contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
+                         github.event.comment.author_association))))
+            && github.run_id
+            || format('claude-pr-review-{0}', github.event.pull_request.number || github.event.issue.number) }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,13 +68,11 @@ jobs:
         id: review
         uses: anthropics/claude-code-action@v1
         with:
-          # Pick exactly one of these two secrets; see the header comment.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the workflow's own token instead of the OIDC exchange for the
           # Claude GitHub App token, which needs `id-token: write` and the
           # app installed on the repo.
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
             --model claude-haiku-5-5 --effort low
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"
@@ -92,17 +105,14 @@ jobs:
       # asks for it. Treat the review as advisory. A workflow_dispatch run has
       # no PR number, so there is nothing to post to and it is skipped.
       - name: Post the review
-        if: always() && (github.event.pull_request.number || github.event.issue.number)
+        if: ${{ !cancelled() && (github.event.pull_request.number || github.event.issue.number) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
         run: |
           if [ -f "$EXECUTION_FILE" ]; then
-            jq -r '
-              [.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))]
-              | last | .result // empty
-            ' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
+            jq -r '[.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))] | last | .result // empty' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
           fi
           if [ -s "$RUNNER_TEMP/review.md" ]; then
             gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
@@ -110,11 +120,11 @@ jobs:
             echo "no final review message found; nothing to post"
           fi
 
-# Before relying on this workflow, re-check the action's current input names
-# (`claude_code_oauth_token`, `anthropic_api_key`, `prompt`, `claude_args`)
-# against https://code.claude.com/docs/en/github-actions — this was
-# scaffolded from documentation current as of 2026-10-17 and the action may
-# have moved on.
+# Checked 2026-10-25 against the action's action.yml and the CLI reference: the
+# inputs `claude_code_oauth_token`, `github_token`,
+# `prompt`, `claude_args` and the `execution_file` output exist, `--effort` is
+# a valid flag, and `claude-haiku-5-5` is a valid model id. Re-check them
+# before relying on this workflow later; the action may have moved on.
 #
 # To reuse this in a DIFFERENT repo: this file itself (project-specific CI)
 # and .claude/agents/{bug-hunter,documenter}.md + .claude/skills/release-policy/
