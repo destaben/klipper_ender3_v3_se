@@ -37,7 +37,7 @@ services:
     depends_on: [moonraker]
 
   klipper:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:sha-3b740c1
     build:
       context: .
       dockerfile: Dockerfile-klipper
@@ -73,7 +73,7 @@ services:
         max-file: "2"
 
   moonraker:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:sha-3b740c1
     build:
       context: .
       dockerfile: Dockerfile-moonraker

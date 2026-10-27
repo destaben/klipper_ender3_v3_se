@@ -45,6 +45,10 @@ RUN git clone "$KLIPPERMAINT_URL" maintenance && \
     cp maintenance/maintain.py klipper/klippy/extras/maintain.py && \
     rm -rf maintenance
 
+# Same patch setup_services.sh applies to the production copy of maintain.py
+RUN sed -i 's|http://localhost:7125|http://moonraker:7125|g' klipper/klippy/extras/maintain.py && \
+    grep -q 'http://moonraker:7125' klipper/klippy/extras/maintain.py
+
 # constraints.txt pins every package to the versions the boot check was run with
 COPY sim/constraints.txt /tmp/constraints.txt
 RUN python3 -m venv /opt/klippy-env && \

@@ -11,11 +11,13 @@ import sys
 import time
 
 
-def query_state(path):
+def call(path, method, params=None):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(5)
         sock.connect(path)
-        request = {"id": 1, "method": "info"}
+        request = {"id": 1, "method": method}
+        if params is not None:
+            request["params"] = params
         sock.sendall(json.dumps(request).encode() + b"\x03")
         buf = b""
         while not buf.endswith(b"\x03"):
@@ -31,6 +33,10 @@ def query_state(path):
     if "result" not in reply:
         raise ValueError("API reply has no result: %r" % reply)
     return reply["result"]
+
+
+def query_state(path):
+    return call(path, "info")
 
 
 def process_running(pid):

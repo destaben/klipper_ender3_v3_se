@@ -12,9 +12,12 @@ API_SOCKET=/tmp/klippy_api.sock
 LOG_DIR=/tmp/sim-logs
 TIMEOUT=${SIM_READY_TIMEOUT:-120}
 
-mkdir -p "$LOG_DIR" /root/printer_data
-# Files the printer config expects on the host, created empty as in the setup guide
-touch /root/printer_data/sp_mmu_data.cfg
+# Run with the production home so "~/printer_data" in [save_variables] resolves
+# to the same path it does in the klipper container (user klipper).
+export HOME=/home/klipper
+mkdir -p "$LOG_DIR" "$HOME/printer_data"
+# Files the printer config expects, created empty as in the production image
+touch "$HOME/printer_data/sp_mmu_data.cfg"
 echo 42000 > /tmp/sim_cpu_temp
 rm -f /tmp/klipper_host_mcu /tmp/klipper_pico_mmu "$API_SOCKET"
 
@@ -49,6 +52,11 @@ KLIPPY_PID=$!
 
 status=0
 /opt/klippy-env/bin/python "$SIM_DIR/check_ready.py" "$API_SOCKET" "$TIMEOUT" "$KLIPPY_PID" || status=$?
+
+# Only exercise the macros once the printer is ready
+if [ "$status" -eq 0 ]; then
+    /opt/klippy-env/bin/python "$SIM_DIR/smoke.py" "$API_SOCKET" || status=$?
+fi
 
 if [ "$status" -ne 0 ]; then
     echo "--- klippy.log (errors and last lines)" >&2

@@ -56,6 +56,10 @@ done
 
 if [ -f "KlipperMaintenance/maintain.py" ]; then
     sed -i 's|http://localhost:7125|http://moonraker:7125|g' KlipperMaintenance/maintain.py
+    if ! grep -q 'http://moonraker:7125' KlipperMaintenance/maintain.py; then
+        echo "error: maintain.py patch did not apply (upstream URL changed?)" >&2
+        exit 1
+    fi
 fi
 
 # Enable cgroup memory limits on Raspberry Pi (required for Docker memory limits).
