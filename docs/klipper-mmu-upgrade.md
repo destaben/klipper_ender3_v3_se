@@ -233,24 +233,47 @@ the calibrated `z_offset`).
 
 ## Troubleshooting: `Probe triggered prior to movement` on `G28`
 
-The CR Touch must report `open` after `pin_down` and `touch_mode`
-(`BLTOUCH_DEBUG COMMAND=pin_down`, `BLTOUCH_DEBUG COMMAND=touch_mode`,
-`QUERY_PROBE`); see Klipper's
-[BLTouch documentation](https://www.klipper3d.org/BLTouch.html). A probe LED
-that blinks red after `pin_down`, with `QUERY_PROBE` reporting `TRIGGERED`
-afterwards, means the probe is in alarm. Klippy then aborts the Z descent
-because the sensor is already triggered.
+**What happened on this printer (2026-10).** A `G28` was interrupted in the
+middle of the Z probing move by a `Timer too close` shutdown (see the
+KlipperMaintenance note in the PR). From then on every `G28` aborted at the start
+of the Z descent with `Probe triggered prior to movement`, the CR Touch LED
+blinked red after `pin_down`, and `pin_down` followed by `touch_mode` read
+`QUERY_PROBE` = `TRIGGERED`. `FIRMWARE_RESTART`, `BLTOUCH_DEBUG COMMAND=reset`
+and re-seating the connectors did not clear it. **Switching the printer fully
+off and on at the power switch did.** After that, `G28` worked on the previous
+Klipper and on the new one with the same hardware, config and MCU firmware (three
+consecutive homes, trigger positions repeating within about 0.02 mm).
 
-This is a probe state or hardware problem, not a configuration problem:
+So the probe was latched in an alarm state, not broken and not misconfigured, and
+the new Klipper was not the cause. The reference configuration of the fork's
+author and the other published Ender 3 V3 SE configurations use the same
+`[bltouch]` block.
 
-1. Power the printer off for about 15 s and back on, and watch the LED at
-   power-up.
-2. With the printer off, push the pin gently with a fingernail: it must move
-   freely and return, with no dirt or bend.
-3. Confirm the head rises during the Z hop at the start of `G28`.
-4. `FIRMWARE_RESTART`, `BLTOUCH_DEBUG COMMAND=reset`, `pin_down` (LED off),
-   `QUERY_PROBE` (`open`), `touch_mode`, `QUERY_PROBE` (`open`).
+**How to test the probe.** Use the sequence `G28` itself uses, with `touch_mode`:
 
-An interrupted probing move (for example a `Timer too close` shutdown during
-`G28`) is a plausible way to end up in this state, but that has not been
-confirmed. Disabling `probe_with_touch_mode` does not clear an alarm.
+```
+BLTOUCH_DEBUG COMMAND=reset
+BLTOUCH_DEBUG COMMAND=pin_down
+BLTOUCH_DEBUG COMMAND=touch_mode
+QUERY_PROBE        ; healthy: probe: open   (stuck in alarm: probe: TRIGGERED)
+BLTOUCH_DEBUG COMMAND=pin_up
+BLTOUCH_DEBUG COMMAND=reset
+```
+
+Do not use `pin_down` followed directly by `QUERY_PROBE` as the test: on this CR
+Touch that reads `TRIGGERED` even when the probe is healthy and homing works. See
+also Klipper's [BLTouch documentation](https://www.klipper3d.org/BLTouch.html).
+
+**If `G28` reports `Probe triggered prior to movement`:**
+
+1. Power the printer off at the switch for about 15 s and back on, then
+   `FIRMWARE_RESTART` (twice if the first leaves the MCU in `shutdown`) and retry.
+   This is what fixed it here.
+2. If it still fails, check that the pin moves freely with the printer off and
+   has no dirt or bend, that the head cable is not squeezed by the hotend cover,
+   and re-seat the probe cable and the nozzle adapter ribbon at both ends.
+3. If the probe still reads `TRIGGERED` after `touch_mode`, suspect the probe
+   itself (clean or adjust it per Klipper's documentation, check the 5 V supply,
+   or replace it).
+
+Disabling `probe_with_touch_mode` does not clear an alarm.
