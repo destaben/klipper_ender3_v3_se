@@ -195,3 +195,62 @@ A proper fix must replace `z_probe[2]` with the result's `bed_z` (or
 `test_z`), build a new `ProbeResult`/list instead of mutating it, and rework
 `probe_calibrate_finalize` accordingly; upstream's equivalent is
 `probe_calibrate_finalize` in `klippy/extras/probe.py`.
+
+### Community status (checked 2026-10)
+
+The same failure is reported in the fork's tracker:
+[0xD34D/klipper_ender3_v3_se#32](https://github.com/0xD34D/klipper_ender3_v3_se/issues/32)
+(open). Several users published workarounds in that thread (their own forks of
+`prtouch.py`), and one posted the changes inline: restore the raw trigger height
+by adding the start `z_offset` back to `z_probe[2]`, stop assigning into the
+result, and write the new `z_offset` directly. That description of the root
+cause matches the analysis above (`create_probe_result()` now subtracts
+`z_offset`, and the result is an immutable named tuple).
+
+None of these patches has been validated on this printer, and the thread itself
+warns that a wrong one can store a bad or negative offset (one user reports
+gouging the bed). If you try one, do it with a hand on the power switch, run
+`PRTOUCH_PROBE_ZOFFSET` without `APPLY_Z_ADJUST` first, and compare against the
+paper test as described above before running `SAVE_CONFIG`. A separate
+user-reported issue in that thread, a roughly constant 0.1 mm "too low" bias in
+PRTouch, predates this upgrade and has not been verified here.
+
+## Hardware and reference configuration
+
+The probe hardware on this printer is a **CR Touch** (BLTouch compatible,
+`[bltouch]`), which does both Z homing and bed mesh. The **PRTouch** load cell
+(`[prtouch]`, `[hx711s]`, `[dirzctl]`) is used only for the automatic Z-offset
+calibration. This matches the fork author's own
+[reference configuration](https://github.com/0xD34D/ender3-v3-se-klipper-config),
+which lists "CR touch probe" as working and the load cell as requiring the fork.
+
+`[bltouch]`, `[safe_z_home]` and `[stepper_z]` in `config/printer.cfg` are
+identical to that reference (same pins, `probe_with_touch_mode: True`,
+`stow_on_each_sample: False`, `z_hop: 10`). Other published Ender 3 V3 SE
+configurations use the same `[bltouch]` block. Differences from the reference
+are tuning only (acceleration, PID, mesh area, TMC2209 instead of TMC2208, and
+the calibrated `z_offset`).
+
+## Troubleshooting: `Probe triggered prior to movement` on `G28`
+
+The CR Touch must report `open` after `pin_down` and `touch_mode`
+(`BLTOUCH_DEBUG COMMAND=pin_down`, `BLTOUCH_DEBUG COMMAND=touch_mode`,
+`QUERY_PROBE`); see Klipper's
+[BLTouch documentation](https://www.klipper3d.org/BLTouch.html). A probe LED
+that blinks red after `pin_down`, with `QUERY_PROBE` reporting `TRIGGERED`
+afterwards, means the probe is in alarm. Klippy then aborts the Z descent
+because the sensor is already triggered.
+
+This is a probe state or hardware problem, not a configuration problem:
+
+1. Power the printer off for about 15 s and back on, and watch the LED at
+   power-up.
+2. With the printer off, push the pin gently with a fingernail: it must move
+   freely and return, with no dirt or bend.
+3. Confirm the head rises during the Z hop at the start of `G28`.
+4. `FIRMWARE_RESTART`, `BLTOUCH_DEBUG COMMAND=reset`, `pin_down` (LED off),
+   `QUERY_PROBE` (`open`), `touch_mode`, `QUERY_PROBE` (`open`).
+
+An interrupted probing move (for example a `Timer too close` shutdown during
+`G28`) is a plausible way to end up in this state, but that has not been
+confirmed. Disabling `probe_with_touch_mode` does not clear an alarm.
