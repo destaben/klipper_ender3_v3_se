@@ -31,7 +31,7 @@ def main():
     for script in SCRIPTS:
         try:
             call(path, "gcode/script", {"script": script})
-        except ValueError as e:
+        except (ValueError, OSError) as e:
             print("macro %s failed: %s" % (script, e), flush=True)
             return 1
         print("macro %s ok" % script, flush=True)
