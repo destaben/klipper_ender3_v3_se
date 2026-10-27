@@ -49,6 +49,15 @@ RUN /home/klipper/klipper/scripts/install-ubuntu-22.04.sh
 RUN cp -r klippain-shaketune/shaketune /home/klipper/klipper/klippy/extras/ && \
     /home/klipper/klippy-env/bin/pip install --no-cache-dir -r klippain-shaketune/requirements.txt
 
+# Prebuild Klipper's C helper (chelper/c_helper.so) here, where gcc is available.
+# Klippy otherwise compiles it on first start, and the runtime stage below has no
+# gcc (kept out to keep the image small), so Klippy crash-loops with
+# "Unable to build C code module". COPY below preserves file mtimes, so Klippy
+# sees the .so as up to date and does not try to rebuild it.
+RUN /home/klipper/klippy-env/bin/python -c \
+    "import sys; sys.path.insert(0, '/home/klipper/klipper/klippy'); import chelper; chelper.get_ffi()" && \
+    test -f /home/klipper/klipper/klippy/chelper/c_helper.so
+
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime – copy only what is needed
 # ---------------------------------------------------------------------------
