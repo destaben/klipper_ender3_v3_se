@@ -72,15 +72,27 @@ out before printing (see "Verifying the MMU" below).
    so you can roll back (see below).
 2. Rebuild the Klipper image (`docker compose build klipper`, or pull the image
    published by CI for this commit).
-3. Build and flash **both** MCUs with the same fork commit:
-   - Main board: `sudo bash build_firmware.sh`, then flash as before. This is
-     required because `dirzctl`/`hx711s`/`prtouch` live in the fork firmware.
-   - Pico MMU (STM32G0B1): rebuild with the same commit and flash it the way you
-     did originally. Klipper warns about firmware missing
-     `STEPPER_STEP_BOTH_EDGE` when an MCU is not updated.
-4. `docker compose up -d klipper`, then check `klippy.log` for `Klippy state:
+3. **Phase 1 – new host, current MCU firmware (no flashing).** Klipper still
+   supports older MCU firmware: an MCU built before 2026-02 that lacks
+   `STEPPER_STEP_BOTH_EDGE` only produces a deprecation warning
+   ("Recompiling and flashing is recommended"). Run the whole verification
+   below in this state first. Rolling back is then just switching the image and
+   config back, with no firmware involved.
+4. **Phase 2 – flash the MCUs (recommended, optional).** Only after Phase 1 is
+   verified. Build both with the same fork commit:
+   - Main board: `sudo bash build_firmware.sh` (or build in Docker without
+     touching the host), then flash via SD card as before.
+   - Pico MMU (STM32G0B1): see the EBB42 DFU steps in `nebula_setup_guide.md`.
+   Keep the previous `.bin` for each MCU so the firmware can be rolled back.
+5. `docker compose up -d klipper`, then check `klippy.log` for `Klippy state:
    Ready` and any deprecation warnings.
-5. In Orca Slicer, change "Change filament G-code" to
+6. Back up the MMU memory file before recreating the Klipper container: the
+   `[save_variables]` file (`~/printer_data/sp_mmu_data.cfg` inside the
+   container) is **not** on a volume, so recreating the container resets the
+   remembered loaded lane. Copy it out with
+   `docker cp klipper:/home/klipper/printer_data/sp_mmu_data.cfg .` and copy it
+   back into the new (not yet started) container with `docker cp`.
+7. In Orca Slicer, change "Change filament G-code" to
    `_SP_CHANGE T=[next_extruder]` (the alias works in the meantime).
 
 ## Verifying the MMU (do this before any print)
@@ -112,7 +124,8 @@ Run these in order with no print running, and stop at the first failure.
 ## Rolling back
 
 - Set the three pins back to `38604d84318dd4af1ab2d0adc26b9bb303bf382c`.
-- Flash the previous firmware `.bin` on both MCUs.
+- Only if you flashed in Phase 2: flash the previous firmware `.bin` back on
+  the MCU(s) you updated. If you stayed in Phase 1, no firmware step is needed.
 - Restore `config/macros/sp_mmu.cfg` and `config/macros/sp_mmu/sp_mmu_code.cfg`
   from the commit before this upgrade (`git log -- config/macros/sp_mmu.cfg`).
 - The saved `z_offset` in `printer.cfg` is not modified by the upgrade or by the
