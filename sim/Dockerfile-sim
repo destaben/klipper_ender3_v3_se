@@ -17,7 +17,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 ARG GITHUB_FORK_URL=https://github.com/0xD34D/klipper_ender3_v3_se.git
-ARG KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
+ARG KLIPPER_COMMIT=7e61c1ccda2f2e8f6bd518997f3833319da03a20
 ARG SHAKETUNE_URL=https://github.com/Frix-x/klippain-shaketune.git
 ARG SHAKETUNE_COMMIT=354ee4be6db218715239f7b9411c2c37fdea23dd
 ARG KLIPPERMAINT_URL=https://github.com/3dcoded/KlipperMaintenance.git

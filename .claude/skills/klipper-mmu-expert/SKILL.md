@@ -35,7 +35,9 @@ Files:
 - **`config/macros/servo_cutter.cfg`** — separate servo (`my_servo`, `PICO_MMU: PB3`) driving the filament cutter blade, plus `CUT_COUNT_INCREMENT`/`CUT_COUNT_STATUS`/`RESET_CUT_COUNT` blade-life tracking (`variable_blade_max_cuts: 5000`, warns every 500 cuts and errors at the max — tell users to run `RESET_CUT_COUNT` only after actually swapping the blade).
 - **`config/macros/MMU_SELECT_PURGE.cfg`** — simple manual test macros (`CHANGE0`–`CHANGE3`): select a lane, heat to 220°C, purge 100 mm. Useful for quick bench testing, not part of the automatic toolchange path.
 - **`config/macros/KAMP_Settings.cfg`** + **`LINE_PURGE.cfg`** — KAMP's adaptive purge-line macro (`LINE_PURGE`), independent of the MMU's own purge mechanism. If a user has both KAMP's `LINE_PURGE` in their slicer's "before layer change"/purge G-code *and* `variable_park_purge: 1` in `_SP_VARS`, they're purging twice — flag that when diagnosing excess purge/oozing complaints.
-- Slicer side (Orca Slicer): tool changes are emitted as `SP_CHANGE T=[next_extruder]` in the "Change filament G-code" field, which maps to `_SP_TOOL_CHANGE LANE=<n>` (same as calling `T0`..`T3` directly).
+- Slicer side (Orca Slicer): tool changes are emitted as `_SP_CHANGE T=[next_extruder]` in the "Change filament G-code" field, which maps to `_SP_TOOL_CHANGE LANE=<n>` (same as calling `T0`..`T3` directly). LH Stinger renamed `SP_CHANGE` to `_SP_CHANGE`; `sp_mmu.cfg` keeps a `SP_CHANGE` alias for old slicer profiles.
+- Synced MMU + extruder moves depend on `variable_sync_mode` in `_SP_VARS` (2 = current Klipper, 1 = older Klipper, 0 = `FORCE_MOVE`, the pre-0.93 behavior). If loads/unloads land at wrong distances with no error, run `SP_TEST_SYNC SYNC_MODE=0|1|2` and pick the mode where both motors move together. See `docs/klipper-mmu-upgrade.md`.
+- `PRTOUCH_PROBE_ZOFFSET` (the `PROBE_ZOFFSET` macro) is known-broken against the pinned Klipper's probe API; do not recommend running it. Details and how to check Z in `docs/klipper-mmu-upgrade.md`.
 
 ### Filament path & key distance variables (`_SP_VARS`, `sp_mmu.cfg`)
 

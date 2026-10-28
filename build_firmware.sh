@@ -5,7 +5,7 @@ set -euo pipefail  # Stop on error, treat unset variables as errors, propagate p
 # Variables
 KLIPPER_REPO="https://github.com/0xD34D/klipper_ender3_v3_se.git"
 # Same commit as KLIPPER_COMMIT in Dockerfile-klipper, so both build paths use one source.
-KLIPPER_COMMIT=38604d84318dd4af1ab2d0adc26b9bb303bf382c
+KLIPPER_COMMIT=7e61c1ccda2f2e8f6bd518997f3833319da03a20
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 CONFIG_FILE="config.ender3_v3_se"
 

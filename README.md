@@ -12,6 +12,8 @@ Includes:
 
 > **Multicolor printing:** See the [English Installation Guide](english_install_guide.md) or the [Guía de instalación en español](spanish_install_guide.md) for a complete walkthrough on setting up Klipper with Pico MMU for multicolor printing. If you are using the Creality Nebula Smart Kit, see the [Nebula Smart Kit Setup Guide](nebula_setup_guide.md).
 
+> **Upgrading Klipper or the Pico MMU macros:** read the [Klipper + Pico MMU upgrade notes](docs/klipper-mmu-upgrade.md) first. They cover the changed MMU synchronization (`sync_mode`), how to verify distances before printing, rollback, and a known `PROBE_ZOFFSET` issue.
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
