@@ -169,6 +169,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   └── helpers/               # Helper configuration files
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
+├── docs/                      # Upgrade notes (klipper-mmu-upgrade.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config
