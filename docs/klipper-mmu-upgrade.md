@@ -50,6 +50,23 @@ out before printing (see "Verifying the MMU" below).
   `toolhead.position` and pauses on a large gcode-vs-toolhead Z difference,
   `_SAVE_POS` is called before the sidestep, and `_SP_RESUME` reads its saved
   state into local variables. Re-apply them on every vendor update.
+- Also changed, and not obvious from the version number: `_SP_RESUME` moves
+  back at the full `park_speed`; `SP_TEST_MANUAL_TIP_FORMING` writes
+  `COOLDOWN_DIST` into the session defaults; `_SP_PRINT_START` parks before the
+  first change; and the new helpers `_SP_CONDITIONAL_HOME`, `_SP_SYNC_MOVE`,
+  `SP_TEST_SYNC` and the runtime variables `fused` and `skip_msg_printed` were
+  added.
+- `T0`-`T5`, `_SP_CHANGE` and `SP_CHANGE` do nothing unless `_SP_PRINT_START`
+  has run (`fused = 1`), and `FIRMWARE_RESTART` clears it. At idle, run
+  `_SP_PRINT_START` first (or use `SP_LOAD_LANE` / `SP_UNLOAD_LANE`).
+- `_SP_PURGE` switches to relative extrusion (`M83`) for the purge and then
+  restores the slicer's extrusion mode and E position, so a runout purge is
+  the same under `M82` and `M83`.
+- `sync_mode` 1 and 2 use `G1 E`, which Klipper refuses below
+  `min_extrude_temp` (170 C by default). Test and load with the hotend hot, or
+  set `min_extrude_temp: 0` on the extruder. `sync_mode: 2` also skips the
+  backlash and loaded-lane tracking of `_SP_MOTOR`, so unload distances can
+  differ by a few mm from 0.91 with the same tuning.
 - Your tuned values (`dist_*`, cutter positions, `dist_filament_park`,
   `has_guest_lane`, ...) are preserved; only the four new options and the
   version number were added.
@@ -68,8 +85,10 @@ out before printing (see "Verifying the MMU" below).
 
 ## Applying the upgrade
 
-1. Keep the previous firmware `.bin` files and the previous Docker image tag
-   so you can roll back (see below).
+1. Keep the previous firmware `.bin` files and the previous Docker image so
+   you can roll back (see below). `docker compose build klipper` overwrites the
+   locally tagged image, so retag it first, for example
+   `docker tag ghcr.io/destaben/klipper_ender3_v3_se/klipper:<current-tag> klipper:previous`.
 2. Rebuild the Klipper image (`docker compose build klipper`, or pull the image
    published by CI for this commit).
 3. **Phase 1 – new host, current MCU firmware (no flashing).** Klipper still
@@ -121,8 +140,19 @@ Run these in order with no print running, and stop at the first failure.
    post-cut stub is parked where it was before (`dist_filament_park`).
 6. Only then run a short multicolor print.
 
+## Verified on the printer (2026-10-28)
+
+With the current MCU firmware and a hot hotend: `G28` and Z, extruder
+distance (100 mm for 100 mm), `SP_TEST_SYNC` modes 1 and 2 (both motors move
+together) and 0 (one after the other), and a full unload and load of lane 0.
+The load needed one automatic retry to reach the sensor; the distances were
+confirmed as correct. Not run: a tool change with the cutter and a multicolor
+print.
+
 ## Rolling back
 
+- Retag or keep the previous Docker image (see step 1 of the upgrade) and set
+  the compose `image:` line for `klipper` back to it.
 - Set the three pins back to `38604d84318dd4af1ab2d0adc26b9bb303bf382c`.
 - Only if you flashed in Phase 2: flash the previous firmware `.bin` back on
   the MCU(s) you updated. If you stayed in Phase 1, no firmware step is needed.
@@ -235,7 +265,7 @@ the calibrated `z_offset`).
 
 **What happened on this printer (2026-10).** A `G28` was interrupted in the
 middle of the Z probing move by a `Timer too close` shutdown (see the
-KlipperMaintenance note in the PR). From then on every `G28` aborted at the start
+KlipperMaintenance timer fix, `[maintain] interval: 0`). From then on every `G28` aborted at the start
 of the Z descent with `Probe triggered prior to movement`, the CR Touch LED
 blinked red after `pin_down`, and `pin_down` followed by `touch_mode` read
 `QUERY_PROBE` = `TRIGGERED`. `FIRMWARE_RESTART`, `BLTOUCH_DEBUG COMMAND=reset`

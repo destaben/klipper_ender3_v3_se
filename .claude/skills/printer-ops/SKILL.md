@@ -9,7 +9,7 @@ The Pi that runs this repo's stack is wired to the real printer. Anything you se
 
 ## Safety rules (read first)
 
-1. Only run G-code the user asked for. Do not heat, home, move, extrude or drive the MMU on your own initiative. Reading state, `QUERY_PROBE`, `M115`, and `FIRMWARE_RESTART` of an idle printer are fine once the user has allowed restarts.
+1. Only run G-code the user asked for. Do not heat, home, move, extrude or drive the MMU on your own initiative. Reading state, `QUERY_PROBE`, `M115`, and `FIRMWARE_RESTART` of an idle printer are fine only after the user has said restarts are allowed in this session.
 2. Before anything that restarts or moves: read `print_stats.state`. If it is `printing` or `paused`, stop and ask. Also check hotend and bed temperatures.
 3. The user may be at the printer. Prefer small, reversible steps. After a failure, do not retry in a loop: diagnose first (see below).
 4. Never edit the `SAVE_CONFIG` block of `printer.cfg`. Config changes go through a branch/PR; the live checkout is a deployment target.
