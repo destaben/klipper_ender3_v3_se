@@ -23,7 +23,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | Extruder | Direct drive, rotation_distance: 7.44 |
 | Build volume | 230×230×250 mm |
 | MMU | Pico MMU (LH Stinger) — 4-lane multicolor, connected via `PICO_MMU` MCU |
-| Filament cutter | Servo-based cutter at X:224 |
+| Filament cutter | Servo-based cutter at X:225 |
 
 ## Repository Structure
 

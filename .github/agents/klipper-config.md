@@ -37,7 +37,7 @@ Help with all tasks related to Klipper and Moonraker configuration files in `con
 ## Pico MMU Context
 
 - 4 lanes (T0–T3), configured in `config/macros/sp_mmu.cfg` (`_SP_VARS`)
-- Filament cutting via servo at X:224 — defined in `_SP_TIP_FORM`
+- Filament cutting via servo at X:225 — defined in `_SP_TIP_FORM`
 - Distances, speeds, tip-forming parameters are all variables in `_SP_VARS` and `_SP_TIP_FORMING_DEFAULTS`
 - Tool changes are triggered by T0–T3 G-code macros
 - `_SP_BEFORE_CHANGE` / `_SP_AFTER_CHANGE` are user hooks for park/purge customization

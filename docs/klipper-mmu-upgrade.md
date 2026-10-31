@@ -138,6 +138,15 @@ Run these in order with no print running, and stop at the first failure.
    sync or `rotation_distance` problem, not a distance setting to retune.
 5. **Cut and park.** Run one full tool change with the cutter and confirm the
    post-cut stub is parked where it was before (`dist_filament_park`).
+   Cutter setup, for reference:
+   - `dist_filament_park` is the measured distance from the extruder grip point
+     to the cutter blade edge (currently 22 mm, measured with calipers).
+   - `tip_length_below_cut` (currently 5 mm, the LH Stinger wiki default) keeps a
+     stub of filament below the blade.
+   - The pre-cut retract is `dist_extruder_to_meltzone - dist_filament_park -
+     tip_length_below_cut` (currently 35 - 22 - 5 = 8 mm).
+   - If the cut leaves no blade mark on the filament tip, the tip was retracted
+     above the blade, so the pre-cut retract is too long and should be reduced.
 6. Only then run a short multicolor print.
 
 ## Verified on the printer (2026-10-28)
@@ -148,6 +157,13 @@ together) and 0 (one after the other), and a full unload and load of lane 0.
 The load needed one automatic retry to reach the sensor; the distances were
 confirmed as correct. Not run: a tool change with the cutter and a multicolor
 print.
+
+On 2026-10-31 the cutter values (`dist_filament_park` 22,
+`tip_length_below_cut` 5, `cut_position_x` 225, `filament_retract_speed` 45)
+were checked at 220 C with PLA: repeated cuts, each followed by
+`SP_UNLOAD_EXTRUDER`, which reached `Sensor cleared` with
+`dist_filament_park` 22. The cuts were run by calling `_SP_TIP_FORM` directly.
+A full T0 -> T1 tool change with the new values is not yet tested.
 
 ## Rolling back
 
