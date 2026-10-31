@@ -107,9 +107,11 @@ docker compose up -d --build
 
 The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) workflow runs on every push to `main` and on version tags. It:
 
-1. Cross-compiles images for `linux/amd64`, `linux/arm64`, and `linux/arm/v7` using QEMU.
-2. Pushes images to `ghcr.io/destaben/klipper_ender3_v3_se/<service>`.
+1. Builds each image per platform (`linux/amd64`, `linux/arm64`, `linux/arm/v7`) in parallel jobs. `arm64` builds on a native Arm runner; `arm/v7` is emulated with QEMU.
+2. Pushes each platform image by digest, then merges them into one multi-arch tag at `ghcr.io/destaben/klipper_ender3_v3_se/<service>`.
 3. Applies `latest`, commit-SHA, and version tags automatically.
+
+BuildKit layer cache is stored in the registry (`<service>:buildcache-<arch>` tags), not in the GitHub Actions cache, which is capped at 10 GB and evicts entries. `Dockerfile-klipper` installs the Python dependencies in a layer keyed only on the requirements files, so bumping the Klipper or Shake&Tune commit does not reinstall them. On `arm/v7` it pulls prebuilt wheels from [piwheels](https://www.piwheels.org/) (this is why the image is based on Debian bookworm, Python 3.11) instead of compiling numpy and matplotlib under emulation.
 
 The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion.
 
