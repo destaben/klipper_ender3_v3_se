@@ -39,7 +39,7 @@ These directories must exist at the project root for the stack to start:
 1. Always use `docker compose` (plugin syntax), not `docker-compose`.
 2. The `klipper` container is `privileged: true` and mounts `/dev` — required for USB printer access.
 3. The `moonraker` container uses `pid: host` and mounts `/run/systemd` and `/run/dbus` for power management.
-4. Resource limits are defined per service — keep them when editing.
+4. Resource limits are defined per service — keep them when editing. `klipper` is intentionally uncapped (no CPU or memory limit); do not add limits back to it.
 5. Rate limiting is configured on all public-facing Traefik routes — do not remove it.
 
 ## Common Commands
@@ -69,6 +69,6 @@ docker compose ps
 
 1. Add the service block to `docker-compose.yaml`.
 2. Set `restart: unless-stopped`.
-3. Add `deploy.resources.limits` for `cpus` and `memory`.
+3. Add `deploy.resources.limits` for `cpus` and `memory`, unless the service is intentionally uncapped (as `klipper` is; see Key Rules).
 4. If it needs a public HTTP route, add Traefik `labels` with a rate-limit middleware.
 5. Update `README.md` with the new service description.
