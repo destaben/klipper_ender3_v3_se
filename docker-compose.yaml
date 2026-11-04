@@ -105,9 +105,10 @@ services:
           memory: 384M
 
   klipper-connect:
-    # Placeholder tag. Replace it with the sha-<short> tag that CI publishes for
-    # a merged commit. Until then, build locally: `docker compose build klipper-connect`.
-    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:sha-pending
+    # Pinned to the image CI published for that commit. After changing
+    # Dockerfile-klipper-connect, bump to the new sha-<short> tag once it merges,
+    # or test first with `docker compose build klipper-connect`.
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:sha-da4778e
     build:
       context: .
       dockerfile: Dockerfile-klipper-connect

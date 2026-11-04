@@ -69,9 +69,6 @@ after large uploads.
   flow (the link, the `/add` page, the 30-minute expiry) has not been tested
   against this printer. If the screens differ, follow what Connect shows and
   check the logs.
-- **Placeholder image tag.** `docker-compose.yaml` uses `sha-pending`, so the
-  image is built locally. A follow-up PR will replace it with the CI-published
-  `sha-<short>` tag.
 - **Binary G-code must be off.** Prusa slicers can write binary G-code
   (`.bgcode`), which Klipper cannot run. Turn off the slicer's binary G-code
   option (PrusaSlicer: "Supports binary G-code"). Plain-text G-code only.
@@ -130,12 +127,15 @@ sticker, so you choose this value yourself (see [Limitations](#limitations)).
    After this, `klipper-connect/` belongs to UID 1000, so removing files in it needs
    `sudo`.
 
-3. **Build the image.** The compose file uses a placeholder image tag until a
-   CI-published image exists, so build it locally:
+3. **Get the image.** The compose file pins the image CI published from `main`.
+   Pull it:
 
    ```bash
-   docker compose build klipper-connect
+   docker compose pull klipper-connect
    ```
+
+   To build it from `Dockerfile-klipper-connect` instead (for example after
+   editing it), run `docker compose build klipper-connect`.
 
 4. **Register the printer.** This prints a link and waits.
 
@@ -235,6 +235,10 @@ Upstream has no releases, so review the commits before bumping the pin:
    docker compose up -d klipper-connect
    docker compose logs -f klipper-connect
    ```
+
+5. After the change merges to `main` and CI publishes the image, update the
+   `image:` tag of `klipper-connect` in `docker-compose.yaml` to the new
+   `sha-<short>` tag, as for the other services.
 
 ## Troubleshooting
 
