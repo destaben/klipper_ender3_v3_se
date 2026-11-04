@@ -157,12 +157,12 @@ tracked `serial-links/mmu` then points at the real Pico, as before.
 - With a simulated MMU, `T1`-`T5`, `SP_CHANGE`, `_SP_CHANGE`, `SP_LOAD_LANE`,
   `SP_UNLOAD_LANE`, `SP_FORCE_MOVE_LANE`, `SP_LOAD_EXTRUDER`,
   `SP_UNLOAD_EXTRUDER`, `SP_LOAD_HOTEND`, `SP_UNLOAD_HOTEND`, `SP_LOAD_HUB`,
-  `SP_UNLOAD_HUB`, `_SP_TOOL_CHANGE`, `_SP_LOAD_LANE` and `_SP_UNLOAD_LANE`
-  raise an error before anything moves when the lane is not 0 (for the macros
+  `SP_UNLOAD_HUB`, `_SP_TOOL_CHANGE`, `_SP_LOAD_LANE`, `_SP_UNLOAD_LANE` and
+  `SP_TEST_LOAD_UNLOAD_EXTRUDER` raise an error before anything moves when the lane is not 0 (for the macros
   without a `LANE` parameter, the last loaded lane) (`_MMU_REQUIRE_REAL`, `config/macros/mmu_mode.cfg`).
   `T0` still works, so single-filament prints are fine. `CHANGE1`-`CHANGE3` fail
   through `T1`-`T3`.
-- Thirteen of those guards are one-line additions inside the otherwise vendored
+- Fourteen of those guards are one-line additions inside the otherwise vendored
   `config/macros/sp_mmu/sp_mmu_code.cfg` (marked `## local`), because a macro
   cannot be wrapped from another file. Re-add them when updating that file.
 - The infinite-spool runout path calls `_SP_TOOL_CHANGE` directly. It starts from
@@ -180,10 +180,39 @@ feature), which does not block `docker compose up`; Klippy then fails to open th
 Pico as it always did. Use `PRINTER_MODE=auto`, or plug the Pico in, to get
 `ready` without it.
 
+The gating has a cost. If the profile is on and `mmu-fallback` never becomes
+healthy (for example `mmu-virtual` cannot create its pty), `klipper` is never
+started and Moonraker shows no Klippy. Before this feature, Klippy would have
+started and reported an error instead. To diagnose:
+
+```bash
+docker compose ps                  # mmu-fallback shows "unhealthy" or "starting"
+docker logs mmu-fallback           # watcher: link decisions, guard errors
+docker logs mmu-virtual            # virtual MCU: pty creation, permission errors
+```
+
+To get out of it, set `PRINTER_MODE=real` in `.env` (the pty is no longer
+required) or remove `COMPOSE_PROFILES=mmu-fallback`, then run
+`docker compose up -d` again.
+
 ## Known limits
 
 - Any restart cancels pending delayed G-code, including a running auto
-  power-off countdown (`PRINTER_SHUTDOWN`).
+  power-off countdown (`PRINTER_SHUTDOWN`). This matters right after
+  `END_PRINT`: the printer is idle with cold heaters, so the watcher's idle
+  condition holds during the countdown. If the Pico is unplugged, or stays
+  absent for more than 10 s, inside that window, the watcher restarts Klipper
+  and the power-off never happens: the printer stays on. Nothing is lost
+  (heaters are already off), but power it off by hand. The watcher does not
+  skip restarts during the countdown because that state is not exposed in a
+  way it can read reliably, so this is documented rather than handled.
+- `config/` is no longer standalone. `[mcu PICO_MMU]` uses
+  `serial: /run/klipper/mmu` and `printer.cfg` includes
+  `/run/klipper/mmu_temp.cfg`, so the directory mounted at `/run/klipper`
+  (tracked `serial-links/` by default) must exist, with `mmu` and `mmu_temp.cfg`
+  in it, wherever this config is used. The in-repo `klipper` service does it. A
+  deployment that only copies `config/` fails at Klippy start with a missing
+  include until it provides them or edits those two lines back.
 - The virtual MCU does not simulate heaters or motion of the MMU. It only makes
   Klipper start.
 - The Klipper commit used to build the virtual MCU is pinned in four places:
