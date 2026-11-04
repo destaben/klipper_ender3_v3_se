@@ -72,6 +72,9 @@ class State:
     first_seen: Optional[float] = None
     virtual_gen: Optional[str] = None     # identity of the virtual MCU's pty
     respawn_since: Optional[float] = None
+    # A restart was requested and not confirmed by restart_done(): its request
+    # failed or timed out, so it may be repeated sooner than the cooldown.
+    attempt_open: bool = False
 
 
 @dataclass
@@ -140,6 +143,14 @@ def decide(cfg, st, obs, now):
     if want == VIRTUAL and not obs.virtual_ready:
         return Action()
 
+    if (st.linked is None and want == VIRTUAL and cfg.mode == "auto"
+            and st.print_latched):
+        # A print was running when the real MCU vanished (the latch was stored
+        # before this process started): keep the old link rather than switch
+        # to the virtual MCU. Replugging the Pico, or Klippy being ready and
+        # idle again, ends this.
+        return Action()
+
     if st.linked is None:
         # First run: link now. Whether Klippy needs a restart is decided below
         # from the mode it reports, because this process may have been
@@ -157,13 +168,18 @@ def decide(cfg, st, obs, now):
         if obs.klippy_mmu is not None:
             if obs.klippy_mmu == st.linked:
                 st.restart_pending = False
+                st.attempt_open = False
             elif (st.last_attempt is None
                     or now - st.last_attempt >= cfg.restart_cooldown):
                 st.restart_pending = True
+        # Every path obeys the cooldown; only a request that failed (still
+        # open) is repeated after the shorter retry interval.
+        wait = cfg.retry_interval if st.attempt_open else cfg.restart_cooldown
         if (st.restart_pending and safe_to_restart(st, obs)
                 and (st.last_attempt is None
-                     or now - st.last_attempt >= cfg.retry_interval)):
+                     or now - st.last_attempt >= wait)):
             st.last_attempt = now
+            st.attempt_open = True
             return Action(restart=True)
         return Action()
 
@@ -189,6 +205,7 @@ def decide(cfg, st, obs, now):
     st.last_restart = now
     st.last_attempt = now
     st.restart_pending = True
+    st.attempt_open = True
     return Action(link=want, restart=True)
 
 
@@ -213,6 +230,7 @@ def check_respawn(cfg, st, obs, now):
 
 def restart_done(st):
     st.restart_pending = False
+    st.attempt_open = False
 
 
 # --- I/O -------------------------------------------------------------------
@@ -385,12 +403,24 @@ class Runner:
             log("link -> %s (klippy=%s print=%s)"
                 % (self.pending_link, obs.klippy_state, obs.print_state))
             self.pending_link = None
-        if action.restart:
+        if action.restart and not self.still_safe(present):
+            log("firmware_restart postponed: Klippy is no longer idle")
+        elif action.restart:
             if self.request_restart(self.moonraker):
                 restart_done(self.st)
                 log("firmware_restart requested")
             else:
                 log("firmware_restart failed, will retry")
+
+    def still_safe(self, present):
+        """Look again right before the POST, so a print that started after
+        decide() looked is not killed. A little gap remains, between this
+        check and Klippy acting on the request. The link itself is already
+        switched by now, which is harmless: a running Klippy keeps the serial
+        port it has open."""
+        obs = self.observe(present)
+        update_latch(self.st, obs)
+        return safe_to_restart(self.st, obs)
 
     def step_safe(self, now):
         try:

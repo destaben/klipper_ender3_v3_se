@@ -54,6 +54,15 @@ The watcher changes the link and restarts Klipper only when **all** of these hol
 - The print latch is not set (below). It applies in the `error`/`shutdown` case
   too.
 - At least 60 s passed since its last restart (20 s quiet period right after one).
+  This applies to every path: a plug or unplug, the reconcile with what Klippy
+  reports and a respawned virtual MCU, so a crash-looping `mmu-virtual` cannot
+  restart Klippy more than once a minute. Only a request that failed (error or
+  timeout) is repeated sooner, after 20 s.
+- Klippy is checked again right before the request is sent, so a print that
+  started after the first check postpones the restart. A very small gap remains
+  between that check and Klippy acting on the request. The link itself may
+  already point at the new device by then, which is harmless: a running Klippy
+  keeps the serial port it has open.
 
 ### The print latch
 
@@ -68,9 +77,14 @@ Limits:
 
 - It is only recorded while the watcher runs. If the watcher was stopped when a
   print started and the Pico drops during it, the watcher cannot know. On its
-  next start it points the link at the virtual MCU, but it does not restart a
-  Klippy it finds in `error`; the next manual restart of Klipper then uses the
-  virtual MCU.
+  next start it points the link at the virtual MCU. It restarts a Klippy it
+  finds in `error` only if it can read which mode Klippy is on and that differs
+  from the link; if the mode is unreadable (the usual case in `error`) it does
+  nothing, and the next manual restart of Klipper uses the virtual MCU.
+- If the latch was stored and the watcher is recreated while the Pico is still
+  unplugged, the first decision of the new process keeps the old link (`auto`
+  mode) instead of switching to the virtual MCU. Replugging the Pico, or Klippy
+  being `ready` and idle again, ends this.
 - Deleting `print_latch` has no effect until the watcher restarts, because it is
   only read at startup.
 
@@ -116,7 +130,15 @@ the sidecar exits with an error instead of overwriting the tracked files.
 | `auto` | Virtual MCU when the Pico is absent, automatic restart on change. |
 | `sim` | Always virtual. One reconcile restart if Klippy is still on the real device, none after that. |
 
-To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up -d`.
+To revert, set `PRINTER_MODE=real`, or delete `.env` and stop the services.
+Deleting `.env` does not stop containers that are already running:
+
+```bash
+docker compose stop mmu-fallback mmu-virtual   # or: docker compose down
+```
+
+With the profile off, `docker compose up -d` does not start them again. The
+tracked `serial-links/mmu` then points at the real Pico, as before.
 
 ## What the user sees
 
@@ -135,6 +157,16 @@ To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up 
   runout. As defence in depth, `runout_gcode` in `sp_mmu.cfg` runs the same guard.
 - Logs: `docker logs mmu-fallback` (watcher), `docker logs mmu-virtual`.
 
+### Startup gating of `klipper`
+
+With the profile on, `klipper` waits for `mmu-fallback` to be healthy, so the
+link exists before Klippy connects. The check is `test -L /run/klipper/mmu`, and
+outside `real` mode also `test -e`, so the virtual pty must exist. In `real` mode
+with the Pico unplugged the link dangles on purpose (same as without this
+feature), which does not block `docker compose up`; Klippy then fails to open the
+Pico as it always did. Use `PRINTER_MODE=auto`, or plug the Pico in, to get
+`ready` without it.
+
 ## Known limits
 
 - Any restart cancels pending delayed G-code, including a running auto
@@ -144,8 +176,15 @@ To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up 
 - The Klipper commit used to build the virtual MCU is pinned in four places:
   `Dockerfile-klipper`, `sim/Dockerfile-sim`, `Dockerfile-mmu-fallback` and
   `build_firmware.sh`. Keep them in sync.
-- The compose file pulls `mmu-fallback:latest` until the follow-up change pins a
-  `sha-` tag, as was done for `klipper-connect`.
+- Both services, `mmu-fallback` and `mmu-virtual`, use the
+  `mmu-fallback:latest` image until the follow-up change pins a `sha-` tag, as was
+  done for `klipper-connect`. The image is published only after the merge.
+- `/dev` is mounted read-only in `mmu-fallback` (it only checks that the Pico's
+  by-id entry exists) and read-write in `mmu-virtual` (it creates the pty there,
+  and the pty must come from the host devpts for the `klipper` container to open
+  it). Narrowing the second one is item 5 below.
+- The check before the restart request cannot close the last gap completely (see
+  "When it acts").
 
 ## To verify on the printer
 

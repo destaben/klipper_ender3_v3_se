@@ -68,5 +68,11 @@ It does not cover what the sim skips, which the run prints as `sim: not
 loaded, ...` (currently two MCU temperature sensors). Heating and motion are
 not simulated.
 
+### Watcher unit tests (if you touched `mmu-fallback/`)
+Standard library only, no Docker needed:
+```bash
+python3 -m unittest discover -s mmu-fallback -v
+```
+
 If any of these fail, fix the issue — even in a file your change didn't
 touch — before pushing.

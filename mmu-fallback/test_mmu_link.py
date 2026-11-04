@@ -89,6 +89,36 @@ class FirstRunReconcile(unittest.TestCase):
         self.assertEqual([a for _, a in acts], [Action(restart=True)])
 
 
+class FirstRunLatch(unittest.TestCase):
+    """The latch written before a sidecar restart must be honoured by the very
+    first decision of the new process."""
+
+    def test_latched_fresh_start_does_not_link_virtual(self):
+        # The Pico dropped mid-print (latch stored), then the sidecar was
+        # recreated with the Pico still unplugged: keep the old link.
+        st = State(print_latched=True)
+        down = Obs(False, "shutdown")
+        self.assertEqual(run(CFG, st, down, 0, 300), [])
+        self.assertIsNone(st.linked)
+
+    def test_replug_after_latched_fresh_start_links_real(self):
+        st = State(print_latched=True)
+        run(CFG, st, Obs(False, "shutdown"), 0, 30)
+        self.assertEqual(decide(CFG, st, Obs(True, "shutdown"), 31),
+                         Action(link=m.REAL))
+
+    def test_latch_does_not_block_sim_mode(self):
+        cfg = Config(mode="sim")
+        st = State(print_latched=True)
+        self.assertEqual(decide(cfg, st, Obs(False, "shutdown"), 0),
+                         Action(link=m.VIRTUAL))
+
+    def test_stale_latch_clears_once_klippy_is_ready_and_idle(self):
+        st = State(print_latched=True)
+        self.assertEqual(decide(CFG, st, idle(False), 0),
+                         Action(link=m.VIRTUAL))
+
+
 class Debounce(unittest.TestCase):
     def test_short_absence_is_ignored(self):
         st = started(True)
@@ -376,6 +406,35 @@ class VirtualRespawn(unittest.TestCase):
         self.assertEqual(run(CFG, st, down, 3, 100), [])
 
 
+class CooldownEverywhere(unittest.TestCase):
+    """No path may restart Klippy more often than the cooldown; only a failed
+    request is retried sooner."""
+
+    def test_crash_looping_virtual_mcu_is_rate_limited(self):
+        st = State()
+        decide(CFG, st, virtual_idle(), 0)
+        times = []
+        for t in range(1, 400):
+            # The pty is recreated every 20 s and Klippy stays in shutdown
+            obs = virtual_idle(klippy="shutdown", gen=str(t // 20))
+            a = decide(CFG, st, obs, float(t))
+            if a.restart:
+                times.append(t)
+                m.restart_done(st)
+        self.assertGreaterEqual(len(times), 2)
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        self.assertTrue(all(g >= CFG.restart_cooldown for g in gaps), gaps)
+
+    def test_failed_request_is_still_retried_at_retry_interval(self):
+        st = started(True)
+        run(CFG, st, idle(False), 100, 111, request_ok=False)
+        retry = run(CFG, st, idle(False), 112, 200, request_ok=False)
+        self.assertGreaterEqual(len(retry), 2)
+        gaps = [b[0] - a[0] for a, b in zip(retry, retry[1:])]
+        self.assertTrue(all(CFG.retry_interval <= g < CFG.restart_cooldown
+                            for g in gaps), gaps)
+
+
 class VirtualGen(unittest.TestCase):
     def test_changes_when_the_link_is_recreated(self):
         with tempfile.TemporaryDirectory() as d:
@@ -444,6 +503,35 @@ class Runner(unittest.TestCase):
             finally:
                 m.store_latch = real
             self.assertTrue(m.load_latch(d))
+
+    def test_print_started_before_the_post_cancels_the_restart(self):
+        # Klippy reported idle when decide() ran, and a print started before
+        # the request was sent: the restart must be postponed.
+        with tempfile.TemporaryDirectory() as d:
+            r = self.make(d)
+            sent = []
+            r.request_restart = lambda url: sent.append(url) or True
+            stale = idle(True, mmu=m.VIRTUAL)
+            busy = Obs(True, "ready", "printing", True, klippy_mmu=m.VIRTUAL)
+            r.observe = lambda present: stale
+            r.step_safe(0)                    # first run: links real
+            seq = iter([stale, busy])
+            r.observe = lambda present: next(seq)
+            r.step_safe(1)
+            self.assertEqual(sent, [])
+            self.assertTrue(r.st.print_latched)
+            self.assertTrue(r.st.restart_pending)
+
+    def test_restart_is_sent_when_still_idle_at_the_post(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self.make(d)
+            sent = []
+            r.request_restart = lambda url: sent.append(url) or True
+            stale = idle(True, mmu=m.VIRTUAL)
+            r.observe = lambda present: stale
+            r.step_safe(0)
+            r.step_safe(1)
+            self.assertEqual(len(sent), 1)
 
     def test_unexpected_exception_does_not_escape(self):
         with tempfile.TemporaryDirectory() as d:

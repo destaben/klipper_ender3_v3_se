@@ -244,7 +244,10 @@ services:
       # The virtual MCU's pty is created by mmu-virtual, not here.
       - /dev:/dev:ro
     healthcheck:
-      test: ["CMD-SHELL", "test -e /run/klipper/mmu"]
+      # The link must exist before Klippy connects. In real mode it may dangle
+      # (Pico unplugged, same as without this service), and that must not block
+      # `docker compose up`; otherwise the target (the virtual pty) must exist.
+      test: ["CMD-SHELL", "test -L /run/klipper/mmu && { [ \"$$PRINTER_MODE\" = real ] || test -e /run/klipper/mmu; }"]
       interval: 5s
       timeout: 3s
       retries: 12
