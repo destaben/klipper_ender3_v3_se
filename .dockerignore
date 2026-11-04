@@ -15,6 +15,7 @@ logs/
 gcodes/
 database/
 moonraker/
+klipper-connect/
 ShakeTune_results/
 __pycache__/
 *.pyc
@@ -40,3 +41,4 @@ config.ender3_v3_se
 
 # Secrets
 config/moonraker.secrets
+config/klipper_connect.conf

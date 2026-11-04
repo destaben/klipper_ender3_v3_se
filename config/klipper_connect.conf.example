@@ -1,0 +1,62 @@
+# klipper-connect configuration for the klipper-connect container.
+# See docs/prusa-connect.md for setup.
+#
+# Copy this file to config/klipper_connect.conf (gitignored) and set
+# serial_number. Paths are the container paths from docker-compose.yaml:
+# /data is the printer_data folder.
+
+[printer]
+# Connect identifies the printer by this serial number. The Ender has no Prusa
+# sticker, so choose a value in the CZPX... format (see docs/prusa-connect.md).
+# This value is a placeholder: replace it.
+serial_number: CZPX0000X000XC00000
+# MK3S, MK3, MK25, MK25S or MINI
+type: MK3S
+# Klipper object names: [fan] and [heater_fan hotend_fan] in config/printer.cfg
+part_fan: fan
+hotend_fan: heater_fan hotend_fan
+#firmware_version:
+#default_material: PLA
+
+[connect]
+hostname: connect.prusa3d.com
+tls: True
+#link_version: 0.8.1
+#credentials_file: /data/klipper_connect/prusa_connect.ini
+#state_file: /data/klipper_connect/state.json
+
+[moonraker]
+# The moonraker service on the compose network. Its trusted_clients in
+# config/moonraker.conf include 172.16.0.0/12, so no api_key is needed.
+url: http://moonraker:7125
+#api_key:
+
+[storage]
+# Files show up in Connect under /local/...
+name: local
+gcodes_path: /data/gcodes
+
+[macros]
+# Connect's load and unload buttons run these macros. This printer has no
+# LOAD_FILAMENT or UNLOAD_FILAMENT macro, so those buttons fail until these
+# names are changed to a macro that exists in config/.
+load_filament: LOAD_FILAMENT
+unload_filament: UNLOAD_FILAMENT
+# Parameter the load macro takes for the nozzle temperature
+filament_temp_param: TEMP
+# Empty: this printer has no G80. Connect's "Start MBL" sends a plain G28.
+mbl_gcode:
+
+[camera]
+# Disabled. To enable, uncomment snapshot_url and point it at a URL this
+# container can reach (127.0.0.1 here is the container itself).
+#snapshot_url: http://<host>:8080/?action=snapshot
+name: Webcam
+trigger: 30
+
+[bridge]
+# printer_data folder inside the container (see the bind mounts)
+data_dir: /data
+file_info_count: 20
+telemetry_interval: 1.0
+log_level: INFO

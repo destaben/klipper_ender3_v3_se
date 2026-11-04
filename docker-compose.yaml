@@ -104,6 +104,48 @@ services:
           cpus: '1.0'
           memory: 384M
 
+  klipper-connect:
+    # Placeholder tag. Replace it with the sha-<short> tag that CI publishes for
+    # a merged commit. Until then, build locally: `docker compose build klipper-connect`.
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:sha-pending
+    build:
+      context: .
+      dockerfile: Dockerfile-klipper-connect
+    # Opt-in. A plain `docker compose up -d` skips this service, so the rest of
+    # the stack still starts before config/klipper_connect.conf exists. Start it
+    # by name: `docker compose up -d klipper-connect`.
+    profiles: ["prusa-connect"]
+    restart: unless-stopped
+    container_name: klipper-connect
+    depends_on: [moonraker]
+    # Hardening: the bridge writes only to its two bind mounts and /tmp.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      # Bridge configuration, read-only. Compose fails instead of creating a directory if the file is missing.
+      - type: bind
+        source: ./config/klipper_connect.conf
+        target: /data/config/klipper_connect.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      # Prusa Connect token and job state (klipper_connect/ under data_dir)
+      - ./klipper-connect:/data/klipper_connect
+      # G-code files, shared with moonraker
+      - ./gcodes:/data/gcodes
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter

@@ -30,6 +30,7 @@ threshold locally or you'll chase findings CI doesn't actually care about:
 ```bash
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-klipper
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-moonraker
+docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-klipper-connect
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < sim/Dockerfile-sim
 ```
 

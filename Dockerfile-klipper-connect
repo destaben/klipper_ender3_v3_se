@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Stage 1: Build - install klipper-connect and its dependencies into a venv.
+# The compilers are only needed here: pycryptodome publishes no wheel for
+# linux/arm/v7, so pip builds it from source. They stay out of the runtime stage.
+# The venv is built on the same base image as the runtime stage, so its
+# interpreter path is identical in both.
+# ---------------------------------------------------------------------------
+FROM python:3.13-slim-trixie AS builder
+
+# Upstream (amd989/klipper-connect, MIT) has no Dockerfile and no releases.
+# Pin the exact upstream commit. Bump it in one place. Not everything is pinned:
+# requests and pycryptodome float (upstream pyproject does not pin them), and the
+# base image is a tag, not a digest. Rebuilds are not bit-for-bit reproducible.
+ARG KLIPPER_CONNECT_COMMIT=e50fcbe629f79ac8bed1ab74d5270d13ffac076e
+
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/amd989/klipper-connect.git /src/klipper-connect && \
+    git -C /src/klipper-connect checkout "$KLIPPER_CONNECT_COMMIT" && \
+    rm -rf /src/klipper-connect/.git
+
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir /src/klipper-connect
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime - the venv and nothing else
+# ---------------------------------------------------------------------------
+FROM python:3.13-slim-trixie
+
+# UID/GID 1000 matches the moonraker image. ./gcodes is shared with moonraker.
+# Only this container mounts ./klipper-connect. Both must be writable by UID 1000.
+RUN groupadd --gid 1000 klipper-connect && \
+    useradd --uid 1000 --gid 1000 --no-create-home --home-dir /nonexistent \
+      --shell /usr/sbin/nologin klipper-connect
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /data
+
+USER 1000:1000
+
+# The config lives at /data/config/klipper_connect.conf, so the bridge takes
+# /data as its printer_data folder (gcodes in /data/gcodes, token and job state
+# in /data/klipper_connect). Override CMD to run another subcommand, e.g.
+# `register` (see docs/prusa-connect.md).
+ENTRYPOINT ["klipper-connect", "-c", "/data/config/klipper_connect.conf"]
+CMD ["run"]
