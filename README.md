@@ -73,7 +73,7 @@ Prebuilt multi-architecture images (targeting **`linux/amd64`**, **`linux/arm64`
 | Moonraker | `ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest` |
 | Klipper Connect | `ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:latest` |
 
-The Klipper Connect image is published by CI from `main` once the first build has run. Until then, build it locally with `docker compose build klipper-connect`.
+The Klipper Connect image is published by CI from `main` like the others. To build it locally instead, run `docker compose build klipper-connect`.
 
 ### Available tags
 
