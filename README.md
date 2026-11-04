@@ -116,7 +116,7 @@ The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) work
 
 BuildKit layer cache is stored in the registry (`<service>:buildcache-<arch>` tags), not in the GitHub Actions cache, which is capped at 10 GB and evicts entries. `Dockerfile-klipper` installs the Python dependencies in a layer keyed only on the requirements files, so bumping the Klipper or Shake&Tune commit does not reinstall them. On `arm/v7` it pulls prebuilt wheels from [piwheels](https://www.piwheels.org/) (this is why the image is based on Debian bookworm, Python 3.11) instead of compiling numpy and matplotlib under emulation.
 
-The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion.
+The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
 
 ## Services
 
@@ -183,6 +183,9 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
 ├── Dockerfile-klipper-connect # Dockerfile for the Prusa Connect bridge container
+├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
+├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py and its unit tests)
+├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
 ├── docs/                      # Upgrade notes, Prusa Connect setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, vfa-diagnosis.md, vfa-log.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
@@ -206,6 +209,8 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - The Klipper container uses the [0xD34D/klipper_ender3_v3_se](https://github.com/0xD34D/klipper_ender3_v3_se) fork. This fork does not include the stock Ender 3 V3 SE display support that the previous `jpcurti/ender3-v3-se-klipper-with-display` fork provided (on-screen filament-lane macros, etc.).
 - **Home Assistant integration**: `config/moonraker.conf` contains a `[power printer]` section that requires a Home Assistant long-lived access token. Copy `config/moonraker.secrets.example` to `config/moonraker.secrets` and replace `YOUR_HOMEASSISTANT_TOKEN_HERE` with your own token before starting the services. `docker-compose.yaml` mounts that file, and Moonraker will not start without it. Generate one in Home Assistant under **Profile → Long-Lived Access Tokens**. Never commit real tokens to version control.
 - **Automatic power-off**: `END_PRINT` calls `PRINTER_SHUTDOWN` (`config/macros/PRINTER_SHUTDOWN.cfg`), which switches the printer off through that Home Assistant switch once the hotend fan has stopped and 5 more minutes have passed. `START_PRINT` cancels a pending shutdown. If Klipper has unsaved `SAVE_CONFIG` changes, they are saved first and the printer powers off 30 s after the restart reaches `ready`, but only if Klipper is still `ready` then; run `CANCEL_PRINTER_SHUTDOWN` within those 30 s to stay on. A manual restart (for example `FIRMWARE_RESTART`) inside that window re-arms the 30 s timer, so cancel again afterwards. The save is skipped, and the power-off aborted, while a print is running or paused or a heater target (hotend or bed) is above 0. This uses the `shutdown_after_save` flag in `[save_variables]` (defined in `config/macros/sp_mmu.cfg`). The flag is set before `SAVE_CONFIG` runs, so if `SAVE_CONFIG` fails or the restart never reaches `ready`, it stays set and the next successful start powers off 30 s after `ready`. Clear it with `SAVE_VARIABLE VARIABLE=shutdown_after_save VALUE=0` or `CANCEL_PRINTER_SHUTDOWN`.
+
+- **Starting without the Pico MMU (optional)**: an opt-in sidecar can back `[mcu PICO_MMU]` with a virtual MCU while the Pico is unplugged, and restart Klipper for you when it is plugged in or removed. Off by default. See [docs/virtual-mmu.md](docs/virtual-mmu.md).
 
 ## FAQ
 

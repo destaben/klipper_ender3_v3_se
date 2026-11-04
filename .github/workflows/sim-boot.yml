@@ -3,10 +3,10 @@ name: Virtual Printer Boot
 "on":
   push:
     branches: [main]
-    paths: ['config/**', 'sim/**', '.github/workflows/sim-boot.yml']
+    paths: ['config/**', 'sim/**', 'mmu-fallback/**', '.github/workflows/sim-boot.yml']
   pull_request:
     branches: [main]
-    paths: ['config/**', 'sim/**', '.github/workflows/sim-boot.yml']
+    paths: ['config/**', 'sim/**', 'mmu-fallback/**', '.github/workflows/sim-boot.yml']
 
 permissions:
   contents: read
@@ -21,6 +21,9 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           persist-credentials: false
+
+      - name: Unit-test the mmu-fallback watcher
+        run: python3 -m unittest discover -s mmu-fallback -v
 
       - name: Build virtual printer image
         run: docker build -f sim/Dockerfile-sim -t klipper-sim .

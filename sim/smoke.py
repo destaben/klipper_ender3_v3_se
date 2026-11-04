@@ -19,6 +19,8 @@ SCRIPTS = [
     "CUT_COUNT_STATUS",
     "PRINTER_SHUTDOWN",
     "CANCEL_PRINTER_SHUTDOWN",
+    "MMU_MODE",
+    "_MMU_REQUIRE_REAL LANE=0",
 ]
 
 # Pending save-and-power-off flag (see config/macros/PRINTER_SHUTDOWN.cfg). It is
@@ -45,6 +47,19 @@ def check_shutdown_flag(path):
         raise ValueError("CANCEL_PRINTER_SHUTDOWN did not clear %s" % SHUTDOWN_FLAG)
 
 
+def check_virtual_mmu_guard(path):
+    # The sim's Pico MMU is a virtual MCU, so tool changes that need the real
+    # MMU must be refused. T1 itself is not run: if the guard were missing it
+    # would start a real tool change.
+    try:
+        call(path, "gcode/script", {"script": "_MMU_REQUIRE_REAL LANE=1"})
+    except ValueError as e:
+        if "MMU is simulated" not in str(e):
+            raise
+        return
+    raise ValueError("_MMU_REQUIRE_REAL LANE=1 did not refuse on a virtual MMU")
+
+
 def main():
     path = sys.argv[1]
     # save_variables backs the MMU state; a missing section means the
@@ -66,6 +81,12 @@ def main():
         print("shutdown flag check failed: %s" % e, flush=True)
         return 1
     print("shutdown flag check ok", flush=True)
+    try:
+        check_virtual_mmu_guard(path)
+    except (ValueError, OSError) as e:
+        print("virtual MMU guard check failed: %s" % e, flush=True)
+        return 1
+    print("virtual MMU guard check ok", flush=True)
     return 0
 
 

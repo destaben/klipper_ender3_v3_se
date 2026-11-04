@@ -39,6 +39,9 @@ jobs:
           - {image: klipper-connect, platform: linux/amd64, arch: amd64, runner: ubuntu-latest}
           - {image: klipper-connect, platform: linux/arm64, arch: arm64, runner: ubuntu-24.04-arm}
           - {image: klipper-connect, platform: linux/arm/v7, arch: armv7, runner: ubuntu-24.04-arm}
+          - {image: mmu-fallback, platform: linux/amd64, arch: amd64, runner: ubuntu-latest}
+          - {image: mmu-fallback, platform: linux/arm64, arch: arm64, runner: ubuntu-24.04-arm}
+          - {image: mmu-fallback, platform: linux/arm/v7, arch: armv7, runner: ubuntu-24.04-arm}
     env:
       IMAGE_NAME: ${{ github.repository }}/${{ matrix.image }}
       CACHE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:buildcache-${{ matrix.arch }}
@@ -104,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [klipper, moonraker, klipper-connect]
+        image: [klipper, moonraker, klipper-connect, mmu-fallback]
     env:
       IMAGE_NAME: ${{ github.repository }}/${{ matrix.image }}
 

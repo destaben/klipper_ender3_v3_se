@@ -40,6 +40,11 @@ jobs:
         with:
           dockerfile: Dockerfile-klipper-connect
           failure-threshold: error
+      - name: Lint Dockerfile-mmu-fallback
+        uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
+        with:
+          dockerfile: Dockerfile-mmu-fallback
+          failure-threshold: error
       - name: Lint sim/Dockerfile-sim
         uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf  # v3.1.0
         with:
