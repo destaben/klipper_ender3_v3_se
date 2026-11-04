@@ -3,6 +3,8 @@ moonraker/logs/*
 !moonraker/logs/.gitkeep
 moonraker/database/*
 !moonraker/database/.gitkeep
+klipper-connect/*
+!klipper-connect/.gitkeep
 klippy_uds
 printer-*.cfg
 !printer.cfg
@@ -19,5 +21,6 @@ chopper-resonance-tuner
 klipper
 ShakeTune_results
 config/moonraker.secrets
+config/klipper_connect.conf
 __pycache__/
 *.pyc

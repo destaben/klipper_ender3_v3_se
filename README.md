@@ -71,6 +71,9 @@ Prebuilt multi-architecture images (targeting **`linux/amd64`**, **`linux/arm64`
 |---|---|
 | Klipper | `ghcr.io/destaben/klipper_ender3_v3_se/klipper:latest` |
 | Moonraker | `ghcr.io/destaben/klipper_ender3_v3_se/moonraker:latest` |
+| Klipper Connect | `ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:latest` |
+
+The Klipper Connect image is published by CI from `main` once the first build has run. Until then, build it locally with `docker compose build klipper-connect`.
 
 ### Available tags
 
@@ -157,6 +160,12 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - **Image**: `gcr.io/cadvisor/cadvisor:v0.52.0`
 - Exposes per-container resource usage metrics.
 
+### 7. Klipper Connect (optional)
+
+- **Container Name**: `klipper-connect`
+- **Image**: Custom build from `Dockerfile-klipper-connect`, pinned to a commit of [amd989/klipper-connect](https://github.com/amd989/klipper-connect) (a community bridge, not affiliated with Prusa)
+- Connects the printer to Prusa Connect. It is in the `prusa-connect` compose profile, so a plain `docker compose up -d` does not start it. Setup and the security notes are in [docs/prusa-connect.md](docs/prusa-connect.md).
+
 ## Repository Structure
 
 ```
@@ -168,10 +177,13 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 │   ├── lis2dw.cfg             # Accelerometer configuration (optional)
 │   ├── timelapse.cfg          # Timelapse configuration
 │   ├── macros/                # Custom G-code macros
+│   ├── klipper_connect.conf.example  # Prusa Connect bridge config template (copy to klipper_connect.conf)
 │   └── helpers/               # Helper configuration files
+├── klipper-connect/           # Prusa Connect token and job state (runtime, gitignored)
 ├── Dockerfile-klipper         # Dockerfile for the Klipper container
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
-├── docs/                      # Upgrade notes and VFA docs (klipper-mmu-upgrade.md, vfa-diagnosis.md, vfa-log.md)
+├── Dockerfile-klipper-connect # Dockerfile for the Prusa Connect bridge container
+├── docs/                      # Upgrade notes, Prusa Connect setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, vfa-diagnosis.md, vfa-log.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config

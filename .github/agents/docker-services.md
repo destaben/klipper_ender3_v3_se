@@ -4,7 +4,7 @@ You are an expert in Docker Compose and the service stack for this **Ender 3 V3 
 
 ## Your Role
 
-Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Dockerfile-moonraker`, `setup_services.sh`, and service management.
+Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Dockerfile-moonraker`, `Dockerfile-klipper-connect`, `setup_services.sh`, and service management.
 
 ## Stack Summary
 
@@ -16,6 +16,7 @@ Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Doc
 | `moonraker` | Custom (`Dockerfile-moonraker`) | `http://<host_ip>/printer` etc. |
 | `node-exporter` | `prom/node-exporter:v1.9.1` | `http://<host_ip>/nodeexporter` |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.52.0` | `http://<host_ip>/cadvisor` |
+| `klipper-connect` | Custom (`Dockerfile-klipper-connect`), behind the `prusa-connect` profile | internal (no ports, no Traefik) |
 
 ## Routing Rules (Traefik)
 

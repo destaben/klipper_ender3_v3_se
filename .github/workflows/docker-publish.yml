@@ -36,6 +36,9 @@ jobs:
           - {image: moonraker, platform: linux/amd64, arch: amd64, runner: ubuntu-latest}
           - {image: moonraker, platform: linux/arm64, arch: arm64, runner: ubuntu-24.04-arm}
           - {image: moonraker, platform: linux/arm/v7, arch: armv7, runner: ubuntu-24.04-arm}
+          - {image: klipper-connect, platform: linux/amd64, arch: amd64, runner: ubuntu-latest}
+          - {image: klipper-connect, platform: linux/arm64, arch: arm64, runner: ubuntu-24.04-arm}
+          - {image: klipper-connect, platform: linux/arm/v7, arch: armv7, runner: ubuntu-24.04-arm}
     env:
       IMAGE_NAME: ${{ github.repository }}/${{ matrix.image }}
       CACHE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:buildcache-${{ matrix.arch }}
@@ -87,7 +90,9 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          # "--" separates image from arch so the merge glob for `klipper`
+          # cannot also match `klipper-connect` artifacts.
+          name: digests-${{ matrix.image }}--${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -99,7 +104,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [klipper, moonraker]
+        image: [klipper, moonraker, klipper-connect]
     env:
       IMAGE_NAME: ${{ github.repository }}/${{ matrix.image }}
 
@@ -108,7 +113,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-${{ matrix.image }}-*
+          pattern: digests-${{ matrix.image }}--*
           merge-multiple: true
 
       - name: Set up Docker Buildx
