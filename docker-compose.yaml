@@ -139,7 +139,8 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 128M
+          # Estimate, to be tuned: too low risks an OOM kill during large uploads.
+          memory: 256M
     logging:
       driver: "json-file"
       options:

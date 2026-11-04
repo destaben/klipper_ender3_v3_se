@@ -9,6 +9,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Mainsail** — web UI (v2.12.0) exposed via Traefik on port 80
 - **Traefik** (v3.6) — reverse proxy and HTTP router
 - **Node Exporter** + **cAdvisor** — host and container metrics
+- **Klipper Connect** — optional Prusa Connect bridge, behind the `prusa-connect` profile (see `docs/prusa-connect.md`)
 
 ## Hardware
 
@@ -56,6 +57,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 │       └── shakeandtune.cfg      # Shake&Tune resonance analysis
 ├── Dockerfile-klipper
 ├── Dockerfile-moonraker
+├── Dockerfile-klipper-connect
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
@@ -93,6 +95,9 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./gcodes` | `/opt/printer_data/gcodes` | klipper, moonraker |
 | `./moonraker/database` | `/opt/printer_data/database` | moonraker |
 | `./moonraker/logs` | `/opt/printer_data/logs` | moonraker |
+| `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
+| `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
+| `./gcodes` | `/data/gcodes` | klipper-connect |
 
 ## Coding Conventions
 

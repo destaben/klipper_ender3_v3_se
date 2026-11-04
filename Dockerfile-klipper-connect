@@ -4,14 +4,25 @@
 # linux/arm/v7, so pip builds it from source. They stay out of the runtime stage.
 # The venv is built on the same base image as the runtime stage, so its
 # interpreter path is identical in both.
+#
+# The base image is pinned by the multi-arch index digest (linux/amd64, arm64,
+# arm/v7), with the tag kept for readability. Both FROM lines must use the same
+# digest. To refresh it, run `docker buildx imagetools inspect python:3.13-slim-trixie`
+# and copy the top-level Digest line.
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim-trixie AS builder
+FROM python:3.13-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1 AS builder
 
 # Upstream (amd989/klipper-connect, MIT) has no Dockerfile and no releases.
-# Pin the exact upstream commit. Bump it in one place. Not everything is pinned:
-# requests and pycryptodome float (upstream pyproject does not pin them), and the
-# base image is a tag, not a digest. Rebuilds are not bit-for-bit reproducible.
+# Pin the exact upstream commit. Bump it in one place, together with the two
+# library pins below if upstream's requirements change.
+# Pinned: the base image digest, the upstream commit, requests and pycryptodome
+# (upstream pyproject does not pin them; the versions match the resolved set).
+# NOT pinned: the SDK's transitive dependencies (pip resolves them at build time)
+# and the apt packages (git, build-essential) from the trixie archive. Rebuilds
+# are therefore not bit-for-bit reproducible.
 ARG KLIPPER_CONNECT_COMMIT=e50fcbe629f79ac8bed1ab74d5270d13ffac076e
+ARG REQUESTS_VERSION=2.34.2
+ARG PYCRYPTODOME_VERSION=4.3.0
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
@@ -22,13 +33,17 @@ RUN git clone https://github.com/amd989/klipper-connect.git /src/klipper-connect
     git -C /src/klipper-connect checkout "$KLIPPER_CONNECT_COMMIT" && \
     rm -rf /src/klipper-connect/.git
 
+# The pins go in the same pip call as the upstream package, so pip resolves the
+# whole set together. If upstream ever requires another version, the install fails.
 RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir /src/klipper-connect
+    /opt/venv/bin/pip install --no-cache-dir \
+      "requests==${REQUESTS_VERSION}" "pycryptodome==${PYCRYPTODOME_VERSION}" \
+      /src/klipper-connect
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime - the venv and nothing else
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim-trixie
+FROM python:3.13-slim-trixie@sha256:ae14d4ce8771606477a81446e7ef429edd6762305fc50c84507c1041fa8285d1
 
 # UID/GID 1000 matches the moonraker image. ./gcodes is shared with moonraker.
 # Only this container mounts ./klipper-connect. Both must be writable by UID 1000.

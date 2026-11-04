@@ -15,7 +15,10 @@ The Ender 3 V3 SE is not a Prusa, so some things will not map (see
 
 The upstream commit is pinned by the `KLIPPER_CONNECT_COMMIT` argument in
 [`Dockerfile-klipper-connect`](../Dockerfile-klipper-connect). Upstream has no
-Dockerfile and no releases, so the pin is the only version record.
+Dockerfile and no releases, so the commit pin is the only upstream version record.
+The same file also pins the base image by digest and `requests` and `pycryptodome`
+to exact versions. The SDK's other transitive dependencies still float, so rebuilds
+are not bit-for-bit reproducible (see [Upgrading the pinned commit](#upgrading-the-pinned-commit)).
 
 ## What it does, and what Connect can do
 
@@ -43,6 +46,11 @@ delete its files. Treat `klipper-connect/prusa_connect.ini` like a password:
 - Stop the container when you do not need remote access:
   `docker compose stop klipper-connect`.
 
+Uploads from Connect are written to `gcodes/`, which is mounted read-write. The
+bridge does not cap upload size, so a large upload can fill the host disk, and a
+full disk also affects Moonraker and Klipper. Keep an eye on free space (`df -h`)
+after large uploads.
+
 ## Limitations
 
 - **Not a Prusa.** Bed size, the MMU, filament sensors, and other features may
@@ -55,7 +63,8 @@ delete its files. Treat `klipper-connect/prusa_connect.ini` like a password:
   `unload_filament` at macros that exist in `config/`.
 - **Serial number is not a real printer serial.** The Ender 3 V3 SE has no Prusa
   sticker, so `serial_number` is a `CZPX...`-format value you choose. Connect
-  identifies the printer by it.
+  identifies the printer by it. Pick a unique value: two installs that share one
+  serial collide in Connect.
 - **Registration is not verified on this printer.** The real Connect register
   flow (the link, the `/add` page, the 30-minute expiry) has not been tested
   against this printer. If the screens differ, follow what Connect shows and
@@ -90,8 +99,9 @@ sticker, so you choose this value yourself (see [Limitations](#limitations)).
    Edit `config/klipper_connect.conf`:
 
    - Set `serial_number` to a `CZPX...`-format value of your choice. The example
-     value is a placeholder and must be replaced. Connect's acceptance of a chosen
-     serial is not verified (see [Limitations](#limitations)).
+     value is a placeholder and must be replaced with your own unique value. Two
+     installs that share a serial collide in Prusa Connect. Connect's acceptance of
+     a chosen serial is not verified (see [Limitations](#limitations)).
    - Check the `[macros]` section. Confirm that the macros it names exist:
 
      ```bash
@@ -146,9 +156,8 @@ sticker, so you choose this value yourself (see [Limitations](#limitations)).
    ```
 
    A plain `docker compose up -d` does **not** start this service. It is behind
-   the `prusa-connect` compose profile, so the rest of the stack still starts
-   when the config or token is missing. Use the command above, or
-   `docker compose --profile prusa-connect up -d`.
+   the `prusa-connect` compose profile, which keeps a plain `up -d` from failing
+   when the config is absent.
 
 6. **Check the logs.**
 
@@ -214,7 +223,11 @@ Upstream has no releases, so review the commits before bumping the pin:
 
 2. Check `klipper_connect.conf.example` upstream for new or renamed keys, and
    update `config/klipper_connect.conf.example` if needed.
-3. Change `KLIPPER_CONNECT_COMMIT` in `Dockerfile-klipper-connect`.
+3. Change `KLIPPER_CONNECT_COMMIT` in `Dockerfile-klipper-connect`. If upstream's
+   requirements changed, update the `REQUESTS_VERSION` and `PYCRYPTODOME_VERSION`
+   pins too. Refresh the base image digest when you want newer base image
+   contents (see the comment at the top of the Dockerfile). Transitive dependencies
+   of the SDK are not pinned, so a rebuild can still pick up newer versions of them.
 4. Rebuild and confirm the bridge still starts:
 
    ```bash
