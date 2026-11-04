@@ -13,7 +13,6 @@ rest of the file is a thin loop around it. Standard library only.
 import json
 import os
 import stat
-import subprocess
 import sys
 import time
 import urllib.error
@@ -51,6 +50,14 @@ class Config:
     # time Klippy needs to leave "ready", so that a request whose reply was lost
     # (timeout) but which took effect is not repeated.
     retry_interval: float = 20.0
+    # In auto mode, wait this long at startup before linking the virtual MCU,
+    # so a Pico that enumerates just after the sidecar starts is not first
+    # replaced and then restarted back. 0 disables the wait.
+    startup_grace: float = 0.0
+    # After the virtual MCU's pty is recreated (its container was restarted),
+    # Klippy gets this long to reconnect by itself, as it does after any normal
+    # restart. Only if it is still down afterwards is a restart requested.
+    respawn_grace: float = 15.0
 
 
 @dataclass
@@ -62,6 +69,9 @@ class State:
     last_restart: Optional[float] = None
     last_attempt: Optional[float] = None
     restart_pending: bool = False
+    first_seen: Optional[float] = None
+    virtual_gen: Optional[str] = None     # identity of the virtual MCU's pty
+    respawn_since: Optional[float] = None
 
 
 @dataclass
@@ -73,6 +83,7 @@ class Obs:
     virtual_ready: bool = True  # the virtual MCU's pty exists
     # Mode Klippy is actually running [mcu PICO_MMU] on; None when unknown
     klippy_mmu: Optional[str] = None
+    virtual_gen: Optional[str] = None  # identity of the pty; None when absent
 
 
 @dataclass
@@ -116,7 +127,16 @@ def update_latch(st, obs):
 def decide(cfg, st, obs, now):
     """Advance the state for one observation and return what to do."""
     update_latch(st, obs)
+    if st.first_seen is None:
+        st.first_seen = now
+    if obs.virtual_gen is not None:
+        if st.virtual_gen is not None and obs.virtual_gen != st.virtual_gen:
+            st.respawn_since = now
+        st.virtual_gen = obs.virtual_gen
     want = desired_mode(cfg, obs)
+    if (st.linked is None and want == VIRTUAL and cfg.mode == "auto"
+            and now - st.first_seen < cfg.startup_grace):
+        return Action()
     if want == VIRTUAL and not obs.virtual_ready:
         return Action()
 
@@ -129,6 +149,7 @@ def decide(cfg, st, obs, now):
 
     if want == st.linked:
         st.candidate = None
+        check_respawn(cfg, st, obs, now)
         # Reconcile with what Klippy is really running on. This makes a
         # restart request idempotent: it is dropped once Klippy reports the
         # linked mode, and raised again if a mismatch outlives the time a
@@ -164,10 +185,30 @@ def decide(cfg, st, obs, now):
 
     st.linked = want
     st.candidate = None
+    st.respawn_since = None
     st.last_restart = now
     st.last_attempt = now
     st.restart_pending = True
     return Action(link=want, restart=True)
+
+
+def check_respawn(cfg, st, obs, now):
+    """Recover from a virtual MCU that was respawned while Klippy stayed down.
+
+    Klippy loses the MCU when its process dies. A normal restart respawns it
+    too, and Klippy then reconnects on its own, so wait before acting.
+    """
+    if st.respawn_since is None:
+        return
+    if st.linked != VIRTUAL:
+        st.respawn_since = None
+    elif now - st.respawn_since < cfg.respawn_grace:
+        return
+    elif obs.klippy_state == "ready":
+        st.respawn_since = None
+    elif obs.klippy_state in RESTARTABLE_ERROR_STATES:
+        st.respawn_since = None
+        st.restart_pending = True
 
 
 def restart_done(st):
@@ -289,27 +330,74 @@ def request_restart(moonraker):
         return False
 
 
-class VirtualMcu:
-    def __init__(self, elf, path):
-        self.elf, self.path, self.proc = elf, path, None
+def virtual_gen(path):
+    """Identity of the virtual MCU's pty link; it changes when it is recreated.
 
-    def ensure_running(self):
-        if self.proc is not None and self.proc.poll() is None:
-            return
-        if self.proc is not None:
-            log("virtual MCU exited (%s), respawning" % self.proc.returncode)
-        try:
-            os.unlink(self.path)
-        except FileNotFoundError:
-            pass
-        self.proc = subprocess.Popen([self.elf, "-I", self.path])
-
-    def ready(self):
-        return os.path.exists(self.path)
+    The link target (/dev/pts/N) can repeat, so the link's own inode and ctime
+    are used instead.
+    """
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return "%d:%d" % (st.st_ino, st.st_ctime_ns)
 
 
 def env_float(name, default):
     return float(os.environ.get(name, default))
+
+
+class Runner:
+    """The I/O loop around decide(). step_safe() never raises."""
+
+    def __init__(self, cfg, link_dir, by_id_dir, real_name, moonraker, poll):
+        self.cfg, self.link_dir, self.by_id_dir = cfg, link_dir, by_id_dir
+        self.real_name, self.moonraker, self.poll = real_name, moonraker, poll
+        self.virtual_path = os.path.join(link_dir, "virtual-mmu")
+        self.st = State(print_latched=load_latch(link_dir))
+        self.stored_latch = self.st.print_latched
+        self.pending_link = None
+        self.observe = lambda present: observe(moonraker, present)
+        self.request_restart = request_restart
+
+    def step(self, now):
+        present = real_present(self.by_id_dir, self.real_name)
+        obs = self.observe(present)
+        obs.virtual_gen = virtual_gen(self.virtual_path)
+        obs.virtual_ready = obs.virtual_gen is not None
+        action = decide(self.cfg, self.st, obs, now)
+        if action.link:
+            self.pending_link = action.link
+        # Writes are retried on later steps if they fail: decide() has already
+        # moved on, so the desired state is remembered here.
+        if self.st.print_latched != self.stored_latch:
+            # A failed write must not hold back the link or the restart
+            try:
+                store_latch(self.link_dir, self.st.print_latched)
+                self.stored_latch = self.st.print_latched
+                log("print latch %s"
+                    % ("set" if self.stored_latch else "cleared"))
+            except OSError as e:
+                log("cannot store the print latch, will retry: %s" % e)
+        if self.pending_link:
+            apply_link(self.link_dir, self.by_id_dir, self.real_name,
+                       self.pending_link)
+            log("link -> %s (klippy=%s print=%s)"
+                % (self.pending_link, obs.klippy_state, obs.print_state))
+            self.pending_link = None
+        if action.restart:
+            if self.request_restart(self.moonraker):
+                restart_done(self.st)
+                log("firmware_restart requested")
+            else:
+                log("firmware_restart failed, will retry")
+
+    def step_safe(self, now):
+        try:
+            self.step(now)
+        except Exception as e:  # noqa: BLE001 - the watcher must not exit
+            # Exiting would restart the container; log and try again instead.
+            log("error, will retry: %s: %s" % (type(e).__name__, e))
 
 
 def main():
@@ -322,44 +410,26 @@ def main():
         absent_debounce=env_float("ABSENT_DEBOUNCE", 10),
         restart_cooldown=env_float("RESTART_COOLDOWN", 60),
         quiet_after_restart=env_float("QUIET_AFTER_RESTART", 20),
+        startup_grace=env_float("STARTUP_GRACE", 5),
+        respawn_grace=env_float("RESPAWN_GRACE", 15),
     )
-    by_id_dir = os.environ.get("BY_ID_DIR", "/dev/serial/by-id")
-    real_name = os.environ.get(
-        "MMU_REAL_BY_ID",
-        "usb-Klipper_stm32g0b1xx_5A00320017504D4636383420-if00")
     link_dir = os.environ.get("LINK_DIR", "/run/klipper")
-    moonraker = os.environ.get("MOONRAKER_URL", "http://moonraker:7125")
-    poll = env_float("POLL_INTERVAL", 1)
-    elf = os.environ.get("VIRTUAL_MCU_ELF", "/opt/mmu-fallback/klipper.elf")
-
     problem = check_link_dir(link_dir)
     if problem:
         sys.exit(problem)
 
-    virtual = VirtualMcu(elf, os.path.join(link_dir, "virtual-mmu"))
-    st = State(print_latched=load_latch(link_dir))
+    runner = Runner(
+        cfg, link_dir,
+        by_id_dir=os.environ.get("BY_ID_DIR", "/dev/serial/by-id"),
+        real_name=os.environ.get(
+            "MMU_REAL_BY_ID",
+            "usb-Klipper_stm32g0b1xx_5A00320017504D4636383420-if00"),
+        moonraker=os.environ.get("MOONRAKER_URL", "http://moonraker:7125"),
+        poll=env_float("POLL_INTERVAL", 1))
     log("mode=%s link_dir=%s" % (mode, link_dir))
     while True:
-        if mode != "real":
-            virtual.ensure_running()
-        obs = observe(moonraker, real_present(by_id_dir, real_name))
-        obs.virtual_ready = virtual.ready()
-        latched = st.print_latched
-        action = decide(cfg, st, obs, time.monotonic())
-        if st.print_latched != latched:
-            store_latch(link_dir, st.print_latched)
-            log("print latch %s" % ("set" if st.print_latched else "cleared"))
-        if action.link:
-            apply_link(link_dir, by_id_dir, real_name, action.link)
-            log("link -> %s (klippy=%s print=%s)"
-                % (action.link, obs.klippy_state, obs.print_state))
-        if action.restart:
-            if request_restart(moonraker):
-                restart_done(st)
-                log("firmware_restart requested")
-            else:
-                log("firmware_restart failed, will retry")
-        time.sleep(poll)
+        runner.step_safe(time.monotonic())
+        time.sleep(runner.poll)
 
 
 if __name__ == "__main__":

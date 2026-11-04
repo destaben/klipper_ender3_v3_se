@@ -292,6 +292,170 @@ class Latch(unittest.TestCase):
         self.assertEqual(st.linked, m.REAL)
 
 
+class StartupGrace(unittest.TestCase):
+    """A Pico that enumerates just after the sidecar starts must not cause a
+    needless virtual link followed by an extra restart."""
+
+    def test_auto_waits_before_first_virtual_link(self):
+        cfg = Config(mode="auto", startup_grace=5)
+        st = State()
+        absent = idle(False, klippy=None)
+        self.assertEqual(run(cfg, st, absent, 0, 4), [])
+        self.assertIsNone(st.linked)
+        self.assertEqual(decide(cfg, st, absent, 5), Action(link=m.VIRTUAL))
+
+    def test_pico_appearing_within_grace_links_real_at_once(self):
+        cfg = Config(mode="auto", startup_grace=5)
+        st = State()
+        decide(cfg, st, idle(False, klippy=None), 0)
+        self.assertEqual(decide(cfg, st, idle(True, klippy=None), 2),
+                         Action(link=m.REAL))
+
+    def test_grace_does_not_delay_a_present_pico(self):
+        cfg = Config(mode="auto", startup_grace=5)
+        self.assertEqual(decide(cfg, State(), idle(True, klippy=None), 0),
+                         Action(link=m.REAL))
+
+    def test_grace_only_applies_in_auto_mode(self):
+        cfg = Config(mode="sim", startup_grace=5)
+        self.assertEqual(decide(cfg, State(), idle(False, klippy=None), 0),
+                         Action(link=m.VIRTUAL))
+
+
+def virtual_idle(klippy="ready", gen="a", mmu=m.VIRTUAL):
+    obs = idle(False, klippy=klippy, mmu=mmu if klippy == "ready" else None)
+    obs.virtual_gen = gen
+    return obs
+
+
+class VirtualRespawn(unittest.TestCase):
+    """The virtual MCU runs in its own container; docker respawns it. A
+    respawn is part of every normal restart, so only one that leaves Klippy
+    down needs a restart of its own."""
+
+    def linked_virtual(self):
+        st = State()
+        decide(CFG, st, virtual_idle(), 0)
+        self.assertEqual(st.linked, m.VIRTUAL)
+        return st
+
+    def test_first_sight_of_the_pty_is_not_a_respawn(self):
+        st = self.linked_virtual()
+        self.assertEqual(run(CFG, st, virtual_idle(), 1, 100), [])
+
+    def test_respawn_that_leaves_klippy_down_is_restarted_once(self):
+        st = self.linked_virtual()
+        run(CFG, st, virtual_idle(), 1, 9)
+        down = virtual_idle(klippy="shutdown", gen="b")
+        acts = run(CFG, st, down, 10, 60)
+        self.assertEqual([a for _, a in acts], [Action(restart=True)])
+        self.assertGreaterEqual(acts[0][0], 10 + CFG.respawn_grace)
+
+    def test_respawn_klippy_recovers_from_is_left_alone(self):
+        st = self.linked_virtual()
+        self.assertEqual(run(CFG, st, virtual_idle(klippy="shutdown", gen="b"),
+                             10, 14), [])
+        self.assertEqual(run(CFG, st, virtual_idle(gen="b"), 15, 100), [])
+
+    def test_respawn_during_a_print_is_not_restarted(self):
+        st = self.linked_virtual()
+        busy = Obs(False, "ready", "printing", True, klippy_mmu=m.VIRTUAL,
+                   virtual_gen="a")
+        run(CFG, st, busy, 1, 9)
+        self.assertTrue(st.print_latched)
+        self.assertEqual(run(CFG, st, virtual_idle(klippy="shutdown", gen="b"),
+                             10, 100), [])
+
+    def test_respawn_is_ignored_while_linked_real(self):
+        st = started(True)
+        for t, gen in ((1, "a"), (2, "b")):
+            obs = idle(True, mmu=m.REAL)
+            obs.virtual_gen = gen
+            decide(CFG, st, obs, t)
+        down = Obs(True, "shutdown", virtual_gen="c")
+        self.assertEqual(run(CFG, st, down, 3, 100), [])
+
+
+class VirtualGen(unittest.TestCase):
+    def test_changes_when_the_link_is_recreated(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "virtual-mmu")
+            self.assertIsNone(m.virtual_gen(path))
+            os.symlink("/dev/pts/3", path)
+            first = m.virtual_gen(path)
+            self.assertIsNotNone(first)
+            self.assertEqual(m.virtual_gen(path), first)
+            os.unlink(path)
+            os.symlink("/dev/pts/3", path)   # same target, new link
+            self.assertNotEqual(m.virtual_gen(path), first)
+
+
+class Runner(unittest.TestCase):
+    """The I/O loop must survive errors and retry, never exit."""
+
+    def make(self, d, mode="auto"):
+        cfg = Config(mode=mode)
+        r = m.Runner(cfg, link_dir=d, by_id_dir=d, real_name="none",
+                     moonraker="http://invalid", poll=0)
+        r.observe = lambda present: idle(present)
+        r.request_restart = lambda url: True
+        return r
+
+    def test_failed_link_write_is_retried(self):
+        real = m.apply_link
+        calls = []
+
+        def flaky(*a):
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError("disk full")
+            return real(*a)
+
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "virtual-mmu"), "w").close()
+            r = self.make(d)
+            m.apply_link, saved = flaky, real
+            try:
+                r.step_safe(0)
+                self.assertFalse(os.path.islink(os.path.join(d, "mmu")))
+                r.step_safe(1)
+            finally:
+                m.apply_link = saved
+            self.assertTrue(os.path.islink(os.path.join(d, "mmu")))
+
+    def test_failed_latch_write_is_retried(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "virtual-mmu"), "w").close()
+            r = self.make(d)
+            r.observe = lambda present: Obs(present, "ready", "printing", True)
+            real = m.store_latch
+            calls = []
+
+            def flaky(*a):
+                calls.append(1)
+                if len(calls) == 1:
+                    raise OSError("read-only")
+                return real(*a)
+
+            m.store_latch = flaky
+            try:
+                r.step_safe(0)
+                r.step_safe(1)
+            finally:
+                m.store_latch = real
+            self.assertTrue(m.load_latch(d))
+
+    def test_unexpected_exception_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self.make(d)
+
+            def boom(present):
+                raise RuntimeError("bug")
+
+            r.observe = boom
+            r.step_safe(0)   # must not raise
+
+
 class LinkDirCheck(unittest.TestCase):
     def test_refuses_the_tracked_default(self):
         with tempfile.TemporaryDirectory() as d:

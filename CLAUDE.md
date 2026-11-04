@@ -57,7 +57,7 @@ rules:
     allowed-values: ['true', 'false', 'on', 'off']" $(git ls-files '*.yml' '*.yaml')
 ```
 
-### Virtual printer boot check (if you touched `config/` or `sim/`)
+### Virtual printer boot check (if you touched `config/`, `sim/` or `mmu-fallback/`)
 `.github/workflows/sim-boot.yml` boots `config/` in a virtual printer and
 fails if Klippy does not reach `ready`. Run the same check locally:
 ```bash

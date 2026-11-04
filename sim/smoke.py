@@ -47,17 +47,29 @@ def check_shutdown_flag(path):
         raise ValueError("CANCEL_PRINTER_SHUTDOWN did not clear %s" % SHUTDOWN_FLAG)
 
 
+# Entry points that need the real MMU. Each must be refused on the sim's virtual
+# MMU before anything moves. T1 is not run: if its guard were missing it would
+# start a real tool change; these are cheaper to get wrong.
+GUARDED = [
+    "_MMU_REQUIRE_REAL LANE=1",
+    "_SP_CHANGE T=1",
+    "SP_LOAD_LANE LANE=1",
+    "SP_UNLOAD_LANE LANE=1",
+    "SP_FORCE_MOVE_LANE LANE=1",
+]
+
+
 def check_virtual_mmu_guard(path):
     # The sim's Pico MMU is a virtual MCU, so tool changes that need the real
-    # MMU must be refused. T1 itself is not run: if the guard were missing it
-    # would start a real tool change.
-    try:
-        call(path, "gcode/script", {"script": "_MMU_REQUIRE_REAL LANE=1"})
-    except ValueError as e:
-        if "MMU is simulated" not in str(e):
-            raise
-        return
-    raise ValueError("_MMU_REQUIRE_REAL LANE=1 did not refuse on a virtual MMU")
+    # MMU must be refused.
+    for script in GUARDED:
+        try:
+            call(path, "gcode/script", {"script": script})
+        except ValueError as e:
+            if "MMU is simulated" not in str(e):
+                raise
+            continue
+        raise ValueError("%s did not refuse on a virtual MMU" % script)
 
 
 def main():

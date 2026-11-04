@@ -1,7 +1,8 @@
 # Sidecar for the optional virtual Pico MMU (see docs/virtual-mmu.md).
-# Runs mmu_link.py plus a virtual MCU (the Klipper "linux" firmware with the
-# virtual GPIO patch from sim/patches), and keeps /run/klipper/mmu pointing at
-# the real Pico or at the virtual one. Build context is the repo root.
+# One image, two services: mmu_link.py keeps /run/klipper/mmu pointing at the
+# real Pico or at the virtual one, and run_virtual.sh runs that virtual MCU (the
+# Klipper "linux" firmware with the virtual GPIO patch from sim/patches) in its
+# own container. Build context is the repo root.
 
 # ---------------------------------------------------------------------------
 # Stage 1: build the virtual MCU
@@ -47,7 +48,7 @@ RUN useradd -u 1000 -ms /bin/bash klipper && \
     mkdir -p /run/klipper && chown klipper:klipper /run/klipper
 
 COPY --from=builder /opt/klipper/out/klipper.elf /opt/mmu-fallback/klipper.elf
-COPY mmu-fallback/mmu_link.py /opt/mmu-fallback/mmu_link.py
+COPY mmu-fallback/mmu_link.py mmu-fallback/run_virtual.sh /opt/mmu-fallback/
 
 USER klipper
 CMD ["python3", "-u", "/opt/mmu-fallback/mmu_link.py"]

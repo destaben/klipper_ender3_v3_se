@@ -116,7 +116,7 @@ The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) work
 
 BuildKit layer cache is stored in the registry (`<service>:buildcache-<arch>` tags), not in the GitHub Actions cache, which is capped at 10 GB and evicts entries. `Dockerfile-klipper` installs the Python dependencies in a layer keyed only on the requirements files, so bumping the Klipper or Shake&Tune commit does not reinstall them. On `arm/v7` it pulls prebuilt wheels from [piwheels](https://www.piwheels.org/) (this is why the image is based on Debian bookworm, Python 3.11) instead of compiling numpy and matplotlib under emulation.
 
-The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
+The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, `mmu-fallback/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
 
 ## Services
 
@@ -184,7 +184,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-moonraker       # Dockerfile for the Moonraker container
 ├── Dockerfile-klipper-connect # Dockerfile for the Prusa Connect bridge container
 ├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
-├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py and its unit tests)
+├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py, run_virtual.sh and unit tests)
 ├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
 ├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)

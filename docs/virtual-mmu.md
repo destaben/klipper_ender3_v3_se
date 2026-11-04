@@ -4,11 +4,21 @@ Klipper will not reach `ready` while a configured MCU is missing, and it cannot
 add or drop an MCU while it runs. With the Pico MMU unplugged, Klippy therefore
 stops in an error state (Moonraker and Mainsail stay up).
 
-This optional sidecar, `mmu-fallback`, lets Klipper start without the Pico MMU
-by pointing `[mcu PICO_MMU]` at a **virtual MCU** (the Klipper `linux` firmware
-with the virtual GPIO patch from `sim/patches`) when the real device is absent,
-and restarts Klipper for you when the Pico is plugged in or removed. The
-mainboard is never simulated.
+These optional services let Klipper start without the Pico MMU by pointing
+`[mcu PICO_MMU]` at a **virtual MCU** (the Klipper `linux` firmware with the
+virtual GPIO patch from `sim/patches`) when the real device is absent, and
+restart Klipper for you when the Pico is plugged in or removed. The mainboard is
+never simulated.
+
+There are two services, built from the same image (`Dockerfile-mmu-fallback`):
+
+- `mmu-fallback`: the watcher (`mmu_link.py`). It manages the links and asks for
+  restarts.
+- `mmu-virtual`: the virtual MCU (`run_virtual.sh`). It is a separate container
+  so that recreating or restarting the watcher (for example `docker compose up
+  -d` after editing `.env`) does not kill the MCU Klippy is connected to, which
+  would shut Klippy down in the middle of a print. Docker respawns it if it
+  exits.
 
 It is **off by default**. Without a `.env` file nothing changes.
 
@@ -21,7 +31,8 @@ It is **off by default**. Without a `.env` file nothing changes.
 - With the sidecar enabled, `mmu_link.py` writes the links in `MMU_LINK_DIR`
   instead:
   - Real Pico present: `mmu` -> the by-id device.
-  - Absent: `mmu` -> `virtual-mmu`, the pty of a `klipper.elf` it runs.
+  - Absent: `mmu` -> `virtual-mmu`, the pty of the `mmu-virtual` container's
+    `klipper.elf`.
 - `[temperature_sensor Pico_MMU]` is kept in `mmu_temp.cfg` in the same
   directory and included from `printer.cfg`, because the virtual MCU has no
   temperature sensor. The sidecar writes the sensor for the real MCU and an
@@ -31,33 +42,60 @@ It is **off by default**. Without a `.env` file nothing changes.
 
 ### When it acts
 
-The sidecar changes the link and restarts Klipper only when **all** of these hold:
+The watcher changes the link and restarts Klipper only when **all** of these hold:
 
 - The change has been stable for the debounce time (3 s to real, 10 s to virtual).
   The longer one for "absent" stops the Pico re-enumerating after a
   `FIRMWARE_RESTART` from looking like an unplug.
-- Klippy is `ready` with `print_stats.state` not `printing` or `paused` and
-  hotend and bed targets at 0 (a restart switches heaters off), or Klippy is in
-  `error`/`shutdown`.
-- No print was running when the MCU disappeared. If the real Pico drops during a
-  print, Klipper stays in its error state; it is **not** replaced by the virtual
-  MCU. This is remembered until Klippy is `ready` again with no active print,
-  and it is stored in `$MMU_LINK_DIR/print_latch`, so it survives a restart of
-  the sidecar (not a reboot: the directory is on tmpfs).
-- Moonraker answers. If it does not, the sidecar waits.
+- Moonraker answers and the print state is known. If not, the watcher waits.
+- Either Klippy is `ready`, `print_stats.state` is not `printing` or `paused`,
+  and the hotend and bed targets are 0 (a restart switches heaters off), or
+  Klippy is in `error`/`shutdown`.
+- The print latch is not set (below). It applies in the `error`/`shutdown` case
+  too.
 - At least 60 s passed since its last restart (20 s quiet period right after one).
 
-The sidecar also compares the link with the mode Klippy reports for
-`[mcu PICO_MMU]` (`mcu_constants.MCU` is `linux` when virtual). If it was
-recreated while Klippy kept running on the old link, it asks for the missing
-restart under the same conditions. Once Klippy reports the linked mode the
-pending restart is dropped, so a request whose reply timed out but which took
-effect is not repeated. A failed request is retried after 20 s, and a mismatch
-that persists after a restart is retried at most once per cooldown (60 s). If
-Klippy is in `error` and its mode is unknown, the sidecar does not restart it on
-its own startup.
+### The print latch
 
-`PRINTER_MODE=real` never starts a virtual MCU and never restarts.
+If the real Pico drops during a print, Klipper stays in its error state and
+`print_stats` becomes unreadable. The watcher remembers that a print was active
+and does **not** replace the real MCU with the virtual one. The latch clears
+once Klippy is `ready` again and reports no active print (replug the Pico and
+restart Klipper by hand). It is stored in `$MMU_LINK_DIR/print_latch`, so it
+survives a restart of the watcher (not a reboot: the directory is on tmpfs).
+
+Limits:
+
+- It is only recorded while the watcher runs. If the watcher was stopped when a
+  print started and the Pico drops during it, the watcher cannot know. On its
+  next start it points the link at the virtual MCU, but it does not restart a
+  Klippy it finds in `error`; the next manual restart of Klipper then uses the
+  virtual MCU.
+- Deleting `print_latch` has no effect until the watcher restarts, because it is
+  only read at startup.
+
+### Other cases
+
+- **Watcher recreated while Klippy kept running.** It compares the link with the
+  mode Klippy reports for `[mcu PICO_MMU]` (`mcu_constants.MCU` is `linux` when
+  virtual) and asks for the missing restart under the same conditions. Once
+  Klippy reports the linked mode the pending restart is dropped, so a request
+  whose reply timed out but which took effect is not repeated. A failed request
+  is retried after 20 s, and a mismatch that persists after a restart is retried
+  at most once per cooldown. If Klippy is in `error` and its mode is unknown, the
+  watcher does not restart it on its own startup.
+- **Virtual MCU respawned.** Every normal restart makes the `linux` MCU exit and
+  Docker respawn it, and Klippy reconnects by itself. The watcher notices the
+  pty was recreated and waits `MMU_RESPAWN_GRACE` (15 s). If Klippy is still in
+  `error`/`shutdown` it requests a restart, under the conditions above, so a
+  crashed virtual MCU recovers without a manual `FIRMWARE_RESTART`.
+- **Pico enumerating just after the watcher starts.** In `auto` mode the watcher
+  waits `MMU_STARTUP_GRACE` (5 s) before the first virtual link. A Pico that
+  appears later than that is handled as a normal plug-in: one extra idle
+  restart, no print affected.
+- **Errors.** A failed write of a link or of the latch is logged and retried on
+  the next poll. The watcher does not exit on errors, because restarting its
+  container would not help.
 
 ## Enable
 
@@ -74,9 +112,9 @@ the sidecar exits with an error instead of overwriting the tracked files.
 
 | `PRINTER_MODE` | Behaviour |
 | --- | --- |
-| `real` (default) | Link manager only: always the real device, never restarts. Kill switch. |
+| `real` (default) | Always the real device. No virtual MCU runs (`mmu-virtual` idles). No change-triggered restarts; the one reconcile restart applies only if Klippy is still on the virtual MCU. Kill switch. |
 | `auto` | Virtual MCU when the Pico is absent, automatic restart on change. |
-| `sim` | Always virtual. Never restarts after the initial link. |
+| `sim` | Always virtual. One reconcile restart if Klippy is still on the real device, none after that. |
 
 To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up -d`.
 
@@ -84,15 +122,18 @@ To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up 
 
 - `MMU_MODE` prints `MMU: REAL` or `MMU: SIMULATED`. It also runs 5 s after every
   Klipper start, and `START_PRINT` warns when the MMU is simulated.
-- With a simulated MMU, `T1`-`T5` and `SP_CHANGE` to a lane other than 0 raise an
-  error before anything moves (`config/macros/mmu_mode.cfg`). `T0` still works, so
-  single-filament prints are fine. `CHANGE1`-`CHANGE3` fail through `T1`-`T3`.
-- The infinite-spool path in the vendored `sp_mmu_code.cfg` calls
-  `_SP_TOOL_CHANGE` directly. It starts from the runout sensor, which is a pin
-  on the Pico, so a virtual MMU cannot produce a real runout. As defence in
-  depth, `runout_gcode` in `sp_mmu.cfg` (not vendored) runs the same guard, so
-  the vendored file is untouched.
-- Sidecar log: `docker logs mmu-fallback`.
+- With a simulated MMU, `T1`-`T5`, `SP_CHANGE`, `_SP_CHANGE`, `SP_LOAD_LANE`,
+  `SP_UNLOAD_LANE` and `SP_FORCE_MOVE_LANE` raise an error before anything moves
+  when the lane is not 0 (`_MMU_REQUIRE_REAL`, `config/macros/mmu_mode.cfg`).
+  `T0` still works, so single-filament prints are fine. `CHANGE1`-`CHANGE3` fail
+  through `T1`-`T3`.
+- Four of those guards are one-line additions inside the otherwise vendored
+  `config/macros/sp_mmu/sp_mmu_code.cfg` (marked `## local`), because a macro
+  cannot be wrapped from another file. Re-add them when updating that file.
+- The infinite-spool runout path calls `_SP_TOOL_CHANGE` directly. It starts from
+  the runout sensor, a pin on the Pico, so a virtual MMU cannot produce a real
+  runout. As defence in depth, `runout_gcode` in `sp_mmu.cfg` runs the same guard.
+- Logs: `docker logs mmu-fallback` (watcher), `docker logs mmu-virtual`.
 
 ## Known limits
 
@@ -113,20 +154,22 @@ These cannot be checked in CI. Defaults are configurable through `.env`
 `MMU_QUIET_AFTER_RESTART`).
 
 1. **Pty access across containers.** Klippy (uid 1000) must open the pty created
-   by the sidecar. It relies on the sidecar mounting host `/dev` and running as
-   uid 1000. If `docker logs klipper` shows a permission error on
+   by `mmu-virtual`. It relies on that container mounting host `/dev` and running
+   as uid 1000. If `docker logs klipper` shows a permission error on
    `/run/klipper/mmu`, check the pty owner.
 2. **Re-enumeration time.** Measure how long the by-id device is gone after a
    `FIRMWARE_RESTART` (`ls /dev/serial/by-id` in a loop). `MMU_ABSENT_DEBOUNCE`
    (10 s) and `MMU_QUIET_AFTER_RESTART` (20 s) must be longer.
 3. **Virtual MCU after `FIRMWARE_RESTART`.** `restart_method: command` on the
-   virtual MCU should return to `ready`; the sidecar respawns the process if it
-   exits.
+   virtual MCU should return to `ready`. The `linux` MCU may exit on reset;
+   Docker then respawns `mmu-virtual` and Klippy should reconnect within
+   `MMU_RESPAWN_GRACE`, with no second restart from the watcher. Check
+   `docker logs mmu-fallback` for an unexpected extra `firmware_restart`.
 4. **Acceptance:** with the Pico unplugged Klipper reaches `ready` showing
    `SIMULATED`; plugging it in while idle causes exactly one restart and then
    `REAL`; unplugging it while idle does the reverse; unplugging it mid-print
    causes no restart and no fallback; without `.env` nothing changes.
-5. **Narrower `/dev` mount.** The sidecar mounts the whole host `/dev` so the
+5. **Narrower `/dev` mount.** `mmu-virtual` mounts the whole host `/dev` so the
    pty comes from the host devpts. Try `/dev/pts` and `/dev/ptmx` only, with
    `/dev/serial` for the by-id lookup, and check that Klippy can still open the
    pty. Until then the whole tree stays; the container is unprivileged, drops all
