@@ -381,6 +381,18 @@ class VirtualRespawn(unittest.TestCase):
         self.assertEqual([a for _, a in acts], [Action(restart=True)])
         self.assertGreaterEqual(acts[0][0], 10 + CFG.respawn_grace)
 
+    def test_plug_after_a_respawn_restart_obeys_the_shared_cooldown(self):
+        # A respawn restart and a plug/unplug restart share one cooldown:
+        # replugging the Pico seconds after Klippy was restarted must wait.
+        st = self.linked_virtual()
+        run(CFG, st, virtual_idle(), 1, 9)
+        acts = run(CFG, st, virtual_idle(klippy="shutdown", gen="b"), 10, 60)
+        t0 = acts[0][0]
+        early = run(CFG, st, idle(True, mmu=m.VIRTUAL), t0 + 1, t0 + 59)
+        self.assertEqual(early, [])
+        late = run(CFG, st, idle(True, mmu=m.VIRTUAL), t0 + 60, t0 + 70)
+        self.assertEqual(len([a for _, a in late if a.restart]), 1)
+
     def test_respawn_klippy_recovers_from_is_left_alone(self):
         st = self.linked_virtual()
         self.assertEqual(run(CFG, st, virtual_idle(klippy="shutdown", gen="b"),

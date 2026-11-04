@@ -34,9 +34,17 @@ It is **off by default**. Without a `.env` file nothing changes.
   - Absent: `mmu` -> `virtual-mmu`, the pty of the `mmu-virtual` container's
     `klipper.elf`.
 - `[temperature_sensor Pico_MMU]` is kept in `mmu_temp.cfg` in the same
-  directory and included from `printer.cfg`, because the virtual MCU has no
-  temperature sensor. The sidecar writes the sensor for the real MCU and an
-  empty file for the virtual one.
+  directory and included from `printer.cfg` (`[include /run/klipper/mmu_temp.cfg]`),
+  because the virtual MCU has no temperature sensor. The sidecar writes the
+  sensor for the real MCU and an empty file for the virtual one.
+  - This include is a hard dependency: Klippy does not start if the file is
+    missing. Without the sidecar, the klipper container mounts the tracked
+    `serial-links/` directory at `/run/klipper`, whose `mmu_temp.cfg` holds the
+    real sensor, so the default stack needs nothing. If `MMU_LINK_DIR` is set but the
+    profile is disabled (or the directory is empty), Klippy fails to start with
+    a missing include: unset `MMU_LINK_DIR` or point it at a directory that
+    holds `mmu` and `mmu_temp.cfg`. If you run Klipper some
+    other way, create `/run/klipper/mmu_temp.cfg` (a copy of that file) first.
 - When the choice changes, the sidecar sends one `printer/firmware_restart` to
   Moonraker. Klipper cannot avoid this restart; the sidecar only does it for you.
 
@@ -56,8 +64,10 @@ The watcher changes the link and restarts Klipper only when **all** of these hol
 - At least 60 s passed since its last restart (20 s quiet period right after one).
   This applies to every path: a plug or unplug, the reconcile with what Klippy
   reports and a respawned virtual MCU, so a crash-looping `mmu-virtual` cannot
-  restart Klippy more than once a minute. Only a request that failed (error or
-  timeout) is repeated sooner, after 20 s.
+  restart Klippy more than once a minute. All paths stamp the same
+  last-restart time, so a plug right after a respawn restart waits too. Only a
+  request that did not go through, because it failed (error or timeout) or was
+  postponed by the check below, is repeated sooner, after 20 s.
 - Klippy is checked again right before the request is sent, so a print that
   started after the first check postpones the restart. A very small gap remains
   between that check and Klippy acting on the request. The link itself may
@@ -95,7 +105,7 @@ Limits:
   virtual) and asks for the missing restart under the same conditions. Once
   Klippy reports the linked mode the pending restart is dropped, so a request
   whose reply timed out but which took effect is not repeated. A failed request
-  is retried after 20 s, and a mismatch that persists after a restart is retried
+  or postponed request is retried after 20 s, and a mismatch that persists after a restart is retried
   at most once per cooldown. If Klippy is in `error` and its mode is unknown, the
   watcher does not restart it on its own startup.
 - **Virtual MCU respawned.** Every normal restart makes the `linux` MCU exit and
@@ -145,11 +155,14 @@ tracked `serial-links/mmu` then points at the real Pico, as before.
 - `MMU_MODE` prints `MMU: REAL` or `MMU: SIMULATED`. It also runs 5 s after every
   Klipper start, and `START_PRINT` warns when the MMU is simulated.
 - With a simulated MMU, `T1`-`T5`, `SP_CHANGE`, `_SP_CHANGE`, `SP_LOAD_LANE`,
-  `SP_UNLOAD_LANE` and `SP_FORCE_MOVE_LANE` raise an error before anything moves
-  when the lane is not 0 (`_MMU_REQUIRE_REAL`, `config/macros/mmu_mode.cfg`).
+  `SP_UNLOAD_LANE`, `SP_FORCE_MOVE_LANE`, `SP_LOAD_EXTRUDER`,
+  `SP_UNLOAD_EXTRUDER`, `SP_LOAD_HOTEND`, `SP_UNLOAD_HOTEND`, `SP_LOAD_HUB`,
+  `SP_UNLOAD_HUB`, `_SP_TOOL_CHANGE`, `_SP_LOAD_LANE` and `_SP_UNLOAD_LANE`
+  raise an error before anything moves when the lane is not 0 (for the macros
+  without a `LANE` parameter, the last loaded lane) (`_MMU_REQUIRE_REAL`, `config/macros/mmu_mode.cfg`).
   `T0` still works, so single-filament prints are fine. `CHANGE1`-`CHANGE3` fail
   through `T1`-`T3`.
-- Four of those guards are one-line additions inside the otherwise vendored
+- Thirteen of those guards are one-line additions inside the otherwise vendored
   `config/macros/sp_mmu/sp_mmu_code.cfg` (marked `## local`), because a macro
   cannot be wrapped from another file. Re-add them when updating that file.
 - The infinite-spool runout path calls `_SP_TOOL_CHANGE` directly. It starts from

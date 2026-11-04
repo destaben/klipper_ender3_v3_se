@@ -179,6 +179,7 @@ def decide(cfg, st, obs, now):
                 and (st.last_attempt is None
                      or now - st.last_attempt >= wait)):
             st.last_attempt = now
+            st.last_restart = now      # one cooldown shared by every path
             st.attempt_open = True
             return Action(restart=True)
         return Action()
