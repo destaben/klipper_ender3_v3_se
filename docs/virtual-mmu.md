@@ -92,9 +92,19 @@ Limits:
   from the link; if the mode is unreadable (the usual case in `error`) it does
   nothing, and the next manual restart of Klipper uses the virtual MCU.
 - If the latch was stored and the watcher is recreated while the Pico is still
-  unplugged, the first decision of the new process keeps the old link (`auto`
-  mode) instead of switching to the virtual MCU. Replugging the Pico, or Klippy
-  being `ready` and idle again, ends this.
+  unplugged, the first decision of the new process (`auto` mode) points the link
+  at the real, absent device instead of the virtual MCU, so it is never virtual
+  mid-print. The link dangles on purpose: the `mmu-fallback` healthcheck accepts
+  it while `print_latch` exists, so `klipper` still starts and reports the
+  missing MCU. Replug the Pico and restart Klipper by hand: the watcher does
+  not restart automatically while latched, and the latch clears once Klippy is
+  `ready` and idle.
+- A print that starts and loses the Pico within a single poll (1 s) is never
+  seen as `printing` while Klippy is `ready`, so no latch is set. Klippy is then
+  in `shutdown` with an unreadable print state, and `firmware_restart` is
+  allowed there after the debounce. This cannot be closed from Moonraker, which
+  reports no print state in `error`/`shutdown`; the data of such a print is lost
+  with the shutdown anyway.
 - Deleting `print_latch` has no effect until the watcher restarts, because it is
   only read at startup.
 

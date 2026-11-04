@@ -138,17 +138,20 @@ def decide(cfg, st, obs, now):
         st.virtual_gen = obs.virtual_gen
     want = desired_mode(cfg, obs)
     if (st.linked is None and want == VIRTUAL and cfg.mode == "auto"
+            and st.print_latched):
+        # A print was running when the real MCU vanished (the latch was stored
+        # before this process started): never switch to the virtual MCU. The
+        # link still has to exist, otherwise the gated klipper container would
+        # never start, so point it at the real (absent) device and let Klippy
+        # fail loudly until the Pico is back. The container healthcheck
+        # accepts this dangling link while the latch file exists.
+        st.linked = REAL
+        return Action(link=REAL)
+
+    if (st.linked is None and want == VIRTUAL and cfg.mode == "auto"
             and now - st.first_seen < cfg.startup_grace):
         return Action()
     if want == VIRTUAL and not obs.virtual_ready:
-        return Action()
-
-    if (st.linked is None and want == VIRTUAL and cfg.mode == "auto"
-            and st.print_latched):
-        # A print was running when the real MCU vanished (the latch was stored
-        # before this process started): keep the old link rather than switch
-        # to the virtual MCU. Replugging the Pico, or Klippy being ready and
-        # idle again, ends this.
         return Action()
 
     if st.linked is None:

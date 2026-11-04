@@ -102,6 +102,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
 | `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
 | `./gcodes` | `/data/gcodes` | klipper-connect |
+| `${MMU_LINK_DIR:-./serial-links}` | `/run/klipper` (ro in klipper, rw in the sidecars) | klipper, mmu-fallback, mmu-virtual (`mmu-fallback` profile) |
+| `/dev` | `/dev` (ro in mmu-fallback) | klipper, mmu-fallback, mmu-virtual (the last two are `mmu-fallback` profile only) |
 
 ## Coding Conventions
 

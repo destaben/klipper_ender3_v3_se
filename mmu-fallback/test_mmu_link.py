@@ -93,19 +93,36 @@ class FirstRunLatch(unittest.TestCase):
     """The latch written before a sidecar restart must be honoured by the very
     first decision of the new process."""
 
-    def test_latched_fresh_start_does_not_link_virtual(self):
+    def test_latched_fresh_start_links_real_not_virtual(self):
         # The Pico dropped mid-print (latch stored), then the sidecar was
-        # recreated with the Pico still unplugged: keep the old link.
+        # recreated with the Pico still unplugged. The link must still be
+        # created (pointing at the real, absent device) so that the gated
+        # klipper container can start and fail loudly; it must never become
+        # virtual while the latch is set.
         st = State(print_latched=True)
         down = Obs(False, "shutdown")
-        self.assertEqual(run(CFG, st, down, 0, 300), [])
-        self.assertIsNone(st.linked)
+        self.assertEqual(decide(CFG, st, down, 0), Action(link=m.REAL))
+        self.assertEqual(st.linked, m.REAL)
+        self.assertEqual(run(CFG, st, down, 1, 300), [])
+        self.assertEqual(st.linked, m.REAL)
 
-    def test_replug_after_latched_fresh_start_links_real(self):
+    def test_latched_fresh_start_never_restarts_onto_virtual(self):
+        st = State(print_latched=True)
+        for t in range(0, 300):
+            act = decide(CFG, st, Obs(False, "error"), t)
+            self.assertFalse(act.restart)
+            self.assertNotEqual(act.link, m.VIRTUAL)
+
+    def test_replug_after_latched_fresh_start_keeps_the_real_link(self):
+        # The link already points at the real device, so a replug needs no
+        # link change and, while latched, no automatic restart either: the
+        # latch clears once Klippy is restarted by hand and reports idle.
         st = State(print_latched=True)
         run(CFG, st, Obs(False, "shutdown"), 0, 30)
-        self.assertEqual(decide(CFG, st, Obs(True, "shutdown"), 31),
-                         Action(link=m.REAL))
+        self.assertEqual(run(CFG, st, Obs(True, "shutdown"), 31, 100), [])
+        self.assertEqual(st.linked, m.REAL)
+        self.assertEqual(decide(CFG, st, idle(True, mmu=m.REAL), 101), Action())
+        self.assertFalse(st.print_latched)
 
     def test_latch_does_not_block_sim_mode(self):
         cfg = Config(mode="sim")
@@ -471,6 +488,19 @@ class Runner(unittest.TestCase):
         r.observe = lambda present: idle(present)
         r.request_restart = lambda url: True
         return r
+
+    def test_latched_start_creates_a_dangling_real_link(self):
+        # Gated klipper needs the link to exist (the healthcheck accepts a
+        # dangling one while print_latch exists), and it must never be virtual.
+        with tempfile.TemporaryDirectory() as d:
+            m.store_latch(d, True)
+            r = self.make(d)
+            r.observe = lambda present: Obs(present, "shutdown")
+            r.step_safe(0)
+            link = os.path.join(d, "mmu")
+            self.assertTrue(os.path.islink(link))
+            self.assertEqual(os.readlink(link), os.path.join(d, "none"))
+            self.assertTrue(os.path.exists(os.path.join(d, "print_latch")))
 
     def test_failed_link_write_is_retried(self):
         real = m.apply_link

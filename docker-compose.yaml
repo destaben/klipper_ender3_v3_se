@@ -247,7 +247,14 @@ services:
       # The link must exist before Klippy connects. In real mode it may dangle
       # (Pico unplugged, same as without this service), and that must not block
       # `docker compose up`; otherwise the target (the virtual pty) must exist.
-      test: ["CMD-SHELL", "test -L /run/klipper/mmu && { [ \"$$PRINTER_MODE\" = real ] || test -e /run/klipper/mmu; }"]
+      # The same goes for a set print latch: the link deliberately dangles at
+      # the absent real Pico instead of becoming virtual mid-print.
+      test:
+        - CMD-SHELL
+        - >-
+          test -L /run/klipper/mmu &&
+          { [ "$$PRINTER_MODE" = real ] || test -e /run/klipper/mmu ||
+          test -e /run/klipper/print_latch; }
       interval: 5s
       timeout: 3s
       retries: 12

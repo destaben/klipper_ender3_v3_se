@@ -66,7 +66,8 @@ docker run --rm -v "$PWD/config:/printer-config:ro" klipper-sim
 ```
 It does not cover what the sim skips, which the run prints as `sim: not
 loaded, ...` (currently two MCU temperature sensors). Heating and motion are
-not simulated.
+not simulated. The run also executes `sim/smoke.py`, which checks that the
+virtual-MMU guards refuse lane changes.
 
 ### Watcher unit tests (if you touched `mmu-fallback/`)
 Standard library only, no Docker needed:
