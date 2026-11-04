@@ -186,7 +186,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
 ├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py and its unit tests)
 ├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
-├── docs/                      # Upgrade notes, Prusa Connect setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, vfa-diagnosis.md, vfa-log.md)
+├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config

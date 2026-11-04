@@ -8,9 +8,10 @@ from mmu_link import Action, Config, Obs, State, decide
 CFG = Config(mode="auto")
 
 
-def idle(present, klippy="ready"):
+def idle(present, klippy="ready", mmu=None):
+    """An idle printer. mmu is the mode Klippy is actually running on."""
     return Obs(real_present=present, klippy_state=klippy,
-               print_state="standby", heaters_off=True)
+               print_state="standby", heaters_off=True, klippy_mmu=mmu)
 
 
 def run(cfg, st, obs, start, end, step=1.0, request_ok=True):
@@ -53,6 +54,39 @@ class InitialLink(unittest.TestCase):
         obs.virtual_ready = False
         self.assertEqual(decide(CFG, st, obs, 0), Action())
         self.assertIsNone(st.linked)
+
+
+class FirstRunReconcile(unittest.TestCase):
+    """A sidecar restart must not lose a mode change Klippy has not seen."""
+
+    def test_stale_klippy_is_restarted_once_when_idle(self):
+        # Klippy runs on the virtual MCU, the Pico was replugged, and the
+        # sidecar was recreated: the new process links real and must restart.
+        st = State()
+        obs = idle(True, mmu=m.VIRTUAL)
+        self.assertEqual(decide(CFG, st, obs, 0), Action(link=m.REAL))
+        acts = run(CFG, st, obs, 1, 15)
+        self.assertEqual([a for _, a in acts], [Action(restart=True)])
+
+    def test_matching_klippy_is_left_alone(self):
+        st = State()
+        obs = idle(True, mmu=m.REAL)
+        self.assertEqual(decide(CFG, st, obs, 0), Action(link=m.REAL))
+        self.assertEqual(run(CFG, st, obs, 1, 100), [])
+
+    def test_unknown_klippy_mode_is_left_alone(self):
+        st = State()
+        self.assertEqual(decide(CFG, st, idle(True, klippy="startup"), 0),
+                         Action(link=m.REAL))
+        self.assertEqual(run(CFG, st, idle(True, klippy="startup"), 1, 100), [])
+
+    def test_stale_klippy_is_not_restarted_while_printing(self):
+        st = State()
+        decide(CFG, st, idle(True, mmu=m.VIRTUAL), 0)
+        busy = Obs(True, "ready", "printing", True, klippy_mmu=m.VIRTUAL)
+        self.assertEqual(run(CFG, st, busy, 1, 100), [])
+        acts = run(CFG, st, idle(True, mmu=m.VIRTUAL), 101, 110)
+        self.assertEqual([a for _, a in acts], [Action(restart=True)])
 
 
 class Debounce(unittest.TestCase):
@@ -147,10 +181,35 @@ class Restarts(unittest.TestCase):
         st = started(True)
         acts = run(CFG, st, idle(False), 100, 111, request_ok=False)
         self.assertTrue(acts[0][1].restart)
-        retry = run(CFG, st, idle(False), 112, 140, request_ok=False)
+        retry = run(CFG, st, idle(False), 112, 200, request_ok=False)
         self.assertTrue(retry)
         self.assertTrue(all(a == Action(restart=True) for _, a in retry))
         self.assertGreaterEqual(retry[1][0] - retry[0][0], CFG.retry_interval)
+
+    def test_timed_out_request_that_took_effect_is_not_repeated(self):
+        # Moonraker restarted Klippy but the POST timed out: once Klippy is
+        # back on the new mode the pending restart must be dropped.
+        st = started(True)
+        acts = run(CFG, st, idle(False, mmu=m.REAL), 100, 111, request_ok=False)
+        self.assertEqual(len(acts), 1)
+        self.assertEqual(run(CFG, st, idle(False, klippy="startup"), 112, 125,
+                             request_ok=False), [])
+        self.assertEqual(run(CFG, st, idle(False, mmu=m.VIRTUAL), 126, 200,
+                             request_ok=False), [])
+        self.assertFalse(st.restart_pending)
+
+    def test_request_that_did_not_take_effect_is_retried(self):
+        st = started(True)
+        acts = run(CFG, st, idle(False, mmu=m.REAL), 100, 111)
+        self.assertEqual(len(acts), 1)
+        # Still on the old mode well after the restart was accepted
+        later = run(CFG, st, idle(False, mmu=m.REAL), 112, 200)
+        self.assertEqual([a for _, a in later], [Action(restart=True)])
+
+    def test_stale_mode_right_after_accepted_request_is_not_a_second_restart(self):
+        st = started(True)
+        run(CFG, st, idle(False, mmu=m.REAL), 100, 111)
+        self.assertEqual(run(CFG, st, idle(False, mmu=m.REAL), 112, 125), [])
 
     def test_cooldown_limits_restart_rate(self):
         cfg = Config(mode="auto", quiet_after_restart=0, restart_cooldown=60)
@@ -214,6 +273,37 @@ class Links(unittest.TestCase):
             open(os.path.join(d, "regular"), "w").close()
             self.assertFalse(m.real_present(d, "regular"))
             self.assertTrue(m.real_present("/dev", "null"))
+
+
+class Latch(unittest.TestCase):
+    def test_latch_survives_a_sidecar_restart(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(m.load_latch(d))
+            m.store_latch(d, True)
+            self.assertTrue(m.load_latch(d))
+            m.store_latch(d, False)
+            self.assertFalse(m.load_latch(d))
+            m.store_latch(d, False)  # clearing twice is fine
+
+    def test_restored_latch_blocks_the_fallback(self):
+        st = started(True)
+        st.print_latched = True    # as loaded from the file
+        self.assertEqual(run(CFG, st, Obs(False, "shutdown"), 100, 300), [])
+        self.assertEqual(st.linked, m.REAL)
+
+
+class LinkDirCheck(unittest.TestCase):
+    def test_refuses_the_tracked_default(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, m.TRACKED_MARKER), "w").close()
+            self.assertIn("tracked", m.check_link_dir(d))
+
+    def test_refuses_a_missing_directory(self):
+        self.assertIsNotNone(m.check_link_dir("/nonexistent-mmu-dir"))
+
+    def test_accepts_a_writable_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(m.check_link_dir(d))
 
 
 if __name__ == "__main__":

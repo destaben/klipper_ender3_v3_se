@@ -41,12 +41,23 @@ The sidecar changes the link and restarts Klipper only when **all** of these hol
   `error`/`shutdown`.
 - No print was running when the MCU disappeared. If the real Pico drops during a
   print, Klipper stays in its error state; it is **not** replaced by the virtual
-  MCU. This is remembered until Klippy is `ready` again with no active print.
+  MCU. This is remembered until Klippy is `ready` again with no active print,
+  and it is stored in `$MMU_LINK_DIR/print_latch`, so it survives a restart of
+  the sidecar (not a reboot: the directory is on tmpfs).
 - Moonraker answers. If it does not, the sidecar waits.
 - At least 60 s passed since its last restart (20 s quiet period right after one).
 
-A failed restart request is retried every 5 s. `PRINTER_MODE=real` never starts a
-virtual MCU and never restarts.
+The sidecar also compares the link with the mode Klippy reports for
+`[mcu PICO_MMU]` (`mcu_constants.MCU` is `linux` when virtual). If it was
+recreated while Klippy kept running on the old link, it asks for the missing
+restart under the same conditions. Once Klippy reports the linked mode the
+pending restart is dropped, so a request whose reply timed out but which took
+effect is not repeated. A failed request is retried after 20 s, and a mismatch
+that persists after a restart is retried at most once per cooldown (60 s). If
+Klippy is in `error` and its mode is unknown, the sidecar does not restart it on
+its own startup.
+
+`PRINTER_MODE=real` never starts a virtual MCU and never restarts.
 
 ## Enable
 
@@ -58,8 +69,8 @@ docker compose up -d
 
 `/run/klipper-mmu` is on tmpfs, so create it again after a reboot (or add it to
 `setup_services.sh` / a tmpfiles.d entry). `MMU_LINK_DIR` must not stay at the
-tracked `./serial-links` in `auto`/`sim` mode, because the sidecar would
-overwrite those files.
+tracked `./serial-links`: that directory holds a `.tracked-default` marker and
+the sidecar exits with an error instead of overwriting the tracked files.
 
 | `PRINTER_MODE` | Behaviour |
 | --- | --- |
@@ -76,6 +87,11 @@ To revert, set `PRINTER_MODE=real`, or delete `.env` and run `docker compose up 
 - With a simulated MMU, `T1`-`T5` and `SP_CHANGE` to a lane other than 0 raise an
   error before anything moves (`config/macros/mmu_mode.cfg`). `T0` still works, so
   single-filament prints are fine. `CHANGE1`-`CHANGE3` fail through `T1`-`T3`.
+- The infinite-spool path in the vendored `sp_mmu_code.cfg` calls
+  `_SP_TOOL_CHANGE` directly. It starts from the runout sensor, which is a pin
+  on the Pico, so a virtual MMU cannot produce a real runout. As defence in
+  depth, `runout_gcode` in `sp_mmu.cfg` (not vendored) runs the same guard, so
+  the vendored file is untouched.
 - Sidecar log: `docker logs mmu-fallback`.
 
 ## Known limits
@@ -110,3 +126,8 @@ These cannot be checked in CI. Defaults are configurable through `.env`
    `SIMULATED`; plugging it in while idle causes exactly one restart and then
    `REAL`; unplugging it while idle does the reverse; unplugging it mid-print
    causes no restart and no fallback; without `.env` nothing changes.
+5. **Narrower `/dev` mount.** The sidecar mounts the whole host `/dev` so the
+   pty comes from the host devpts. Try `/dev/pts` and `/dev/ptmx` only, with
+   `/dev/serial` for the by-id lookup, and check that Klippy can still open the
+   pty. Until then the whole tree stays; the container is unprivileged, drops all
+   capabilities and cannot create device nodes.

@@ -47,7 +47,10 @@ class Config:
     absent_debounce: float = 10.0   # ...and absent this long, to go virtual
     restart_cooldown: float = 60.0  # minimum time between restarts
     quiet_after_restart: float = 20.0  # ignore flips while the Pico re-enumerates
-    retry_interval: float = 5.0     # retry a failed restart request
+    # Wait this long before repeating a restart request. It must outlast the
+    # time Klippy needs to leave "ready", so that a request whose reply was lost
+    # (timeout) but which took effect is not repeated.
+    retry_interval: float = 20.0
 
 
 @dataclass
@@ -68,6 +71,8 @@ class Obs:
     print_state: Optional[str] = None
     heaters_off: Optional[bool] = None
     virtual_ready: bool = True  # the virtual MCU's pty exists
+    # Mode Klippy is actually running [mcu PICO_MMU] on; None when unknown
+    klippy_mmu: Optional[str] = None
 
 
 @dataclass
@@ -116,13 +121,24 @@ def decide(cfg, st, obs, now):
         return Action()
 
     if st.linked is None:
-        # First run: nothing is linked yet, so Klippy cannot be running
-        # against a stale link. Link without a restart.
+        # First run: link now. Whether Klippy needs a restart is decided below
+        # from the mode it reports, because this process may have been
+        # recreated while Klippy kept running on the previous link.
         st.linked = want
         return Action(link=want)
 
     if want == st.linked:
         st.candidate = None
+        # Reconcile with what Klippy is really running on. This makes a
+        # restart request idempotent: it is dropped once Klippy reports the
+        # linked mode, and raised again if a mismatch outlives the time a
+        # restart takes.
+        if obs.klippy_mmu is not None:
+            if obs.klippy_mmu == st.linked:
+                st.restart_pending = False
+            elif (st.last_attempt is None
+                    or now - st.last_attempt >= cfg.restart_cooldown):
+                st.restart_pending = True
         if (st.restart_pending and safe_to_restart(st, obs)
                 and (st.last_attempt is None
                      or now - st.last_attempt >= cfg.retry_interval)):
@@ -172,6 +188,36 @@ def real_present(by_id_dir, name):
         return False
 
 
+TRACKED_MARKER = ".tracked-default"
+LATCH_FILE = "print_latch"
+
+
+def check_link_dir(link_dir):
+    """Return an error message when link_dir must not be written, else None."""
+    if os.path.exists(os.path.join(link_dir, TRACKED_MARKER)):
+        return ("%s is the tracked default (./serial-links). Set MMU_LINK_DIR "
+                "in .env to a separate directory, see docs/virtual-mmu.md"
+                % link_dir)
+    if not os.path.isdir(link_dir) or not os.access(link_dir, os.W_OK):
+        return "%s is missing or not writable by this user" % link_dir
+    return None
+
+
+def load_latch(link_dir):
+    return os.path.exists(os.path.join(link_dir, LATCH_FILE))
+
+
+def store_latch(link_dir, value):
+    path = os.path.join(link_dir, LATCH_FILE)
+    if value:
+        atomic_write("print was active\n", path)
+    else:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
 def atomic_symlink(target, path):
     tmp = path + ".tmp"
     try:
@@ -217,8 +263,14 @@ def observe(moonraker, present):
         if obs.klippy_state != "ready":
             return obs
         q = http(moonraker + "/printer/objects/query"
-                 "?print_stats&extruder&heater_bed")
+                 "?print_stats&extruder&heater_bed&mcu%20PICO_MMU")
         status = q["result"]["status"]
+        # Unknown stays None and never blocks: it only skips reconciling
+        try:
+            mcu = status["mcu PICO_MMU"]["mcu_constants"]["MCU"]
+            obs.klippy_mmu = VIRTUAL if mcu == "linux" else REAL
+        except (KeyError, TypeError):
+            obs.klippy_mmu = None
         obs.print_state = status["print_stats"]["state"]
         obs.heaters_off = (status["extruder"]["target"] == 0
                            and status["heater_bed"]["target"] == 0)
@@ -280,15 +332,23 @@ def main():
     poll = env_float("POLL_INTERVAL", 1)
     elf = os.environ.get("VIRTUAL_MCU_ELF", "/opt/mmu-fallback/klipper.elf")
 
+    problem = check_link_dir(link_dir)
+    if problem:
+        sys.exit(problem)
+
     virtual = VirtualMcu(elf, os.path.join(link_dir, "virtual-mmu"))
-    st = State()
+    st = State(print_latched=load_latch(link_dir))
     log("mode=%s link_dir=%s" % (mode, link_dir))
     while True:
         if mode != "real":
             virtual.ensure_running()
         obs = observe(moonraker, real_present(by_id_dir, real_name))
         obs.virtual_ready = virtual.ready()
+        latched = st.print_latched
         action = decide(cfg, st, obs, time.monotonic())
+        if st.print_latched != latched:
+            store_latch(link_dir, st.print_latched)
+            log("print latch %s" % ("set" if st.print_latched else "cleared"))
         if action.link:
             apply_link(link_dir, by_id_dir, real_name, action.link)
             log("link -> %s (klippy=%s print=%s)"

@@ -238,10 +238,14 @@ services:
       # Same path in both containers: the links it writes are absolute
       - ${MMU_LINK_DIR:-./serial-links}:/run/klipper
       # Host /dev: the pty of the virtual MCU must come from the host devpts so
-      # that the klipper container (which also mounts /dev) can open it
+      # that the klipper container (which also mounts /dev) can open it. Only
+      # /dev/pts and /dev/ptmx may be enough; that needs a test on the printer
+      # (docs/virtual-mmu.md, "To verify"), so the whole tree is kept for now.
+      # The container is unprivileged, has no capabilities and cannot create
+      # device nodes, so it adds little beyond what klipper already has.
       - /dev:/dev
     healthcheck:
-      test: ["CMD-SHELL", "test -L /run/klipper/mmu"]
+      test: ["CMD-SHELL", "test -e /run/klipper/mmu"]
       interval: 5s
       timeout: 3s
       retries: 12
