@@ -63,6 +63,45 @@ class PrinterIsOffTest(unittest.TestCase):
         self.assertFalse(mr.printer_is_off())
 
 
+class OffStateTest(unittest.TestCase):
+    """The state reported to Connect while the printer is powered off."""
+
+    def make(self, klippy_state, power):
+        br = Bridge.__new__(Bridge)
+        br.mr = FakeMoonraker(klippy_state, power)
+        return br
+
+    def test_error_becomes_idle_when_printer_is_off(self):
+        self.assertEqual(self.make("error", "off")._off_state(State.ERROR),
+                         State.IDLE)
+
+    def test_error_stays_error_when_plug_is_on(self):
+        # A real fault with the printer on must stay visible in Connect.
+        self.assertEqual(self.make("shutdown", "on")._off_state(State.ERROR),
+                         State.ERROR)
+
+    def test_other_states_are_untouched(self):
+        br = self.make("error", "off")
+        for state in (State.BUSY, State.READY, State.PRINTING, State.IDLE):
+            self.assertEqual(br._off_state(state), state)
+        # and no HTTP request was needed for them
+        self.assertEqual(br.mr.calls, [])
+
+    def test_polling_does_not_query_the_plug_every_second(self):
+        br = self.make("error", "off")
+        for _ in range(10):
+            br._off_state(State.ERROR)
+        self.assertEqual(br.mr.calls.count(("GET", "/server/info")), 1)
+        self.assertEqual(
+            br.mr.calls.count(("GET", "/machine/device_power/device")), 1)
+
+    def test_start_always_asks_fresh(self):
+        br = self.make("error", "off")
+        br._off_state(State.ERROR)           # fills the cache
+        br.mr.power = "on"                    # plug switched on meanwhile
+        self.assertFalse(br.mr.printer_is_off())
+
+
 class StartTest(unittest.TestCase):
     """Bridge._start, built without __init__ so no network or SDK is needed."""
 

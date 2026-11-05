@@ -79,10 +79,18 @@ Connect is taken as the operator's decision. The power
 device name is `printer`; set `KLIPPER_CONNECT_POWER_DEVICE` in the container
 environment if yours differs.
 
-Not verified: whether the Connect web UI offers **Start print** at all while the
-printer reports an error state. The bridge accepts the command; whether Connect
-sends it is up to Connect. Test it once with the printer off (plug off, cold, idle,
-queue empty) and note the result here.
+Tested on 2026-11-05 with the plug off: Connect shows the **Start print** button
+even when the bridge reports `ERROR`, but it does not deliver the command. In
+the bridge's DEBUG log every telemetry request got a `204` and no command ever
+arrived. So, with the printer off, the bridge reports `IDLE` to Connect instead of
+`ERROR` (`Bridge._off_state`). The same two conditions apply (Klippy not ready
+and the power device off); a printer that is on but faulty still shows `ERROR`.
+The power state is cached for 5 s, so Home Assistant is not queried every second.
+Connect therefore shows the printer as idle while it is powered off. Temperatures
+are empty because there is no data.
+
+Result of the end-to-end test from the Connect web UI with this change: _to be
+filled in after the test_.
 
 ## Limitations
 
