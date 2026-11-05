@@ -1,23 +1,25 @@
 diff --git a/klipper_connect/bridge.py b/klipper_connect/bridge.py
-index 6702d52..cd66fd6 100644
+index 6702d52..d6b1456 100644
 --- a/klipper_connect/bridge.py
 +++ b/klipper_connect/bridge.py
-@@ -437,6 +437,14 @@ class Bridge:
+@@ -437,6 +437,16 @@ class Bridge:
  
      # --- polling / state ----------------------------------------------------
  
 +    def _off_state(self, state: State) -> State:
-+        """Local patch (patches/klipper-connect): report IDLE, not ERROR, while
-+        the printer is powered off. Connect keeps the commands of a printer in
-+        ERROR and never delivers them, so a Start would not reach _start."""
++        """Local patch (patches/klipper-connect): report IDLE (READY once Connect
++        has sent SET_PRINTER_READY), not ERROR, while the printer is powered
++        off. Connect keeps the commands of a printer in ERROR and never
++        delivers them, and sends a file (Printables Easy Print) only to a
++        printer it sees as READY, so a Start would not reach _start."""
 +        if state == State.ERROR and self.mr.printer_is_off(max_age=5.0):
-+            return State.IDLE
++            return State.READY if self.printer.ready else State.IDLE
 +        return state
 +
      def poll(self) -> State:
          """Read Klipper's status and update the Connect state."""
          try:
-@@ -467,8 +475,8 @@ class Bridge:
+@@ -467,8 +477,8 @@ class Bridge:
          filename = print_stats.get("filename") or None
          idle_state = status.get("idle_timeout", {}).get("state", "Idle")
  
@@ -28,7 +30,7 @@ index 6702d52..cd66fd6 100644
  
          new_job = False
          with self.lock:
-@@ -682,11 +690,28 @@ class Bridge:
+@@ -682,11 +692,28 @@ class Bridge:
              raise CommandFailed(f"Can't {action} while {state.value}")
  
      def _start(self, filename: str, start_cmd_id: Optional[int]):
