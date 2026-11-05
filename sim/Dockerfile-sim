@@ -25,8 +25,9 @@ ARG KLIPPERMAINT_COMMIT=243fca19bf380421276b68241bc1dab28324e782
 
 WORKDIR /opt
 
-RUN git clone "$GITHUB_FORK_URL" klipper && \
-    git -C klipper checkout "$KLIPPER_COMMIT" && \
+RUN git init -q klipper && \
+    git -C klipper fetch -q --depth 1 "$GITHUB_FORK_URL" "$KLIPPER_COMMIT" && \
+    git -C klipper checkout -q FETCH_HEAD && \
     rm -rf klipper/.git
 
 # -F0: fail on any hunk that does not apply exactly, instead of fuzzing it in
@@ -34,14 +35,16 @@ COPY sim/patches /tmp/sim-patches
 RUN patch -F0 -d /opt/klipper -p1 < /tmp/sim-patches/0001-virtual-gpio-and-tmcuart.patch
 
 # Shake&Tune is part of the printer config ([shaketune] sections), as in Dockerfile-klipper
-RUN git clone "$SHAKETUNE_URL" shaketune && \
-    git -C shaketune checkout "$SHAKETUNE_COMMIT" && \
+RUN git init -q shaketune && \
+    git -C shaketune fetch -q --depth 1 "$SHAKETUNE_URL" "$SHAKETUNE_COMMIT" && \
+    git -C shaketune checkout -q FETCH_HEAD && \
     cp -r shaketune/shaketune klipper/klippy/extras/
 
 # KlipperMaintenance provides the [maintain] sections in config/helpers/maintain.cfg.
 # It is a single Klipper extra that uses only the Python standard library.
-RUN git clone "$KLIPPERMAINT_URL" maintenance && \
-    git -C maintenance checkout "$KLIPPERMAINT_COMMIT" && \
+RUN git init -q maintenance && \
+    git -C maintenance fetch -q --depth 1 "$KLIPPERMAINT_URL" "$KLIPPERMAINT_COMMIT" && \
+    git -C maintenance checkout -q FETCH_HEAD && \
     cp maintenance/maintain.py klipper/klippy/extras/maintain.py && \
     rm -rf maintenance
 
@@ -62,7 +65,6 @@ RUN printf 'CONFIG_MACH_LINUX=y\nCONFIG_LINUX_VIRTUAL_GPIO=y\n' > /opt/klipper/.
     make -C /opt/klipper olddefconfig && \
     make -C /opt/klipper -j"$(nproc)"
 
-COPY sim /opt/sim
-RUN chmod +x /opt/sim/run.sh
+COPY --chmod=755 sim /opt/sim
 
 ENTRYPOINT ["/opt/sim/run.sh"]
