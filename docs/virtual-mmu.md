@@ -81,7 +81,10 @@ If the real Pico drops during a print, Klipper stays in its error state and
 and does **not** replace the real MCU with the virtual one. The latch clears
 once Klippy is `ready` again and reports no active print (replug the Pico and
 restart Klipper by hand). It is stored in `$MMU_LINK_DIR/print_latch`, so it
-survives a restart of the watcher (not a reboot: the directory is on tmpfs).
+survives a restart of the watcher, but not a reboot or a full stop of klipper,
+mmu-fallback and mmu-virtual (for example `docker compose down`): with the default
+`mmu-links` volume and with a host tmpfs path alike, the directory is empty again
+afterwards.
 
 Limits:
 
