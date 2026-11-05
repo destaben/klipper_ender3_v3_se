@@ -37,7 +37,7 @@ services:
     depends_on: [moonraker]
 
   klipper:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:sha-8feba77
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper:sha-44871ed
     build:
       context: .
       dockerfile: Dockerfile-klipper
@@ -75,7 +75,7 @@ services:
         max-file: "2"
 
   moonraker:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:sha-8feba77
+    image: ghcr.io/destaben/klipper_ender3_v3_se/moonraker:sha-44871ed
     build:
       context: .
       dockerfile: Dockerfile-moonraker
@@ -215,7 +215,7 @@ services:
   # when the Pico MMU is unplugged by pointing /run/klipper/mmu at a virtual MCU.
   # Enable with COMPOSE_PROFILES=mmu-fallback in .env (see .env.example).
   mmu-fallback:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:sha-44871ed
     build:
       context: .
       dockerfile: Dockerfile-mmu-fallback
@@ -273,7 +273,7 @@ services:
   # or restarting mmu-fallback does not kill the MCU Klippy is connected to.
   # Idle unless PRINTER_MODE is auto or sim. Same image as mmu-fallback.
   mmu-virtual:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:sha-44871ed
     profiles: [mmu-fallback]
     restart: unless-stopped
     container_name: mmu-virtual
@@ -303,3 +303,15 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+volumes:
+  # tmpfs for the MMU serial links (MMU_LINK_DIR=mmu-links in .env.example).
+  # Docker mounts it when the first container that uses it starts, so it exists
+  # after every reboot without a host directory or sudo. It is empty again after
+  # the last of klipper, mmu-fallback and mmu-virtual stops, like any tmpfs.
+  mmu-links:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: uid=1000,gid=1000,mode=0755

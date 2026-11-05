@@ -81,7 +81,10 @@ If the real Pico drops during a print, Klipper stays in its error state and
 and does **not** replace the real MCU with the virtual one. The latch clears
 once Klippy is `ready` again and reports no active print (replug the Pico and
 restart Klipper by hand). It is stored in `$MMU_LINK_DIR/print_latch`, so it
-survives a restart of the watcher (not a reboot: the directory is on tmpfs).
+survives a restart of the watcher, but not a reboot or a full stop of klipper,
+mmu-fallback and mmu-virtual (for example `docker compose down`): with the default
+`mmu-links` volume and with a host tmpfs path alike, the directory is empty again
+afterwards.
 
 Limits:
 
@@ -134,15 +137,21 @@ Limits:
 ## Enable
 
 ```bash
-sudo install -d -o 1000 -g 1000 /run/klipper-mmu   # host tmpfs: cleared on reboot
 cp .env.example .env
 docker compose up -d
 ```
 
-`/run/klipper-mmu` is on tmpfs, so create it again after a reboot (or add it to
-`setup_services.sh` / a tmpfiles.d entry). `MMU_LINK_DIR` must not stay at the
-tracked `./serial-links`: that directory holds a `.tracked-default` marker and
-the sidecar exits with an error instead of overwriting the tracked files.
+`.env.example` sets `MMU_LINK_DIR=mmu-links`, a Docker tmpfs volume declared in
+`docker-compose.yaml`. Docker mounts it when the first container that uses it
+starts, so it exists after every reboot with no host directory and no `sudo`.
+Its content is lost when all three containers (klipper, mmu-fallback,
+mmu-virtual) are stopped, for example by `docker compose down`; the sidecar
+writes it again on start. A host path such as `/run/klipper-mmu` also works, but
+it is tmpfs on the host and has to be created again after each reboot
+(`sudo install -d -o 1000 -g 1000 /run/klipper-mmu`, or a tmpfiles.d entry).
+`MMU_LINK_DIR` must not stay at the tracked `./serial-links`: that directory
+holds a `.tracked-default` marker and the sidecar exits with an error instead of
+overwriting the tracked files.
 
 | `PRINTER_MODE` | Behaviour |
 | --- | --- |
@@ -228,9 +237,11 @@ required) or remove `COMPOSE_PROFILES=mmu-fallback`, then run
 - The Klipper commit used to build the virtual MCU is pinned in four places:
   `Dockerfile-klipper`, `sim/Dockerfile-sim`, `Dockerfile-mmu-fallback` and
   `build_firmware.sh`. Keep them in sync.
-- Both services, `mmu-fallback` and `mmu-virtual`, use the
-  `mmu-fallback:latest` image until the follow-up change pins a `sha-` tag, as was
-  done for `klipper-connect`. The image is published only after the merge.
+- Both services, `mmu-fallback` and `mmu-virtual`, are pinned to the same
+  `sha-` tag as `klipper` and `moonraker`, so the two sidecars always run the
+  same image and `docker compose pull` does not change them on its own. This
+  does not cover `./config`, which is bind-mounted: after a merge that changes
+  the link contract, bump all four tags and update the config together.
 - `/dev` is mounted read-only in `mmu-fallback` (it only checks that the Pico's
   by-id entry exists) and read-write in `mmu-virtual` (it creates the pty there,
   and the pty must come from the host devpts for the `klipper` container to open

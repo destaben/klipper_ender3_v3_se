@@ -74,7 +74,7 @@ Prebuilt multi-architecture images (targeting **`linux/amd64`**, **`linux/arm64`
 | Klipper Connect | `ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:latest` |
 | MMU fallback (opt-in, two services: `mmu-fallback`, `mmu-virtual`) | `ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest` |
 
-The MMU fallback image is used only by the opt-in `mmu-fallback` compose profile, see [docs/virtual-mmu.md](docs/virtual-mmu.md). The Klipper Connect image is published by CI from `main` like the others. To build it locally instead, run `docker compose build klipper-connect`.
+The table lists the image names; `docker-compose.yaml` pins every service to a `sha-<short_sha>` tag (see [Available tags](#available-tags)), not to `latest`. The MMU fallback image is used only by the opt-in `mmu-fallback` compose profile, see [docs/virtual-mmu.md](docs/virtual-mmu.md). The Klipper Connect image is published by CI from `main` like the others. To build it locally instead, run `docker compose build klipper-connect`.
 
 ### Available tags
 
