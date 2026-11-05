@@ -95,7 +95,7 @@ Safe end-to-end test (used on 2026-11-05: upload at t=0, plug on t≈3 s, `FIRMW
 
 ```bash
 printf 'M117 power-on queue test\nG4 P2000\nM117 test done\n' > "$TMPDIR/poweron_test.gcode"   # no heating, no motion
-curl -s -F "file=@"$TMPDIR/poweron_test.gcode"" -F "print=true" http://localhost/server/files/upload   # expect "print_queued": true
+curl -s -F "file=@$TMPDIR/poweron_test.gcode" -F "print=true" http://localhost/server/files/upload   # expect "print_queued": true
 curl -s -X DELETE http://localhost/server/files/gcodes/poweron_test.gcode                        # clean up afterwards
 ```
 
