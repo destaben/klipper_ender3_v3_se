@@ -89,8 +89,12 @@ The power state is cached for 5 s, so Home Assistant is not queried every second
 Connect therefore shows the printer as idle while it is powered off. Temperatures
 are empty because there is no data.
 
-Result of the end-to-end test from the Connect web UI with this change: _to be
-filled in after the test_.
+Result of the end-to-end test from Printables Easy Print with the plug off
+(2026-11-05): Connect sends `SET_PRINTER_READY`, then `START_PRINT`. The bridge
+reports READY (not IDLE) once Connect has marked the printer ready, queues the
+job, Moonraker powers the plug on and restarts Klipper, and the print starts
+(about 30 s). Connect may resend `START_PRINT` during the restart; that attempt
+can fail and Connect shows ERROR briefly, then the state recovers.
 
 ## Limitations
 
