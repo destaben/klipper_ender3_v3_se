@@ -78,6 +78,29 @@ Gotchas learned on this printer:
 - Recreating the container (`docker compose up --force-recreate`) loses `sp_mmu_data.cfg`. Copy it out with `docker cp` first and back in before starting.
 - The live stack uses prebuilt images tagged in `docker-compose.yaml`; a local override (`docker-compose.override.yaml`) can point `klipper` at a locally built image.
 
+## Power plug and power-on from the queue
+
+The Home Assistant plug (`[power printer]`, device `printer`) powers the Ender's MCU. The Pico MMU is powered separately and stays on. With the plug off, Klippy is in `shutdown`/`error`.
+
+```bash
+curl -s http://localhost/machine/device_power/devices                       # status on/off
+curl -s -X POST 'http://localhost/machine/device_power/off?printer'          # cuts power to the printer MCU
+```
+
+Only switch the plug off when `print_stats.state` is not `printing`/`paused` and both heater targets are 0. Never switch it on or off for a reason other than a test the user asked for.
+
+How a print reaches a powered-off printer (`config/moonraker.conf`): a queued job (Mainsail "Add to queue", or "Upload and print" from a slicer, via `queue_gcode_uploads`) switches the plug on, Moonraker sends `FIRMWARE_RESTART` 12 s later (`restart_delay`, a fixed timer) and `[job_queue] load_on_startup` starts the job when Klippy is `ready`. A direct "Print" in Mainsail and a start from Prusa Connect do not go through the queue and do not power the printer on.
+
+Safe end-to-end test (used on 2026-11-05: upload at t=0, plug on t≈3 s, `FIRMWARE_RESTART` t≈12 s, `ready` and `printing` t≈18 s, `complete` t≈21 s, one restart only): with the printer idle, cold and the queue empty, switch the plug off, then upload an inert file with the slicer's call and watch `/printer/info`, the plug status, `/server/job_queue/status` and `print_stats`:
+
+```bash
+printf 'M117 power-on queue test\nG4 P2000\nM117 test done\n' > "$TMPDIR/poweron_test.gcode"   # no heating, no motion
+curl -s -F "file=@"$TMPDIR/poweron_test.gcode"" -F "print=true" http://localhost/server/files/upload   # expect "print_queued": true
+curl -s -X DELETE http://localhost/server/files/gcodes/poweron_test.gcode                        # clean up afterwards
+```
+
+The file has no `START_PRINT`, so it exercises the power-on chain only, not heating, homing or the MMU.
+
 ## Logs and diagnosis
 
 ```bash
