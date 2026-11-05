@@ -215,7 +215,7 @@ services:
   # when the Pico MMU is unplugged by pointing /run/klipper/mmu at a virtual MCU.
   # Enable with COMPOSE_PROFILES=mmu-fallback in .env (see .env.example).
   mmu-fallback:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:sha-44871ed
     build:
       context: .
       dockerfile: Dockerfile-mmu-fallback
@@ -273,7 +273,7 @@ services:
   # or restarting mmu-fallback does not kill the MCU Klippy is connected to.
   # Idle unless PRINTER_MODE is auto or sim. Same image as mmu-fallback.
   mmu-virtual:
-    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:sha-44871ed
     profiles: [mmu-fallback]
     restart: unless-stopped
     container_name: mmu-virtual

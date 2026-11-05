@@ -234,9 +234,10 @@ required) or remove `COMPOSE_PROFILES=mmu-fallback`, then run
 - The Klipper commit used to build the virtual MCU is pinned in four places:
   `Dockerfile-klipper`, `sim/Dockerfile-sim`, `Dockerfile-mmu-fallback` and
   `build_firmware.sh`. Keep them in sync.
-- Both services, `mmu-fallback` and `mmu-virtual`, use the
-  `mmu-fallback:latest` image until the follow-up change pins a `sha-` tag, as was
-  done for `klipper-connect`. The image is published only after the merge.
+- Both services, `mmu-fallback` and `mmu-virtual`, are pinned to the same
+  `sha-` tag as `klipper` and `moonraker`, so the `/run/klipper/mmu` contract
+  between them cannot drift. Bump all four together after a merge that changes
+  the sidecar.
 - `/dev` is mounted read-only in `mmu-fallback` (it only checks that the Pico's
   by-id entry exists) and read-write in `mmu-virtual` (it creates the pty there,
   and the pty must come from the host devpts for the `klipper` container to open
