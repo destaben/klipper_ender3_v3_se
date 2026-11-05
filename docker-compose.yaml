@@ -60,6 +60,14 @@ services:
       # Chopper Resonance Tuner configuration
       - ./chopper-resonance-tuner/gcode_shell_command.py:/home/klipper/klipper/klippy/extras/gcode_shell_command.py
       - ./chopper-resonance-tuner:/home/klipper/chopper-resonance-tuner
+      # Stable serial path for the Pico MMU (default: symlink to the real device).
+      # The mmu-fallback profile can point it at a virtual MCU, see docs/virtual-mmu.md.
+      - ${MMU_LINK_DIR:-./serial-links}:/run/klipper:ro
+    depends_on:
+      # Ignored unless the mmu-fallback profile is enabled
+      mmu-fallback:
+        condition: service_healthy
+        required: false
     logging:
       driver: "json-file"
       options:
@@ -202,3 +210,96 @@ services:
         limits:
           cpus: '0.5'
           memory: 128M
+
+  # Optional (opt-in, see docs/virtual-mmu.md): keeps klipper reaching ready
+  # when the Pico MMU is unplugged by pointing /run/klipper/mmu at a virtual MCU.
+  # Enable with COMPOSE_PROFILES=mmu-fallback in .env (see .env.example).
+  mmu-fallback:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-mmu-fallback
+    profiles: [mmu-fallback]
+    restart: unless-stopped
+    container_name: mmu-fallback
+    user: "1000:1000"
+    depends_on: [moonraker]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      PRINTER_MODE: ${PRINTER_MODE:-real}
+      ABSENT_DEBOUNCE: ${MMU_ABSENT_DEBOUNCE:-10}
+      PRESENT_DEBOUNCE: ${MMU_PRESENT_DEBOUNCE:-3}
+      RESTART_COOLDOWN: ${MMU_RESTART_COOLDOWN:-60}
+      QUIET_AFTER_RESTART: ${MMU_QUIET_AFTER_RESTART:-20}
+      STARTUP_GRACE: ${MMU_STARTUP_GRACE:-5}
+      RESPAWN_GRACE: ${MMU_RESPAWN_GRACE:-15}
+    volumes:
+      # Same path in both containers: the links it writes are absolute
+      - ${MMU_LINK_DIR:-./serial-links}:/run/klipper
+      # Read-only host /dev: only to check that the Pico's /dev/serial/by-id
+      # entry exists (it links to ../../ttyACMn, so the whole tree is needed).
+      # The virtual MCU's pty is created by mmu-virtual, not here.
+      - /dev:/dev:ro
+    healthcheck:
+      # The link must exist before Klippy connects. In real mode it may dangle
+      # (Pico unplugged, same as without this service), and that must not block
+      # `docker compose up`; otherwise the target (the virtual pty) must exist.
+      # The same goes for a set print latch: the link deliberately dangles at
+      # the absent real Pico instead of becoming virtual mid-print.
+      test:
+        - CMD-SHELL
+        - >-
+          test -L /run/klipper/mmu &&
+          { [ "$$PRINTER_MODE" = real ] || test -e /run/klipper/mmu ||
+          test -e /run/klipper/print_latch; }
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # The virtual Pico MMU itself, kept apart from the watcher so that recreating
+  # or restarting mmu-fallback does not kill the MCU Klippy is connected to.
+  # Idle unless PRINTER_MODE is auto or sim. Same image as mmu-fallback.
+  mmu-virtual:
+    image: ghcr.io/destaben/klipper_ender3_v3_se/mmu-fallback:latest
+    profiles: [mmu-fallback]
+    restart: unless-stopped
+    container_name: mmu-virtual
+    user: "1000:1000"
+    command: ["/opt/mmu-fallback/run_virtual.sh"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      PRINTER_MODE: ${PRINTER_MODE:-real}
+    volumes:
+      - ${MMU_LINK_DIR:-./serial-links}:/run/klipper
+      # Host /dev: the pty must come from the host devpts so that the klipper
+      # container (which also mounts /dev) can open it. Only /dev/pts and
+      # /dev/ptmx may be enough; that needs a test on the printer
+      # (docs/virtual-mmu.md, "To verify"). The container is unprivileged, has no
+      # capabilities and cannot create device nodes.
+      - /dev:/dev
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"

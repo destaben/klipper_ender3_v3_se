@@ -10,6 +10,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Traefik** (v3.6) — reverse proxy and HTTP router
 - **Node Exporter** + **cAdvisor** — host and container metrics
 - **Klipper Connect** — optional Prusa Connect bridge, behind the `prusa-connect` profile (see `docs/prusa-connect.md`)
+- **mmu-fallback** + **mmu-virtual** — optional virtual Pico MMU, behind the `mmu-fallback` profile (see `docs/virtual-mmu.md`)
 
 ## Hardware
 
@@ -58,6 +59,9 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── Dockerfile-klipper
 ├── Dockerfile-moonraker
 ├── Dockerfile-klipper-connect
+├── Dockerfile-mmu-fallback       # Optional virtual Pico MMU image (watcher + virtual MCU)
+├── mmu-fallback/                 # Watcher (mmu_link.py), run_virtual.sh and unit tests
+├── serial-links/                 # Tracked default symlink for the Pico MMU serial path
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
@@ -69,7 +73,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ## Key Configuration Facts
 
 - **MCU serial**: `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0`
-- **Pico MMU MCU serial**: `/dev/serial/by-id/usb-Klipper_stm32g0b1xx_5A00320017504D4636383420-if00`
+- **Pico MMU MCU serial**: `/run/klipper/mmu`, a symlink to `/dev/serial/by-id/usb-Klipper_stm32g0b1xx_5A00320017504D4636383420-if00` (or to a virtual MCU with the optional `mmu-fallback` profile)
 - **Firmware target**: STM32F103, 28KiB bootloader, USART1 (PA10/PA9) + USART2
 - **Bed mesh**: 5×5 bicubic, min (30,30) max (190,190)
 - **Input shaper** (calibrated): X=MZV@49.6 Hz, Y=MZV@38.4 Hz
@@ -98,6 +102,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
 | `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
 | `./gcodes` | `/data/gcodes` | klipper-connect |
+| `${MMU_LINK_DIR:-./serial-links}` | `/run/klipper` (ro in klipper, rw in the sidecars) | klipper, mmu-fallback, mmu-virtual (`mmu-fallback` profile) |
+| `/dev` | `/dev` (ro in mmu-fallback) | klipper, mmu-fallback, mmu-virtual (the last two are `mmu-fallback` profile only) |
 
 ## Coding Conventions
 

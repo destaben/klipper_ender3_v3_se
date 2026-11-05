@@ -24,3 +24,5 @@ config/moonraker.secrets
 config/klipper_connect.conf
 __pycache__/
 *.pyc
+# Local compose overrides (see .env.example)
+.env

@@ -1,0 +1,3 @@
+This directory is the tracked, read-only default used by the klipper container
+when the mmu-fallback sidecar is not enabled. The sidecar refuses to write
+here: set MMU_LINK_DIR in .env to a separate directory (docs/virtual-mmu.md).

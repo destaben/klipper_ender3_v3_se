@@ -19,6 +19,8 @@ SCRIPTS = [
     "CUT_COUNT_STATUS",
     "PRINTER_SHUTDOWN",
     "CANCEL_PRINTER_SHUTDOWN",
+    "MMU_MODE",
+    "_MMU_REQUIRE_REAL LANE=0",
 ]
 
 # Pending save-and-power-off flag (see config/macros/PRINTER_SHUTDOWN.cfg). It is
@@ -45,6 +47,41 @@ def check_shutdown_flag(path):
         raise ValueError("CANCEL_PRINTER_SHUTDOWN did not clear %s" % SHUTDOWN_FLAG)
 
 
+# Entry points that need the real MMU. Each must be refused on the sim's virtual
+# MMU before anything moves. T1 is not run: if its guard were missing it would
+# start a real tool change; these are cheaper to get wrong.
+GUARDED = [
+    "_MMU_REQUIRE_REAL LANE=1",
+    "_SP_CHANGE T=1",
+    "SP_LOAD_LANE LANE=1",
+    "SP_UNLOAD_LANE LANE=1",
+    "SP_FORCE_MOVE_LANE LANE=1",
+    "SP_LOAD_EXTRUDER LANE=1",
+    "SP_UNLOAD_EXTRUDER LANE=1",
+    "SP_LOAD_HOTEND LANE=1",
+    "SP_UNLOAD_HOTEND LANE=1",
+    "SP_LOAD_HUB LANE=1",
+    "SP_UNLOAD_HUB LANE=1",
+    "_SP_TOOL_CHANGE LANE=1",
+    "_SP_LOAD_LANE LANE=1",
+    "_SP_UNLOAD_LANE LANE=1",
+    "SP_TEST_LOAD_UNLOAD_EXTRUDER LANE=1",
+]
+
+
+def check_virtual_mmu_guard(path):
+    # The sim's Pico MMU is a virtual MCU, so tool changes that need the real
+    # MMU must be refused.
+    for script in GUARDED:
+        try:
+            call(path, "gcode/script", {"script": script})
+        except ValueError as e:
+            if "MMU is simulated" not in str(e):
+                raise
+            continue
+        raise ValueError("%s did not refuse on a virtual MMU" % script)
+
+
 def main():
     path = sys.argv[1]
     # save_variables backs the MMU state; a missing section means the
@@ -66,6 +103,12 @@ def main():
         print("shutdown flag check failed: %s" % e, flush=True)
         return 1
     print("shutdown flag check ok", flush=True)
+    try:
+        check_virtual_mmu_guard(path)
+    except (ValueError, OSError) as e:
+        print("virtual MMU guard check failed: %s" % e, flush=True)
+        return 1
+    print("virtual MMU guard check ok", flush=True)
     return 0
 
 

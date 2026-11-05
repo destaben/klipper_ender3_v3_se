@@ -31,6 +31,7 @@ threshold locally or you'll chase findings CI doesn't actually care about:
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-klipper
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-moonraker
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-klipper-connect
+docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < Dockerfile-mmu-fallback
 docker run --rm -i hadolint/hadolint hadolint --failure-threshold error - < sim/Dockerfile-sim
 ```
 
@@ -56,7 +57,7 @@ rules:
     allowed-values: ['true', 'false', 'on', 'off']" $(git ls-files '*.yml' '*.yaml')
 ```
 
-### Virtual printer boot check (if you touched `config/` or `sim/`)
+### Virtual printer boot check (if you touched `config/`, `sim/` or `mmu-fallback/`)
 `.github/workflows/sim-boot.yml` boots `config/` in a virtual printer and
 fails if Klippy does not reach `ready`. Run the same check locally:
 ```bash
@@ -65,7 +66,14 @@ docker run --rm -v "$PWD/config:/printer-config:ro" klipper-sim
 ```
 It does not cover what the sim skips, which the run prints as `sim: not
 loaded, ...` (currently two MCU temperature sensors). Heating and motion are
-not simulated.
+not simulated. The run also executes `sim/smoke.py`, which checks that the
+virtual-MMU guards refuse lane changes.
+
+### Watcher unit tests (if you touched `mmu-fallback/`)
+Standard library only, no Docker needed:
+```bash
+python3 -m unittest discover -s mmu-fallback -v
+```
 
 If any of these fail, fix the issue — even in a file your change didn't
 touch — before pushing.
