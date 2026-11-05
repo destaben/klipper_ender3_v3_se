@@ -53,6 +53,14 @@ Safe read-only/diagnostic commands: `QUERY_PROBE`, `M115`, `MAINTAIN_STATUS`, `S
 
 ## Restart
 
+Before any restart (`firmware_restart`, `FIRMWARE_RESTART`, `SAVE_CONFIG`, `docker restart klipper`), check the job queue. `[job_queue] load_on_startup: True` starts the next queued job on every Klippy `ready`, so a restart with jobs queued starts a print:
+
+```bash
+curl -s http://localhost/server/job_queue/status | python3 -I -c "import sys,json; r=json.load(sys.stdin)['result']; print(r['queue_state'], [j['filename'] for j in r['queued_jobs']])"
+```
+
+If it lists jobs, stop and ask the user (or have them empty the queue) before restarting.
+
 ```bash
 curl -s -X POST --max-time 20 http://localhost/printer/firmware_restart   # = FIRMWARE_RESTART; also reloads printer.cfg
 ```
