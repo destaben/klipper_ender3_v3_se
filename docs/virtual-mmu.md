@@ -235,9 +235,10 @@ required) or remove `COMPOSE_PROFILES=mmu-fallback`, then run
   `Dockerfile-klipper`, `sim/Dockerfile-sim`, `Dockerfile-mmu-fallback` and
   `build_firmware.sh`. Keep them in sync.
 - Both services, `mmu-fallback` and `mmu-virtual`, are pinned to the same
-  `sha-` tag as `klipper` and `moonraker`, so the `/run/klipper/mmu` contract
-  between them cannot drift. Bump all four together after a merge that changes
-  the sidecar.
+  `sha-` tag as `klipper` and `moonraker`, so the two sidecars always run the
+  same image and `docker compose pull` does not change them on its own. This
+  does not cover `./config`, which is bind-mounted: after a merge that changes
+  the link contract, bump all four tags and update the config together.
 - `/dev` is mounted read-only in `mmu-fallback` (it only checks that the Pico's
   by-id entry exists) and read-write in `mmu-virtual` (it creates the pty there,
   and the pty must come from the host devpts for the `klipper` container to open
