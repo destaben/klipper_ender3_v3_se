@@ -82,6 +82,16 @@ class StartTest(unittest.TestCase):
         self.assertNotIn(("POST", "/printer/print/start"), br.mr.calls)
         self.assertEqual(br.pending_start_cmd_id, 7)
 
+    def test_failed_queue_does_not_leave_a_pending_command(self):
+        br = self.make(State.ERROR, "error", "off")
+
+        def boom(filename):
+            raise MoonrakerError("POST /server/job_queue/job -> 500")
+        br.mr.queue_print = boom
+        with self.assertRaises(MoonrakerError):
+            br._start("a.gcode", 7)
+        self.assertIsNone(br.pending_start_cmd_id)
+
     def test_error_with_plug_on_is_still_rejected(self):
         br = self.make(State.ERROR, "shutdown", "on")
         with self.assertRaises(CommandFailed):

@@ -63,10 +63,19 @@ after a print. A patch on top of the pinned upstream commit
 2. Instead of rejecting the command, it queues the file with
    `POST /server/job_queue/job`.
 3. Moonraker switches the plug on, restarts Klipper 12 s later and starts the
-   queue when Klippy is `ready` (see the README, Home Assistant integration).
+   queue when Klippy is `ready` (see the README, Notes, Home Assistant integration).
 
 If the plug is on but Klippy is down (a real fault), the command is still
-rejected: queuing would start a print unattended after the next restart. The power
+rejected: queuing would start a print unattended after the next restart.
+
+The queued job starts on **every** Klippy `ready` until it is removed from the
+queue. If Klippy does not reach `ready` after the power-on restart (the MCU took
+longer than 12 s to appear, or there is a fault), the job stays queued and starts
+on the next successful `ready`, possibly hours later and with nobody at the
+printer. Check the queue (`/server/job_queue/status`, or Mainsail's queue panel)
+and empty it if the print is no longer wanted. The bridge only checks Klippy and
+the plug, not the bed or a previous interrupted print: pressing **Start** in
+Connect is taken as the operator's decision. The power
 device name is `printer`; set `KLIPPER_CONNECT_POWER_DEVICE` in the container
 environment if yours differs.
 
@@ -261,7 +270,12 @@ Upstream has no releases, so review the commits before bumping the pin:
      -e PYTHONPATH=/t -w /t klipper-connect-test -m unittest test_queue_start -v
    ```
 
-   (`klipper-connect-test` is the image you built, tagged locally.)
+   Build that image first, from the repository root (the Dockerfile copies
+   `patches/`):
+
+   ```bash
+   docker build -f Dockerfile-klipper-connect -t klipper-connect-test .
+   ```
 5. Rebuild and confirm the bridge still starts:
 
    ```bash
