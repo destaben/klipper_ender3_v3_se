@@ -116,7 +116,7 @@ services:
     # Pinned to the image CI published for that commit. After changing
     # Dockerfile-klipper-connect, bump to the new sha-<short> tag once it merges,
     # or test first with `docker compose build klipper-connect`.
-    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:sha-da4778e
+    image: ghcr.io/destaben/klipper_ender3_v3_se/klipper-connect:sha-871f5c0
     build:
       context: .
       dockerfile: Dockerfile-klipper-connect
