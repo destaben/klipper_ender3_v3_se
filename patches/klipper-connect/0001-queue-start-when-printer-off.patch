@@ -1,8 +1,34 @@
 diff --git a/klipper_connect/bridge.py b/klipper_connect/bridge.py
-index 6702d52..ebda6a0 100644
+index 6702d52..cd66fd6 100644
 --- a/klipper_connect/bridge.py
 +++ b/klipper_connect/bridge.py
-@@ -682,11 +682,28 @@ class Bridge:
+@@ -437,6 +437,14 @@ class Bridge:
+ 
+     # --- polling / state ----------------------------------------------------
+ 
++    def _off_state(self, state: State) -> State:
++        """Local patch (patches/klipper-connect): report IDLE, not ERROR, while
++        the printer is powered off. Connect keeps the commands of a printer in
++        ERROR and never delivers them, so a Start would not reach _start."""
++        if state == State.ERROR and self.mr.printer_is_off(max_age=5.0):
++            return State.IDLE
++        return state
++
+     def poll(self) -> State:
+         """Read Klipper's status and update the Connect state."""
+         try:
+@@ -467,8 +475,8 @@ class Bridge:
+         filename = print_stats.get("filename") or None
+         idle_state = status.get("idle_timeout", {}).get("state", "Idle")
+ 
+-        state = self.tracker.update(klippy_state, print_state, idle_state,
+-                                    self.printer.ready)
++        state = self._off_state(self.tracker.update(
++            klippy_state, print_state, idle_state, self.printer.ready))
+ 
+         new_job = False
+         with self.lock:
+@@ -682,11 +690,28 @@ class Bridge:
              raise CommandFailed(f"Can't {action} while {state.value}")
  
      def _start(self, filename: str, start_cmd_id: Optional[int]):
@@ -33,22 +59,26 @@ index 6702d52..ebda6a0 100644
          log.info("Started print of %s", filename)
  
 diff --git a/klipper_connect/moonraker.py b/klipper_connect/moonraker.py
-index 5cbf865..c4f1c91 100644
+index 5cbf865..cbd38df 100644
 --- a/klipper_connect/moonraker.py
 +++ b/klipper_connect/moonraker.py
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,7 @@
  """Small synchronous Moonraker HTTP client."""
  import logging
 +import os
++import time
  from typing import Any, Dict, Iterable, Optional
  
  import requests
-@@ -72,6 +73,30 @@ class Moonraker:
+@@ -72,6 +74,40 @@ class Moonraker:
  
      # --- actions ----------------------------------------------------------
  
-+    def printer_is_off(self) -> bool:
++    def printer_is_off(self, max_age: float = 0.0) -> bool:
 +        """True when Klippy is not ready AND the printer's power device is off.
++
++        max_age > 0 reuses an answer at most that many seconds old, so polling
++        every second does not query Home Assistant every second.
 +
 +        Local patch (patches/klipper-connect). Both conditions are required:
 +        a printer that is on but faulty must not get a queued print that would
@@ -56,15 +86,22 @@ index 5cbf865..c4f1c91 100644
 +        KLIPPER_CONNECT_POWER_DEVICE (default "printer"), as in Moonraker's
 +        [power printer] section.
 +        """
++        now = time.monotonic()
++        cached = getattr(self, "_off_cache", None)
++        if max_age > 0 and cached and now - cached[0] < max_age:
++            return cached[1]
++        off = False
 +        try:
-+            if self.server_info().get("klippy_state") == "ready":
-+                return False
-+            device = os.environ.get("KLIPPER_CONNECT_POWER_DEVICE", "printer")
-+            result = self._request("GET", "/machine/device_power/device",
-+                                   params={"device": device})
++            if self.server_info().get("klippy_state") != "ready":
++                device = os.environ.get("KLIPPER_CONNECT_POWER_DEVICE",
++                                        "printer")
++                result = self._request("GET", "/machine/device_power/device",
++                                       params={"device": device})
++                off = (result or {}).get(device) == "off"
 +        except MoonrakerError:
-+            return False
-+        return (result or {}).get(device) == "off"
++            off = False
++        self._off_cache = (now, off)
++        return off
 +
 +    def queue_print(self, filename: str) -> None:
 +        """Queue a job; Moonraker powers the printer on and starts the queue."""
