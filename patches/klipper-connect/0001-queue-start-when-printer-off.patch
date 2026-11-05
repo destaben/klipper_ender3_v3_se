@@ -1,0 +1,69 @@
+diff --git a/klipper_connect/bridge.py b/klipper_connect/bridge.py
+index 6702d52..782342b 100644
+--- a/klipper_connect/bridge.py
++++ b/klipper_connect/bridge.py
+@@ -682,11 +682,21 @@ class Bridge:
+             raise CommandFailed(f"Can't {action} while {state.value}")
+ 
+     def _start(self, filename: str, start_cmd_id: Optional[int]):
+-        self._require(STARTABLE, "start a print")
++        # Local patch (patches/klipper-connect): with the printer powered off
++        # the state is ERROR, which is not startable. Queue the job instead;
++        # Moonraker powers the printer on, restarts Klipper and starts it.
++        printer_off = self.mr.printer_is_off()
++        if not printer_off:
++            self._require(STARTABLE, "start a print")
+         if not os.path.isfile(self.os_path(filename)):
+             raise CommandFailed(f"File not found: {filename}")
+         with self.lock:
+             self.pending_start_cmd_id = start_cmd_id
++        if printer_off:
++            self.mr.queue_print(filename)
++            log.info("Printer is off: queued %s, Moonraker will power it on",
++                     filename)
++            return
+         self.mr.start_print(filename)
+         log.info("Started print of %s", filename)
+ 
+diff --git a/klipper_connect/moonraker.py b/klipper_connect/moonraker.py
+index 5cbf865..c4f1c91 100644
+--- a/klipper_connect/moonraker.py
++++ b/klipper_connect/moonraker.py
+@@ -1,5 +1,6 @@
+ """Small synchronous Moonraker HTTP client."""
+ import logging
++import os
+ from typing import Any, Dict, Iterable, Optional
+ 
+ import requests
+@@ -72,6 +73,30 @@ class Moonraker:
+ 
+     # --- actions ----------------------------------------------------------
+ 
++    def printer_is_off(self) -> bool:
++        """True when Klippy is not ready AND the printer's power device is off.
++
++        Local patch (patches/klipper-connect). Both conditions are required:
++        a printer that is on but faulty must not get a queued print that would
++        start unattended after the next restart. The device name comes from
++        KLIPPER_CONNECT_POWER_DEVICE (default "printer"), as in Moonraker's
++        [power printer] section.
++        """
++        try:
++            if self.server_info().get("klippy_state") == "ready":
++                return False
++            device = os.environ.get("KLIPPER_CONNECT_POWER_DEVICE", "printer")
++            result = self._request("GET", "/machine/device_power/device",
++                                   params={"device": device})
++        except MoonrakerError:
++            return False
++        return (result or {}).get(device) == "off"
++
++    def queue_print(self, filename: str) -> None:
++        """Queue a job; Moonraker powers the printer on and starts the queue."""
++        self._request("POST", "/server/job_queue/job",
++                      json={"filenames": [filename]})
++
+     def start_print(self, filename: str) -> None:
+         self._request("POST", "/printer/print/start",
+                       json={"filename": filename})

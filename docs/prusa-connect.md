@@ -51,6 +51,30 @@ bridge does not cap upload size, so a large upload can fill the host disk, and a
 full disk also affects Moonraker and Klipper. Keep an eye on free space (`df -h`)
 after large uploads.
 
+## Starting a print with the printer powered off
+
+The printer's plug (`[power printer]` in `config/moonraker.conf`) is switched off
+after a print. A patch on top of the pinned upstream commit
+(`patches/klipper-connect/0001-queue-start-when-printer-off.patch`, applied in
+`Dockerfile-klipper-connect`) makes a **Start print** from Connect work then:
+
+1. The bridge sees Klippy not `ready` and the Moonraker power device `printer`
+   `off`. Only both together count as "printer off".
+2. Instead of rejecting the command, it queues the file with
+   `POST /server/job_queue/job`.
+3. Moonraker switches the plug on, restarts Klipper 12 s later and starts the
+   queue when Klippy is `ready` (see the README, Home Assistant integration).
+
+If the plug is on but Klippy is down (a real fault), the command is still
+rejected: queuing would start a print unattended after the next restart. The power
+device name is `printer`; set `KLIPPER_CONNECT_POWER_DEVICE` in the container
+environment if yours differs.
+
+Not verified: whether the Connect web UI offers **Start print** at all while the
+printer reports an error state. The bridge accepts the command; whether Connect
+sends it is up to Connect. Test it once with the printer off (plug off, cold, idle,
+queue empty) and note the result here.
+
 ## Limitations
 
 - **Not a Prusa.** Bed size, the MMU, filament sensors, and other features may
@@ -228,7 +252,17 @@ Upstream has no releases, so review the commits before bumping the pin:
    pins too. Refresh the base image digest when you want newer base image
    contents (see the comment at the top of the Dockerfile). Transitive dependencies
    of the SDK are not pinned, so a rebuild can still pick up newer versions of them.
-4. Rebuild and confirm the bridge still starts:
+4. The build applies the local patch with `patch -F0`, so it fails if upstream
+   changed the code the patch touches (`Moonraker` and `Bridge._start`). Rebase the
+   patch onto the new commit, then run its tests in the built image:
+
+   ```bash
+   docker run --rm --entrypoint python -v "$PWD/patches/klipper-connect:/t:ro" \
+     -e PYTHONPATH=/t -w /t klipper-connect-test -m unittest test_queue_start -v
+   ```
+
+   (`klipper-connect-test` is the image you built, tagged locally.)
+5. Rebuild and confirm the bridge still starts:
 
    ```bash
    docker compose build klipper-connect
@@ -236,7 +270,7 @@ Upstream has no releases, so review the commits before bumping the pin:
    docker compose logs -f klipper-connect
    ```
 
-5. After the change merges to `main` and CI publishes the image, update the
+6. After the change merges to `main` and CI publishes the image, update the
    `image:` tag of `klipper-connect` in `docker-compose.yaml` to the new
    `sha-<short>` tag, as for the other services.
 
