@@ -26,12 +26,20 @@ ARG PYCRYPTODOME_VERSION=4.3.0
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git build-essential && \
+    apt-get install -y --no-install-recommends git patch build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/amd989/klipper-connect.git /src/klipper-connect && \
     git -C /src/klipper-connect checkout "$KLIPPER_CONNECT_COMMIT" && \
     rm -rf /src/klipper-connect/.git
+
+# Local patch on top of the pinned upstream commit: with the printer powered off,
+# a start from Connect is queued in Moonraker instead of rejected, which powers
+# the printer on (docs/prusa-connect.md). -F0 fails on any hunk that does not
+# apply exactly, so bumping KLIPPER_CONNECT_COMMIT breaks the build here, not at
+# runtime, if upstream changed the patched code.
+COPY patches/klipper-connect/0001-queue-start-when-printer-off.patch /tmp/patches/
+RUN patch -F0 -d /src/klipper-connect -p1 < /tmp/patches/0001-queue-start-when-printer-off.patch
 
 # The pins go in the same pip call as the upstream package, so pip resolves the
 # whole set together. If upstream ever requires another version, the install fails.
