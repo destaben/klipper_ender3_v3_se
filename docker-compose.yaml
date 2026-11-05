@@ -303,3 +303,15 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+volumes:
+  # tmpfs for the MMU serial links (MMU_LINK_DIR=mmu-links in .env.example).
+  # Docker mounts it when the first container that uses it starts, so it exists
+  # after every reboot without a host directory or sudo. It is empty again after
+  # the last of klipper, mmu-fallback and mmu-virtual stops, like any tmpfs.
+  mmu-links:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: uid=1000,gid=1000,mode=0755

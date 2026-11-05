@@ -134,15 +134,21 @@ Limits:
 ## Enable
 
 ```bash
-sudo install -d -o 1000 -g 1000 /run/klipper-mmu   # host tmpfs: cleared on reboot
 cp .env.example .env
 docker compose up -d
 ```
 
-`/run/klipper-mmu` is on tmpfs, so create it again after a reboot (or add it to
-`setup_services.sh` / a tmpfiles.d entry). `MMU_LINK_DIR` must not stay at the
-tracked `./serial-links`: that directory holds a `.tracked-default` marker and
-the sidecar exits with an error instead of overwriting the tracked files.
+`.env.example` sets `MMU_LINK_DIR=mmu-links`, a Docker tmpfs volume declared in
+`docker-compose.yaml`. Docker mounts it when the first container that uses it
+starts, so it exists after every reboot with no host directory and no `sudo`.
+Its content is lost when all three containers (klipper, mmu-fallback,
+mmu-virtual) are stopped, for example by `docker compose down`; the sidecar
+writes it again on start. A host path such as `/run/klipper-mmu` also works, but
+it is tmpfs on the host and has to be created again after each reboot
+(`sudo install -d -o 1000 -g 1000 /run/klipper-mmu`, or a tmpfiles.d entry).
+`MMU_LINK_DIR` must not stay at the tracked `./serial-links`: that directory
+holds a `.tracked-default` marker and the sidecar exits with an error instead of
+overwriting the tracked files.
 
 | `PRINTER_MODE` | Behaviour |
 | --- | --- |
