@@ -19,8 +19,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | Printer | Creality Ender 3 V3 SE |
 | MCU board | Creality 4.2.2 (STM32F103 or GD32F303) |
 | Display | Not driven by Klipper (fork has no display support) |
-| Probe | BLTouch (offset X:-23.0, Y:-14.5, Z:3.305) |
-| Steppers | TMC2209 (UART) on X, Y, Z, E |
+| Probe | BLTouch (offset X:-23.0, Y:-14.5, Z:3.035 saved via SAVE_CONFIG) |
+| Steppers | TMC2209 (UART) on X, Y, Z (extruder has no UART section) |
 | Accelerometer | LIS2DW (optional, disabled by default via `#[include lis2dw.cfg]`) |
 | Extruder | Direct drive, rotation_distance: 7.44 |
 | Build volume | 230×230×250 mm |
@@ -63,6 +63,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── mmu-fallback/                 # Watcher (mmu_link.py), run_virtual.sh and unit tests
 ├── serial-links/                 # Tracked default symlink for the Pico MMU serial path
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
+├── patches/klipper-connect/      # Local patch for the Prusa Connect bridge, and its tests
+├── docs/                         # Setup and upgrade notes (prusa-connect.md, virtual-mmu.md, ...)
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
 ├── build_firmware.sh             # Builds Klipper .bin for flashing
@@ -102,6 +104,9 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
 | `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
 | `./gcodes` | `/data/gcodes` | klipper-connect |
+| `./KlipperMaintenance/maintain.py` | `/home/klipper/klipper/klippy/extras/maintain.py` | klipper |
+| `./chopper-resonance-tuner/` | `/home/klipper/chopper-resonance-tuner` (and `gcode_shell_command.py` into `klippy/extras`) | klipper |
+| `./moonraker-timelapse/component/timelapse.py` | `/opt/moonraker/moonraker/components/timelapse.py` | moonraker |
 | `${MMU_LINK_DIR:-./serial-links}` (a host path, or the `mmu-links` tmpfs volume) | `/run/klipper` (ro in klipper, rw in the sidecars) | klipper, mmu-fallback, mmu-virtual (`mmu-fallback` profile) |
 | `/dev` | `/dev` (ro in mmu-fallback) | klipper, mmu-fallback, mmu-virtual (the last two are `mmu-fallback` profile only) |
 
@@ -110,10 +115,9 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 - **Config files** use Klipper `.cfg` syntax (INI-like). Section headers are `[section_name]`, G-code macros use Jinja2 templating (`{% %}`, `{{ }}`).
 - **Shell scripts** use `bash` with `set -e`. Keep them idempotent.
 - **Docker**: Always use `docker compose` (v2 plugin syntax), not `docker-compose`.
-- **No secrets** should be committed. USB IDs and IPs are environment variables.
+- **No secrets** should be committed. Credentials live in gitignored files (`config/moonraker.secrets`, `config/klipper_connect.conf`). USB serial paths and LAN addresses are literal values in `config/`, not secrets.
 - When editing `printer.cfg`, never modify the `#*# <--- SAVE_CONFIG --->` block — Klipper manages it automatically.
-- When adding a new macro file, add `[include macros/<filename>.cfg]` in `printer.cfg`.
-- When adding a new helper file, add `[include helpers/<filename>.cfg]` in `printer.cfg`.
+- `printer.cfg` globs `macros/*.cfg` and `helpers/*.cfg`, so a new top-level file there loads without an include. Files in a subdirectory (such as `macros/sp_mmu/`) are included explicitly by their parent file.
 
 ## Common Tasks
 

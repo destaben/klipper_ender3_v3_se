@@ -63,7 +63,8 @@ after a print. A patch on top of the pinned upstream commit
 2. Instead of rejecting the command, it queues the file with
    `POST /server/job_queue/job`.
 3. Moonraker switches the plug on, restarts Klipper 12 s later and starts the
-   queue when Klippy is `ready` (see the README, Notes, Home Assistant integration).
+   queue when Klippy is `ready` (see the **Home Assistant integration** note under
+   [Notes in the README](../README.md#notes)).
 
 If the plug is on but Klippy is down (a real fault), the command is still
 rejected: queuing would start a print unattended after the next restart.
@@ -79,22 +80,24 @@ Connect is taken as the operator's decision. The power
 device name is `printer`; set `KLIPPER_CONNECT_POWER_DEVICE` in the container
 environment if yours differs.
 
-Tested on 2026-11-05 with the plug off: Connect shows the **Start print** button
-even when the bridge reports `ERROR`, but it does not deliver the command. In
-the bridge's DEBUG log every telemetry request got a `204` and no command ever
-arrived. So, with the printer off, the bridge reports `IDLE` to Connect instead of
-`ERROR` (`Bridge._off_state`). The same two conditions apply (Klippy not ready
-and the power device off); a printer that is on but faulty still shows `ERROR`.
-The power state is cached for 5 s, so Home Assistant is not queried every second.
-Connect therefore shows the printer as idle while it is powered off. Temperatures
-are empty because there is no data.
+With the printer powered off, the bridge does not report `ERROR` to Connect
+(`Bridge._off_state`). In a 2026-11-05 test with the plug off, Connect showed the
+**Start print** button even while the bridge reported `ERROR`, but the command
+never arrived: the bridge's DEBUG log showed a `204` for every telemetry request
+and no command. The bridge now reports `IDLE` while Klippy is not ready and the
+power device is off, and `READY` once Connect has sent `SET_PRINTER_READY`, so
+that Connect can deliver the Start command. A printer that is on but faulty still
+shows `ERROR`. The power state is cached for 5 s, so Home Assistant is not queried
+every second. Temperatures are empty while the printer is off, because there is
+no data.
 
 Result of the end-to-end test from Printables Easy Print with the plug off
 (2026-11-05): Connect sends `SET_PRINTER_READY`, then `START_PRINT`. The bridge
 reports READY (not IDLE) once Connect has marked the printer ready, queues the
 job, Moonraker powers the plug on and restarts Klipper, and the print starts
-(about 30 s). Connect may resend `START_PRINT` during the restart; that attempt
-can fail and Connect shows ERROR briefly, then the state recovers.
+(about 30 s). Connect may resend `START_PRINT` during the restart. In that test
+the resend showed ERROR in Connect briefly, then the state recovered. Whether a
+resend can queue the same job a second time has not been tested.
 
 ## Limitations
 
@@ -210,7 +213,8 @@ sticker, so you choose this value yourself (see [Limitations](#limitations)).
    docker compose logs -f klipper-connect
    ```
 
-   A healthy start logs `Bridge running: <serial> (I3MK3S) -> https://connect.prusa3d.com`.
+   A healthy start logs a `Bridge running:` line with the serial number and the
+   Connect URL (upstream's wording, which may change with the pinned commit).
    The printer should then show as online in Connect.
 
 If Moonraker is down, the bridge logs `Moonraker unreachable` and retries. It
@@ -275,18 +279,13 @@ Upstream has no releases, so review the commits before bumping the pin:
    of the SDK are not pinned, so a rebuild can still pick up newer versions of them.
 4. The build applies the local patch with `patch -F0`, so it fails if upstream
    changed the code the patch touches (`Moonraker` and `Bridge._start`). Rebase the
-   patch onto the new commit, then run its tests in the built image:
-
-   ```bash
-   docker run --rm --entrypoint python -v "$PWD/patches/klipper-connect:/t:ro" \
-     -e PYTHONPATH=/t -w /t klipper-connect-test -m unittest test_queue_start -v
-   ```
-
-   Build that image first, from the repository root (the Dockerfile copies
-   `patches/`):
+   patch onto the new commit. Then build the test image from the repository root
+   (the Dockerfile copies `patches/`), and run its tests in it:
 
    ```bash
    docker build -f Dockerfile-klipper-connect -t klipper-connect-test .
+   docker run --rm --entrypoint python -v "$PWD/patches/klipper-connect:/t:ro" \
+     -e PYTHONPATH=/t -w /t klipper-connect-test -m unittest test_queue_start -v
    ```
 5. Rebuild and confirm the bridge still starts:
 

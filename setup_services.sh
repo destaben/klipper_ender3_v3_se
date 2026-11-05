@@ -16,7 +16,7 @@ if ! command -v docker &> /dev/null; then
     fi
     sudo sh get-docker.sh
     rm -f get-docker.sh
-    sudo usermod -aG docker "$USER"
+    sudo usermod -aG docker "${SUDO_USER:-$USER}"
     echo "Docker installed successfully. Please log out and log back in to apply group changes."
 else
     echo "Docker is already installed."
@@ -86,9 +86,9 @@ if [ -n "$CMDLINE" ]; then
 fi
 echo "Starting Docker containers..."
 # Add user to docker group if missing (requires sudo)
-if ! id -nG "$USER" | grep -qw docker; then
-    echo "Adding '$USER' to the docker group..."
-    sudo usermod -aG docker "$USER"
+if ! id -nG "${SUDO_USER:-$USER}" | grep -qw docker; then
+    echo "Adding '${SUDO_USER:-$USER}' to the docker group..."
+    sudo usermod -aG docker "${SUDO_USER:-$USER}"
 fi
 # Create bind-mount host directories for moonraker so the container user can write to them.
 # The permissions set inside the Dockerfile are masked by bind mounts, so they must be
