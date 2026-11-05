@@ -66,10 +66,17 @@ class PrinterIsOffTest(unittest.TestCase):
 class OffStateTest(unittest.TestCase):
     """The state reported to Connect while the printer is powered off."""
 
-    def make(self, klippy_state, power):
+    def make(self, klippy_state, power, ready=False):
         br = Bridge.__new__(Bridge)
         br.mr = FakeMoonraker(klippy_state, power)
+        br.printer = types.SimpleNamespace(ready=ready)
         return br
+
+    def test_error_becomes_ready_when_connect_marked_it_ready(self):
+        # Printables Easy Print sends SET_PRINTER_READY and only then the file.
+        self.assertEqual(
+            self.make("error", "off", ready=True)._off_state(State.ERROR),
+            State.READY)
 
     def test_error_becomes_idle_when_printer_is_off(self):
         self.assertEqual(self.make("error", "off")._off_state(State.ERROR),
