@@ -232,6 +232,16 @@ class Injection(unittest.TestCase):
             rfile.build(st, "p", LINE, self.tail, overlap_s=0, overlap_mm=0,
                         park_xy=(15, 205), bed_mesh_profile="default")
 
+class GateStop(unittest.TestCase):
+    def test_gate_stop_line_is_accepted_by_the_allow_list(self):
+        self.assertEqual(rfile.check_generated(["G90", rfile.GATE_MARK, rfile.GATE_STOP]), [])
+
+    def test_gate_stop_is_not_a_valid_command(self):
+        # The line must fail in Klipper; the allow-list must not know it.
+        self.assertNotIn(rfile.GATE_STOP.split()[0], rfile.ALLOWED)
+        self.assertTrue(rfile.check_generated(["G90", rfile.GATE_STOP + " X1"]))
+
+
 
 if __name__ == "__main__":
     unittest.main()

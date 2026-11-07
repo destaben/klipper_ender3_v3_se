@@ -30,6 +30,10 @@ Z_FEED = 300            # mm/min (Klipper clamps to max_z_velocity anyway)
 TRAVEL_FEED = 6000      # mm/min, deliberately slower than the slicer travel
 PRIME_FEED = 300        # mm/min
 GATE_MARK = "; GATE: Z is not re-referenced yet"
+# Not a valid command on purpose: Klipper reports "Unknown command" and the
+# SD print stops here, so the preview cannot run past the gate by accident.
+# The operator removes this line only after procedure step 9.
+GATE_STOP = "PRINT_RESCUE_GATE_REMOVE_THIS_LINE_AFTER_STEP_9"
 
 # Generated commands and the parameters each may carry. Classic G/M words are
 # one letter plus a number; extended commands are KEY=VALUE.
@@ -113,6 +117,8 @@ def check_generated(lines: Iterable[str]) -> List[str]:
             continue
         if line.startswith(GATE_MARK):
             gated = True
+            continue
+        if line == GATE_STOP:
             continue
         tokens = _code_tokens(line)
         if not tokens:
@@ -225,6 +231,7 @@ def build(state: State, source_name: str, resume_line: int,
                % (_num(x), _num(y), TRAVEL_FEED))
     gen.append("%s. Stop here until procedure step 9 (two measured probe spots) is done"
                % GATE_MARK)
+    gen.append(GATE_STOP)
     gen.append("G1 Z%s F%d ; lower to the resume height (absolute, after the gate)"
                % (_num(z), Z_FEED))
     if state.current_object:

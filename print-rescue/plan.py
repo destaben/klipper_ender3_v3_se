@@ -335,6 +335,9 @@ def _run(args, out) -> int:
         else:
             if not ev.freeze:
                 add("R10", "receive_seq freeze not clean")
+            for note in ev.notes:
+                if "lower bound" in note:
+                    add("R10", note)
             sd_line = gs.line_at_byte(res, ev.good.sd_pos) if ev.good.sd_pos is not None else None
             window = sp.compute_window(ev, timed, last_line, sd_line)
             if window is None:

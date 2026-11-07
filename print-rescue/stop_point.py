@@ -347,6 +347,10 @@ def compute_window(ev: Evidence, timed, last_line: int,
         late = max(sd_late, end_late)
     early = max(early, timed[0].t_start)
     late = min(late, file_end_t)
+    if early > late:
+        # An inverted window (for example a log spliced from another session)
+        # would resume at the end of the file and drop the rest of the print.
+        return None
     return Window(anchor=anchor, earliest_t=early, latest_t=late,
                   file_end_t=file_end_t, earliest_line=line_at_t(timed, early),
                   latest_line=line_at_t(timed, late),

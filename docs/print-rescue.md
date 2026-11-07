@@ -354,7 +354,7 @@ python3 -m unittest discover -s print-rescue -v
 
 | Phase | Content |
 |-------|---------|
-| P1 (done) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
+| P1 (code complete; review pass open, see KI list) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
 | P2 | Resume builder that uploads and starts the resume file; pauses the job queue; a `START_PRINT` lock while a rescue is active. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
 | P3 | Cold, empty-bed calibration: envelope corners; cutter approach in 0.5 mm steps to measure `x_max_safe`; head footprint tiers; probe spots; re-reference accuracy against homed truth (the user's dry-run idea: run the whole procedure on an empty bed and compare with a real `G28`). |
 | P4 | Interactive runner: confirm before every move, short moves, emergency stop, state re-read after every error. Gantry-tilt check from two probe points. |
@@ -413,7 +413,9 @@ next one.
   refused. P2 must emit the mode active at the resume line before it runs a
   preview.
 - **KI-14**: the `GATE_MARK` line in the preview is only a comment. It does
-  not pause anything. P2 must implement the real gate (re-reference on two
+  not pause anything by itself; the next line, `GATE_STOP`, is deliberately
+  not a valid command, so Klipper stops the SD print there with "Unknown
+  command" until the operator removes it after step 9. P2 must implement the real gate (re-reference on two
   verified probe spots) in the runner; R02 today only requires at least one
   verified spot.
 - **KI-15**: a last dispatched line that is a dwell (`G4`, `M109`) has no
@@ -431,6 +433,17 @@ next one.
 - **KI-18**: `--log` and `--gcode-map` are read whole into memory, and
   `--preview --force-preview` may replace any regular file the user names that
   is not an input. Both are explicit operator inputs; no size limit is applied.
+- **KI-19**: the preview lifts by a fixed relative amount and travels over the
+  part at that height. The planner computes the safe pass-1 height but does not
+  pass it to the preview, and Z is unknown before re-referencing. The preview
+  must not be run (the gate stops it); P2 must decide how Z is known and use
+  the computed height.
+- **KI-20**: smaller gaps, all warnings or phase-2 items: `motion_ready` checks
+  only profile leaves (plain-number safety values do not reach R13); G91 and
+  non-G17 arcs in the tail are not refused; `M84`/`M18`, `BLTOUCH_DEBUG`,
+  `M290` and `SET_GCODE_OFFSET` are not on the tail deny-list; the pin-at-boot
+  check samples about 25 move endpoints; `--line` is not checked against the
+  cut layer; a missing `size` or `modified` in the history skips R07 silently.
 - The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
   N17-N20) was interrupted before it was recorded as complete. The IDs are
   cited in code comments; treat any without a matching test as open.
