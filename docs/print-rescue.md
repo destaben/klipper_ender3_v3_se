@@ -213,13 +213,15 @@ Resume policy (council):
   overlap budget allows;
 - never before the start of the cut layer. If the window starts before the
   layer, refuse. If the layer starts too close to the earliest stop for any of
-  its lines to meet the margin, refuse as well (R12); the margin is never
+  its lines to meet the margin, refuse as well (R22); the margin is never
   quietly reduced;
-- refuse (R12) if the overlap from the resume point to the latest possible
-  stop exceeds `max_overlap_s` (3 s);
+- warn (R12) if the overlap from the resume point to the latest possible
+  stop exceeds the budget (`max_overlap_s`, 3 s, or `--max-overlap-s`), with
+  the extra material; refuse (R21) only above `absurd_overlap_s` (30 s);
 - a manual `--line` needs the window (refused with R18 without one). It is
-  refused (R12) if it starts after the earliest possible stop (a gap) or
-  overlaps too much. The margin is not applied to a manual line.
+  refused (R22) if it starts after the earliest possible stop (a gap), and
+  warned (R12) if it overlaps above the budget. The margin is not applied to a
+  manual line.
 
 ### Planner fidelity
 
@@ -344,9 +346,10 @@ verified. Each unverified one is listed as R13 and blocks motion.
 
 The shipped profile takes offsets, limits and `safe_z_home` from
 `config/printer.cfg` (source `config`, compared with the live file as the
-`config_fingerprint`, R14), the cutter limit X=205 from the user, and leaves
-the head footprint, `z_top_margin` and `park.xy` as unmeasured placeholders
-and the probe spot list empty. It therefore **fails closed** (R13 and R02)
+`config_fingerprint`, R14), the cutter limit X=205 from the user, takes the head
+footprint from the owner's estimate (source `user`, see below), and leaves
+`z_top_margin` and `park.xy` as unmeasured placeholders and the probe spot
+list empty. It therefore **fails closed** (R13 and R02)
 until phase 3 measures them. The cutter is also a no-go zone (`frame: gantry`,
 X >= 205) that only `_SP_TIP_FORM` may enter: `config/macros/sp_mmu.cfg` cuts
 at X=225 on purpose.
@@ -404,6 +407,9 @@ python3 print-rescue/plan.py \
   --preview saved/resume_preview.gcode
 ```
 
+The preview is a **review artefact** (KI-14, KI-19): do not print it. It stops
+at an invalid command on purpose, and its motion is not safe to run.
+
 - `--log`: Klippy log, either `docker logs --timestamps klipper` output or a
   plain `klippy.log`.
 - `--history`, `--queue`: saved JSON of `/server/history/list` and
@@ -424,7 +430,8 @@ python3 print-rescue/plan.py \
   (or a symlink or hard link to one), and a symlink is refused even with
   `--force-preview`. A preview that is not written does not change the exit
   code (KI-03).
-- `--gcode-map MAP` exists only for the test fixture excerpts (KI-02).
+- `--gcode-map MAP` exists only for the test fixture excerpts (KI-02); it is
+  hidden from `--help` and refused unless `PRINT_RESCUE_ALLOW_GCODE_MAP=1`.
 - `--now`: the current time for R11 (default: now). It must be ISO 8601 UTC.
 
 Exit codes:
@@ -433,7 +440,7 @@ Exit codes:
 |------|---------|
 | 0 | Resumable: no refusal, every safety-critical profile field verified, and all evidence inputs supplied. Confirm every warning before any motion. |
 | 3 | Resumable on paper only: the only refusals are R13 (a profile field is not verified, motion is blocked) or `--history`, `--queue` or `--printer-cfg` was not given (printed as `NOT CHECKED:`). The report and the preview are still produced. |
-| 2 | Refused: at least one hard refusal (R01-R22 except R13 alone). Never 0 without a chosen resume line. |
+| 2 | Refused: at least one refused finding (a hard code in the catalogue; R13 alone is exit 3, warnings never refuse). Never 0 without a chosen resume line. |
 | 1 | Usage or input error (bad arguments, unreadable or malformed input, an invalid `margin_s`, an input larger than the size cap). Nothing was planned. |
 
 On the Pi, run it under `nice -n 19` while Klipper is connected. A full 8 MB
@@ -491,10 +498,14 @@ Open:
   are not implemented. No motion code of this repository has ever run on
   hardware; the live rescue of 2026-11-07 was done by hand through Moonraker
   ([live validation](print-rescue-live-validation-2026-11-07.md)).
-- **KI-02**: `--gcode-map` exists only for the test fixture excerpts.
+- **KI-02**: `--gcode-map` exists only for the test fixture excerpts (hidden
+  from `--help`, refused without `PRINT_RESCUE_ALLOW_GCODE_MAP=1`; its
+  `source_size` is trusted for the R07 size comparison).
 - **KI-03**: a preview that is not written does not change the exit code.
 - **KI-08**: the R17 tail check is a deny-list of exact command names (after
-  normalising spaces and `N` line numbers); see `FORBIDDEN_TAIL` in
+  normalising spaces and `N` line numbers, with or without digits). Job-end
+  commands (`END_PRINT`, `M84`, `M18`, `TURN_OFF_HEATERS`) are accepted only
+  as the end of the file; `MANUAL_STEPPER` and `STEPPER_BUZZ` are refused; see `FORBIDDEN_TAIL` in
   `print-rescue/gcode_scan.py`. A macro that homes or stops but is not listed
   is not caught, and the copied tail is not run through the allow-list. P2
   must check the tail against the live macro set or an allow-list.
@@ -535,10 +546,12 @@ Open:
   samples about 25 positions of the moves in the stop window.
 - **KI-21**: when the log has no Stats line after the shutdown, `P_end` is a
   lower bound and the stop window can be biased late (reported as R10).
-- **KI-22**: the R07 content check is necessary, not sufficient: a different
-  file that happens to have a line boundary at that offset passes. The log's
-  `Virtual sdcard (N)` / `Upcoming (N)` dumps hold the file's text at that
-  offset and could be compared byte for byte (not done).
+- **KI-22**: the R07 content check has two parts: the exit position must be a
+  line boundary, and the text the log prints for `Virtual sdcard (N)` and
+  `Upcoming (N)` must match the file at those offsets (a few hundred
+  characters). It cannot see an edit elsewhere in the file that keeps the size
+  and those lines; the history `size` comparison (when `--history` is given)
+  catches size changes only.
 - **KI-23**: the remaining-time and remaining-filament rewrite of the resume
   file's header is proportional to filament, and how Moonraker/Mainsail use the
   header is TO VERIFY.
@@ -581,7 +594,9 @@ Choices behind items that the automated reviews raised repeatedly.
   re-uploaded, so its mtime differed while the bytes were identical. The
   logged exit position is the byte right after the last dispatched line: in
   the same file it is a line boundary (8772080 is the end of line 391419).
-  The mtime is kept as the R19 warning. KI-22 states what the check cannot do.
+  The check also compares the text the log printed at `Virtual sdcard (N)` and
+  `Upcoming (N)` with the file, which catches same-length edits. The mtime is
+  kept as the R19 warning. KI-22 states what the check cannot do.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

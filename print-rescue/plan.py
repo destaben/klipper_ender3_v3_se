@@ -110,8 +110,9 @@ def _exit_boundary(res, exit_position, size):
     the byte right after the last dispatched line. In the file that was
     printing, N is therefore the start of a line (or the end of the file).
     A re-uploaded file with the same contents passes whatever its modified
-    time says; an edited or different file almost never lands on a line
-    boundary by chance. Returns (ok, text)."""
+    time says. This alone is weak: a same-length edit always passes, and a
+    different file lands on a line start now and then (a few percent), so it
+    is paired with _text_check. Returns (ok, text)."""
     offsets, lines = res.line_offsets
     i = bisect.bisect_left(offsets, exit_position)
     if i < len(offsets) and offsets[i] == exit_position:
@@ -122,6 +123,26 @@ def _exit_boundary(res, exit_position, size):
         return True, "exit position %d is the end of the file" % exit_position
     return False, ("exit position %d is not a line boundary in this file, so it is not "
                    "the file that was printing" % exit_position)
+
+
+def _text_check(records, ev):
+    """Stronger half of the content check (R07): the text the log printed for
+    'Virtual sdcard (N)' and 'Upcoming (N)' is the file's own text at those
+    offsets. Returns (ok, message); ok is True when there is nothing to
+    compare."""
+    texts = [(p, t) for p, t in ev.sdcard_texts][:4]
+    if not texts:
+        return True, "no file text in the log to compare"
+    got = gs.file_text_at(records(), [(p, len(t)) for p, t in texts])
+    for pos, logged in texts:
+        mine = got.get(pos, "")
+        if not mine:
+            return True, "the file has no text at offset %d to compare (excerpt)" % pos
+        n = min(len(mine), len(logged))
+        if mine[:n] != logged[:n]:
+            return False, ("the text the log shows at offset %d differs from the file, so "
+                           "it is not the file that was printing" % pos)
+    return True, "the text the log shows at %d offset(s) matches the file" % len(texts)
 
 
 def _gcode_identity(args):
@@ -233,6 +254,9 @@ def _check_args(args):
                              "2026-11-07T09:30:00Z (got %r)" % args.now)
     if args.line is not None and args.line < 1:
         raise InputError("--line must be a line number >= 1")
+    if args.gcode_map and os.environ.get("PRINT_RESCUE_ALLOW_GCODE_MAP") != "1":
+        raise InputError("--gcode-map is for the test fixtures only; set "
+                         "PRINT_RESCUE_ALLOW_GCODE_MAP=1 to use it")
     if args.max_overlap_s is not None and not (args.max_overlap_s > 0 and
                                                args.max_overlap_s < float("inf")):
         raise InputError("--max-overlap-s must be a number > 0")
@@ -370,8 +394,13 @@ def _run(args, out) -> int:
         say("content check: %s" % why)
         if not same:
             add("R07", why)
-        elif mtime_differs:
-            add("R19", "contents match the print (byte offset check), so a re-upload is the likely cause")
+        else:
+            same, why = _text_check(records, ev)
+            say("content check: %s" % why)
+            if not same:
+                add("R07", why)
+        if same and mtime_differs:
+            add("R19", "contents match the print (byte offset and logged text), so a re-upload is the likely cause")
         if part is not None:
             say("part box X %.1f-%.1f Y %.1f-%.1f, top %.2f mm (extrusions through line %d)"
                 % (part.x_min, part.x_max, part.y_min, part.y_max, part.top, res.bbox_until))
@@ -719,7 +748,7 @@ def _finish(findings, say, choice, not_checked=()) -> int:
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--gcode", required=True)
-    ap.add_argument("--gcode-map", help="excerpt map (test fixtures only)")
+    ap.add_argument("--gcode-map", help=argparse.SUPPRESS)  # test fixtures only, KI-02
     ap.add_argument("--log", required=True, help="klippy.log or docker stdout")
     ap.add_argument("--profile", required=True)
     ap.add_argument("--printer-cfg")

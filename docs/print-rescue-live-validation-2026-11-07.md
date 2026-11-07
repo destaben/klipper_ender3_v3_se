@@ -91,7 +91,7 @@ the logged `Exiting SD card print (position 8772080)` and Moonraker's
 - **R07 refused on the file's modified time**, although the file had only been
   re-uploaded and its contents were identical. The content check by byte offset
   replaces it; the mtime is now the R19 warning.
-- **R12 refused for an overlap of 3.55 s against a 3.0 s budget.** Refusing
+- **R12 refused for an overlap of 3.55 s against a 3.0 s budget** (at the time; R12 is a warning now). Refusing
   favours a gap in the wall. It is now a warning with the extra material and an
   operator budget; only absurd overlaps refuse.
 - **R14 on a stale profile copy** of `z_offset`; the live value from

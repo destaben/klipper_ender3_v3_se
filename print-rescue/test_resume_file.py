@@ -289,6 +289,13 @@ class UiMetadata(unittest.TestCase):
         self.assertIn("; estimated printing time (normal mode) = 2h 2m 52s", out)
         self.assertIn("; total layer number: 500", out)
 
+    def test_a_crafted_estimate_line_is_cheap(self):
+        import time
+        line = "; estimated printing time (normal mode) = " + " " * 5000 + "x"
+        t0 = time.time()
+        self.assertEqual(rfile.rewrite_estimate(line, 0.5), line)
+        self.assertLess(time.time() - t0, 1.0)
+
     def test_bad_fraction_leaves_estimates_alone(self):
         for bad in (0.0, 1.5, -1.0):
             out = self.build(remaining_fraction=bad)

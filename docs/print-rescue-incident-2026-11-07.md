@@ -77,7 +77,7 @@ conservative union of both anchors):
 | Anchor endpoints | earliest 0.56 s apart, latest 0.62 s apart: under the 1 s R10 limit |
 | **Stop window (union)** | earliest possible stop: line 201951, end (171.5, 131.7), 7.87 s before the end of line 202396. Latest possible stop: line 202295, end (161.7, 119.1), 4.23 s before the end. |
 | Most likely stop | about `P_good`: lines 202095-202135, near (78-91, 38-51) |
-| Resume candidate (tool, default budget) | line 201925, layer 158, commanded Z 21.0 (the layer is at Z 20.6); overlap to the latest possible stop **4.83 s, 426 mm**. Maximum allowed is 3.0 s, so the tool **refuses with R12**. |
+| Resume candidate (tool, default budget) | line 201925, layer 158, commanded Z 21.0 (the layer is at Z 20.6); overlap to the latest possible stop **4.83 s, 426 mm**. Maximum allowed is 3.0 s, so the tool **refused with R12** (at the time; R12 is a warning now, see the live validation record). |
 | Probe pin at boot | over the part for every position in the window |
 
 The tool's first version, before the window was combined, chose line 201955

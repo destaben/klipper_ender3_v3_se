@@ -81,6 +81,28 @@ class ContentCheck(unittest.TestCase):
         self.assertIn("R19", codes(out))
         self.assertIn("content check: exit position 8772080 is the end of line", out)
 
+    def test_logged_text_that_differs_from_the_file_is_refused(self):
+        # A same-length edit keeps every byte offset; the text the log printed
+        # at "Upcoming (N)" is what catches it.
+        with open(fx.INC3_KLIPPY, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("Upcoming (8772053): 'G1 X79.084 Y92.754", text)
+        text = text.replace("Upcoming (8772053): 'G1 X79.084 Y92.754",
+                            "Upcoming (8772053): 'G1 X79.084 Y92.999")
+        with tempfile.TemporaryDirectory() as d:
+            lp = os.path.join(d, "klippy.log")
+            with open(lp, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            real = fx.INC3_KLIPPY
+            fx.INC3_KLIPPY = lp
+            try:
+                code, out, _, _ = run()
+            finally:
+                fx.INC3_KLIPPY = real
+        self.assertEqual(code, 2)
+        self.assertIn("R07", codes(out))
+        self.assertIn("differs from the file", out)
+
     def test_a_file_that_differs_is_refused(self):
         # Shift every byte offset by one: the exit position is then inside a line.
         with open(fx.INC3_GMAP, encoding="utf-8") as fh:
@@ -95,6 +117,17 @@ class ContentCheck(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("R07", codes(out))
         self.assertIn("not a line boundary", out)
+
+
+class GcodeMapGuard(unittest.TestCase):
+    def test_gcode_map_is_refused_outside_the_tests(self):
+        old = os.environ.pop("PRINT_RESCUE_ALLOW_GCODE_MAP")
+        try:
+            code, out, err, _ = run()
+        finally:
+            os.environ["PRINT_RESCUE_ALLOW_GCODE_MAP"] = old
+        self.assertEqual(code, 1)
+        self.assertIn("test fixtures only", err)
 
 
 class ExitBoundary(unittest.TestCase):

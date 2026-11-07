@@ -10,6 +10,9 @@ import planner
 import machine_profile as prof
 import stop_point as sp
 
+# The fixture excerpts need --gcode-map, which is otherwise refused.
+os.environ["PRINT_RESCUE_ALLOW_GCODE_MAP"] = "1"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, "fixtures")
 GCODE = os.path.join(FIX, "gcode-excerpt.gcode.gz")

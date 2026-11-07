@@ -31,7 +31,9 @@ Record = Tuple[int, int, str]
 # END_PRINT is allowed at the end of the file only (see END_MACROS).
 # A DENY-LIST (anything not listed passes). Commands that must never run again in a resumed tail: they home, probe or
 # start a fresh print (which homes) with a part on the bed.
-END_MACROS = ("END_PRINT",)
+# Ends of a job: only legitimate as the end of the file (refused when
+# extrusion follows them).
+END_MACROS = ("END_PRINT", "M84", "M18", "TURN_OFF_HEATERS")
 FORBIDDEN_TAIL = {
     "G28": "homing (any form)",
     "G29": "bed probing",
@@ -62,6 +64,8 @@ FORBIDDEN_TAIL = {
     "G11": "firmware unretraction (its length is not modelled)",
     "ARC_NO_IJ": "arc without I/J (Klipper rejects it; not modelled)",
     "CR_IN_LINE": "carriage return inside a line (hidden command)",
+    "MANUAL_STEPPER": "moves an auxiliary stepper",
+    "STEPPER_BUZZ": "moves a stepper",
     "SP_CHANGE": "MMU lane change",
     "_SP_CHANGE": "MMU lane change",
     "_SP_PAUSE": "MMU pause",
@@ -215,7 +219,9 @@ _CLASSIC = re.compile(r"^([GMT])(\d+(?:\.\d+)?)(.*)$", re.IGNORECASE)
 _PARAM = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)?")
 
 
-_LINE_NUMBER = re.compile(r"^\s*[Nn]\d+\s*")
+# N<digits> is a line number; a bare N followed by a space is stripped too, so
+# "N M112" cannot hide M112 (NEOPIXEL-style names are not touched).
+_LINE_NUMBER = re.compile(r"^\s*[Nn](?:\d+\s*|\s+)")
 _SPACED_CLASSIC = re.compile(r"^\s*([GMTgmt])\s+(\d)")
 
 
@@ -563,7 +569,7 @@ class Scanner:
             if e is not None and e > 0:
                 # The end-of-print macro cools, parks and powers off: it is
                 # only legitimate as the end of the file.
-                self.events.append(Event(line, "forbidden", "END_PRINT"))
+                self.events.append(Event(line, "forbidden", "END_PRINT"))  # an end macro ran
                 self.end_seen = False
 
     def _comment(self, line, text):
@@ -675,6 +681,35 @@ def iter_file(path: str, start_line: int = 1) -> Iterator[Record]:
             if n >= start_line:
                 yield n, offset, raw.decode("utf-8", "replace").rstrip("\r\n")
             offset += len(raw)
+
+
+def file_text_at(records: Iterable[Record], wanted: List[Tuple[int, int]]) -> Dict[int, str]:
+    """For each (byte offset, length) in `wanted`, the file's text from that
+    offset (up to `length` characters), rebuilt from the records. Lines are
+    joined with newlines (a carriage return is dropped), which is what the log
+    shows. An offset that no record covers gives the empty string."""
+    out = {pos: "" for pos, _ in wanted}
+    todo = dict(wanted)
+    horizon = max((p + n for p, n in wanted), default=0)
+    pending = {}
+    for _, offset, text in records:
+        if offset > horizon:
+            break
+        end = offset + len(text.encode("utf-8", "replace")) + 1
+        for pos in list(todo):
+            if pos < end and pos + todo[pos] > offset:
+                piece = pending.get(pos)
+                if piece is None:
+                    pending[pos] = text[max(pos - offset, 0):] + "\n"
+                else:
+                    pending[pos] = piece + text + "\n"
+                if len(pending[pos]) >= todo[pos]:
+                    out[pos] = pending[pos][:todo[pos]]
+                    del todo[pos]
+    for pos, piece in pending.items():
+        if pos in todo:
+            out[pos] = piece[:todo[pos]]
+    return out
 
 
 def iter_excerpt(gz_path: str, map_path: str) -> Iterator[Record]:

@@ -237,6 +237,29 @@ class Denylist(unittest.TestCase):
         f = gs.tail_findings(r, 1, None)
         self.assertIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
 
+    def test_a_bare_n_prefix_cannot_hide_a_command(self):
+        for form in ("N M112", "N G28", "n  FIRMWARE_RESTART", "N12 M112"):
+            with self.subTest(form=form):
+                f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+
+    def test_names_that_start_with_n_are_not_mangled(self):
+        cmd, _ = gs.parse("NEOPIXEL_SET RED=1")
+        self.assertEqual(cmd, "NEOPIXEL_SET")
+
+    def test_stepper_commands_are_forbidden(self):
+        for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):
+            self.assertIn(cmd, gs.FORBIDDEN_TAIL)
+
+    def test_job_end_commands_are_fine_at_the_end_and_refused_before_more_extrusion(self):
+        for end in ("M84", "M18", "TURN_OFF_HEATERS"):
+            with self.subTest(end=end):
+                ok = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\nG1 X2 E1\n%s" % end)), 1, None)
+                self.assertEqual(ok["forbidden"], [])
+                bad = gs.tail_findings(
+                    gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1\nG1 X3 E1" % end)), 1, None)
+                self.assertEqual([c for _, c in bad["forbidden"]], ["END_PRINT"])
+
     def test_firmware_retraction_and_arcs_without_ij_are_refused_in_the_tail(self):
         for body in ("G10", "G11", "G2 X5 Y5 R3 E1"):
             with self.subTest(body=body):

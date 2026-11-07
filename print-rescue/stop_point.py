@@ -49,6 +49,7 @@ gap in the part; it refuses (R21) only above absurd_overlap_s.
 Pure logic, standard library only.
 """
 
+import ast
 import bisect
 import math
 import re
@@ -64,6 +65,7 @@ _STATS = re.compile(r"Stats (\d+(?:\.\d+)?):")
 _SHUTDOWN = re.compile(r"Transition to shutdown state: (.*)$")
 _EXIT = re.compile(r"Exiting SD card print \(position (\d+)\)")
 _SDCARD = re.compile(r"Virtual sdcard \((\d+)\)")
+_SDCARD_TEXT = re.compile(r"(?:Virtual sdcard|Upcoming) \((\d+)\): ('.*'|\".*\")\s*$")
 _UPCOMING = re.compile(r"Upcoming \((\d+)\)")
 _GSTATE = re.compile(r"gcode state: (.*)$")
 _BUSY = re.compile(r"Reactor \d+(?:\.\d+)? busy for")
@@ -89,6 +91,9 @@ class Evidence:
     shutdown_timestamp: Optional[str] = None
     exit_position: Optional[int] = None
     sdcard_position: Optional[int] = None    # "Upcoming (N)": file position
+    # (byte offset, text) pairs the log printed for "Virtual sdcard (N)" and
+    # "Upcoming (N)": the file's own text at those offsets (content check).
+    sdcard_texts: List[tuple] = field(default_factory=list)
     gcode_state: Dict[str, object] = field(default_factory=dict)
     reactor_busy_before: int = 0
     good: Optional[Sample] = None
@@ -190,6 +195,14 @@ def analyze(lines: List[str]) -> Evidence:
         m = _UPCOMING.search(line)
         if m:
             ev.sdcard_position = int(m.group(1))
+        m = _SDCARD_TEXT.search(line)
+        if m:
+            try:
+                text = ast.literal_eval(m.group(2))
+            except (ValueError, SyntaxError, MemoryError, RecursionError):
+                text = None
+            if isinstance(text, str) and text:
+                ev.sdcard_texts.append((int(m.group(1)), text.replace("\r", "")))
         m = _GSTATE.search(line)
         if m:
             ev.gcode_state = _parse_gcode_state(m.group(1))

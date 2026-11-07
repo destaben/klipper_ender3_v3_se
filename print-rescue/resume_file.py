@@ -86,7 +86,6 @@ def _num(v: float) -> str:
 
 _TIME_LINE = re.compile(r"^(;\s*TIME\s*:\s*)(\d+(?:\.\d+)?)\s*$")
 _FILAMENT_M = re.compile(r"^(;\s*Filament used\s*:\s*)(\d+(?:\.\d+)?)\s*m\s*$")
-_EST_TIME = re.compile(r"^(;\s*estimated printing time[^=]*=\s*)(.+?)\s*$")
 _HMS = re.compile(r"(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$")
 _TOTAL_LAYERS = re.compile(r"^;\s*total layer number\s*:\s*(\d+)\s*$")
 
@@ -148,13 +147,15 @@ def rewrite_estimate(line: str, fraction: Optional[float]) -> str:
     m = _FILAMENT_M.match(line)
     if m:
         return "%s%.2fm" % (m.group(1), float(m.group(2)) * fraction)
-    m = _EST_TIME.match(line)
-    if m:
-        hms = _HMS.match(m.group(2))
-        if hms and any(hms.groups()):
-            d, h, mi, sec = (int(g or 0) for g in hms.groups())
-            total = ((d * 24 + h) * 60 + mi) * 60 + sec
-            return "%s%s" % (m.group(1), _fmt_hms(total * fraction))
+    # Plain string operations: no regex that could backtrack on a crafted line.
+    if len(line) <= 300 and "estimated printing time" in line and "=" in line:
+        head, _, rest = line.partition("=")
+        if head.lstrip(";").strip().startswith("estimated printing time"):
+            hms = _HMS.match(rest.strip())
+            if hms and any(hms.groups()):
+                d, h, mi, sec = (int(g or 0) for g in hms.groups())
+                total = ((d * 24 + h) * 60 + mi) * 60 + sec
+                return "%s= %s" % (head, _fmt_hms(total * fraction))
     return line
 
 
