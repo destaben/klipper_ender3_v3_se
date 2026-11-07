@@ -217,7 +217,7 @@ Resume policy (council):
   quietly reduced;
 - warn (R12) if the overlap from the resume point to the latest possible
   stop exceeds the budget (`max_overlap_s`, 3 s, or `--max-overlap-s`), with
-  the extra material; refuse (R21) only above `absurd_overlap_s` (30 s);
+  the extra material; refuse (R21) only above `absurd_overlap_s` (30 s; the budget is capped at 30 s and never moves it);
 - a manual `--line` needs the window (refused with R18 without one). It is
   refused (R22) if it starts after the earliest possible stop (a gap), and
   warned (R12) if it overlaps above the budget. The margin is not applied to a
@@ -320,7 +320,7 @@ Each finding prints as one ASCII line, safe inside
 | R12 | warning | The overlap from the resume line to the latest possible stop is above the budget (`stop_estimation.max_overlap_s`, or `--max-overlap-s`). The line states the path (mm), the filament (mm) and an estimate of the material printed twice (mm3). Refusing would favour a gap in the part, so it only warns. |
 | R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
 | R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
-| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s): the evidence and the plan do not fit together. |
+| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` is capped at 30 s and never moves this limit): the evidence and the plan do not fit together. |
 | R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
 | R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. The owner's head estimate has source `user`, so it keeps this block on. |
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
@@ -328,7 +328,7 @@ Each finding prints as one ASCII line, safe inside
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
 | R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
-| PIN_AT_BOOT | warning | The probe pin self-test at Klippy start would land on the part (**TO VERIFY**: when the pin deploys). |
+| PIN_AT_BOOT | warning | The probe pin self-test at Klippy start could land on the part: the pin path (nozzle path plus probe offset) of every move that overlaps the stop window is tested against the part box plus the probe-spot margin, whole segments, not only their ends (**TO VERIFY**: when the pin deploys). |
 
 ## Profile
 
@@ -421,6 +421,9 @@ at an invalid command on purpose, and its motion is not safe to run.
   `max_overlap_s`). An overlap above it is the R12 warning with the extra
   material; the operator sets the budget knowingly.
 - `--probe-spot X,Y` (repeatable): a nozzle position to check for this part.
+  A typed spot is checked by geometry only and has no `measured` provenance of
+  its own: the trust sits in the head footprint it is checked against, which R13
+  keeps blocked until every tier is `measured`.
 - `--suggest-spots`: search mode, a grid of nozzle positions that pass the
   geometry check, ranked by head margin (capped at 15 mm), then by the smaller
   mesh extrapolation, then by the closeness to the part's X centre. Advice only.
@@ -503,7 +506,11 @@ Open:
   `source_size` is trusted for the R07 size comparison).
 - **KI-03**: a preview that is not written does not change the exit code.
 - **KI-08**: the R17 tail check is a deny-list of exact command names (after
-  normalising spaces and `N` line numbers, with or without digits). Job-end
+  normalising spaces and `N` line numbers, with or without digits). The list
+  includes every macro in `config/` whose own body homes, probes or
+  force-moves (a test derives them from the files), plus the MMU load, unload
+  and lane macros; callers of those that are not listed (timelapse, pause
+  helpers) can still pass. Job-end
   commands (`END_PRINT`, `M84`, `M18`, `TURN_OFF_HEATERS`) are accepted only
   as the end of the file; `MANUAL_STEPPER` and `STEPPER_BUZZ` are refused; see `FORBIDDEN_TAIL` in
   `print-rescue/gcode_scan.py`. A macro that homes or stops but is not listed
@@ -516,8 +523,10 @@ Open:
 - **KI-10**: an object name containing a space in `EXCLUDE_OBJECT_DEFINE` is
   refused (R17); Klipper splits parameters on whitespace, so the refusal fails
   closed.
-- **KI-11**: the park spot and the approach moves are not checked against the
-  no-go zones (only the resume point is, R03).
+- **KI-11**: R03 checks the resume point and the park spot against the no-go
+  zones. The first travel from the stop position (unknown to the planner) and
+  the travel from the park spot to the resume point are not checked; the P2
+  runner must check every move it issues.
 - **KI-12**: `--line` is accepted when it starts at or before the earliest
   possible stop, without the safety margin of the automatic choice. It is an
   explicit operator override; the overlap warning still applies.
@@ -543,7 +552,7 @@ Open:
   `BLTOUCH_DEBUG`, `M290`, `SET_GCODE_OFFSET` are not on the tail deny-list;
   `--line` is not checked against the cut layer; a missing `size` or
   `modified` in the history skips that comparison; the pin-at-boot check
-  samples about 25 positions of the moves in the stop window.
+  (the pin check covers whole move paths).
 - **KI-21**: when the log has no Stats line after the shutdown, `P_end` is a
   lower bound and the stop window can be biased late (reported as R10).
 - **KI-22**: the R07 content check has two parts: the exit position must be a
