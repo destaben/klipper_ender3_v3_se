@@ -113,6 +113,10 @@ vcgencmd get_throttled; vcgencmd measure_temp; uptime; free -m    # host health
 - The KlipperMaintenance timer does blocking HTTP calls to Moonraker inside the reactor; it is disabled (`[maintain] interval: 0`) because it stalled G28.
 - Kernel time to wall clock: `dmesg` times are seconds since boot; convert with `/proc/uptime`.
 - `Probe triggered prior to movement` during G28: the CR Touch is latched in an alarm (LED blinks red after `pin_down`). It happened after a `Timer too close` shutdown in the middle of a probing move, and `FIRMWARE_RESTART` plus `BLTOUCH_DEBUG COMMAND=reset` did not clear it; a full power-off/on at the printer switch did. Test with `reset`, `pin_down`, `touch_mode`, `QUERY_PROBE` (healthy = `open`). `pin_down` then `QUERY_PROBE` alone reads `TRIGGERED` on this probe even when healthy, so it is not a valid test. See `docs/klipper-mmu-upgrade.md`.
+- `ch341-uart ... urb stopped: -32` in the kernel log is a USB serial read stall. The symptom and the diagnosis are established; its root cause is UNKNOWN. See [the 2026-11-07 incident](../../../docs/print-rescue-incident-2026-11-07.md).
+- Pass UTC with a `Z` suffix to `docker logs --since/--until`; without it the times are local.
+- After an errored, timed-out or cancelled command, re-read the position, homed axes and probe state before the next move ([docs/print-rescue.md](../../../docs/print-rescue.md)).
+- Homing rules around a part, and the resume procedure after a shutdown: [docs/print-rescue.md](../../../docs/print-rescue.md).
 
 ## Rollback
 

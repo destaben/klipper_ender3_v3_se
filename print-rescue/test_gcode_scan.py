@@ -1,0 +1,286 @@
+import math
+import unittest
+
+import gcode_scan as gs
+import rescue_fixtures as fx
+
+
+def recs(text, first=1):
+    """Records for an inline G-code snippet (offsets as in a real file)."""
+    out, off = [], 0
+    for i, line in enumerate(text.strip("\n").split("\n")):
+        out.append((first + i, off, line))
+        off += len(line) + 1
+    return out
+
+
+class Parse(unittest.TestCase):
+    def test_classic(self):
+        self.assertEqual(gs.parse("G1 X10 Y-2.5 E.4 F3000 ; c"),
+                         ("G1", {"X": 10.0, "Y": -2.5, "E": 0.4, "F": 3000.0}))
+
+    def test_leading_zero_and_no_spaces(self):
+        self.assertEqual(gs.parse("G01X5Y6"), ("G1", {"X": 5.0, "Y": 6.0}))
+
+    def test_extended(self):
+        cmd, p = gs.parse("SET_PRESSURE_ADVANCE ADVANCE=0.08; Override")
+        self.assertEqual((cmd, p), ("SET_PRESSURE_ADVANCE", {"ADVANCE": "0.08"}))
+
+    def test_comment_only(self):
+        self.assertEqual(gs.parse(";LAYER_CHANGE"), (None, {}))
+
+
+class State(unittest.TestCase):
+    def test_modes_feed_and_g92(self):
+        r = gs.scan(recs("""
+G90
+M83
+G1 X10 Y10 F6000
+G91
+G1 X5 E1
+G90
+G92 E0
+M82
+G1 E2
+"""))
+        st = r.state
+        self.assertEqual(st.pos[:2], [15.0, 10.0])
+        self.assertTrue(st.e_absolute)
+        self.assertEqual(st.pos[3], 2.0)
+        self.assertEqual(st.feed, 6000.0)
+        kinds = [e.kind for e in r.events]
+        self.assertIn("g91", kinds)
+        self.assertIn("m82", kinds)
+
+    def test_limits_temps_fan_pa_objects(self):
+        r = gs.scan(recs("""
+SET_VELOCITY_LIMIT ACCEL=2500 ACCEL_TO_DECEL=1750
+M204 S3000
+M220 S90
+M221 S95
+M104 S220
+M140 S60
+M106 S128
+SET_PRESSURE_ADVANCE ADVANCE=0.05 SMOOTH_TIME=0.03
+EXCLUDE_OBJECT_DEFINE NAME=part_a CENTER=1,1
+EXCLUDE_OBJECT_START NAME=part_a
+EXCLUDE_OBJECT NAME=part_b
+T0
+"""))
+        st = r.state
+        self.assertEqual(st.accel, 3000.0)
+        self.assertAlmostEqual(st.minimum_cruise_ratio, 0.3)
+        self.assertAlmostEqual(st.accel_to_decel, 2100.0)
+        self.assertEqual((st.speed_factor, st.extrude_factor), (90.0, 95.0))
+        self.assertEqual((st.extruder_temp, st.bed_temp, st.fan), (220.0, 60.0, 128))
+        self.assertEqual((st.pressure_advance, st.pa_smooth_time), (0.05, 0.03))
+        self.assertEqual(st.current_object, "part_a")
+        self.assertIn("PART_A", st.objects)
+        self.assertEqual(st.excluded, ["part_b"])
+        self.assertEqual(st.tool, 0)
+
+    def test_m107_and_end_object(self):
+        st = gs.scan(recs("M106 S255\nM107\nEXCLUDE_OBJECT_START NAME=a\n"
+                          "EXCLUDE_OBJECT_END NAME=a")).state
+        self.assertEqual(st.fan, 0)
+        self.assertIsNone(st.current_object)
+
+    def test_state_at_is_before_the_line(self):
+        r = recs("G1 X1 F100\nG1 X2\nG1 X3")
+        self.assertEqual(gs.state_at(r, 3).pos[0], 2.0)
+
+    def test_retraction_tracking(self):
+        st = gs.scan(recs("M83\nG1 X1 E1\nG1 E-.28\nG1 X2 E-.12")).state
+        self.assertAlmostEqual(st.retracted, 0.4)
+        st = gs.scan(recs("M83\nG1 X1 E1\nG1 E-.4\nG1 E.4")).state
+        self.assertAlmostEqual(st.retracted, 0.0)
+
+    def test_layers(self):
+        r = gs.scan(recs(";LAYER_CHANGE\n;Z:0.2\nG1 Z.2\n;LAYER_CHANGE\n;Z:0.4"))
+        self.assertEqual((r.state.layer, r.state.layer_z, r.state.layer_start_line),
+                         (2, 0.4, 4))
+        self.assertEqual(r.layer_starts, [(1, 1, 0.2), (4, 2, 0.4)])
+
+
+class Arcs(unittest.TestCase):
+    def test_quarter_arc_segments_like_klipper(self):
+        # radius 10, quarter circle: 15.7 mm -> floor(15.7 / 1.0) = 15 segments
+        r = gs.scan(recs("G90\nG1 X10 Y0 F600\nG3 X0 Y10 I-10 J0 E1"),
+                    collect_moves_until=99)
+        segs = [m for m in r.moves if m.line == 3]
+        self.assertEqual(len(segs), 15)
+        self.assertEqual(segs[-1].end[:2], (0.0, 10.0))
+        for m in segs:
+            self.assertAlmostEqual(math.hypot(m.end[0], m.end[1]), 10.0, places=6)
+        self.assertAlmostEqual(sum(m.end[3] - m.start[3] for m in segs), 1.0)
+
+    def test_full_circle_spiral_lift(self):
+        # OrcaSlicer's spiral lift: G3 Z.. I J with no X/Y is a full turn.
+        r = gs.scan(recs("G90\nG1 X10 Y10 Z1 F600\nG3 Z2 I-1 J0 P1 F12000"),
+                    collect_moves_until=99)
+        segs = [m for m in r.moves if m.line == 3]
+        self.assertEqual(len(segs), 6)          # 2*pi*1 = 6.28 mm -> 6
+        self.assertEqual(segs[-1].end[:3], (10.0, 10.0, 2.0))
+        self.assertFalse(any(m.extruding for m in segs))
+
+    def test_clockwise(self):
+        r = gs.scan(recs("G1 X10 Y0\nG2 X0 Y-10 I-10 J0"), collect_moves_until=99)
+        mid = [m for m in r.moves if m.line == 2][7].end
+        self.assertGreater(mid[0], 0)
+        self.assertLess(mid[1], 0)
+
+
+class Bbox(unittest.TestCase):
+    def test_extrusion_only_and_per_object(self):
+        r = gs.scan(recs("""
+M83
+G1 X0 Y0 Z.2 F600
+G1 X50 Y5 E1
+G1 X200 Y200
+EXCLUDE_OBJECT_START NAME=a
+G1 X60 Y40 E1
+EXCLUDE_OBJECT_END NAME=a
+"""))
+        self.assertEqual((r.total.x_min, r.total.x_max, r.total.y_max), (0.0, 200.0, 200.0))
+        self.assertEqual(r.per_object[None].as_dict()["x_max"], 50.0)
+        self.assertEqual(r.per_object["a"].as_dict()["x_min"], 60.0)
+
+    def test_bbox_until(self):
+        r = gs.scan(recs("M83\nG1 X1 Y1 E1\nG1 X100 Y100 E1"), bbox_until=2)
+        self.assertEqual(r.total.x_max, 1.0)
+
+
+class Bytes(unittest.TestCase):
+    def test_line_at_byte_and_exit_position(self):
+        r = gs.scan(recs("G1 X1\nG1 X22\nG1 X333"))
+        self.assertEqual(gs.line_at_byte(r, 0), 1)
+        self.assertEqual(gs.line_at_byte(r, 6), 2)       # "G1 X1\n" is 6 bytes
+        self.assertEqual(gs.last_processed_line(r, 13), 2)
+
+    def test_until_byte_stops_bbox_and_moves(self):
+        # "M83\n" + "G1 X1 Y1 E1\n" = 16 bytes: line 3 starts at byte 16
+        r = gs.scan(recs("M83\nG1 X1 Y1 E1\nG1 X100 Y100 E1"), until_byte=16)
+        self.assertEqual(r.total.x_max, 1.0)
+        self.assertEqual({m.line for m in r.moves}, {2})
+
+
+class Tail(unittest.TestCase):
+    def test_forbidden_tool_m82_vase_nonmonotonic(self):
+        r = gs.scan(recs("""
+T0
+;Z:5
+G1 X1 Y1 E1
+G28
+BED_MESH_CALIBRATE
+T1
+M82
+;Z:4
+G1 X1 Y2 Z4.1 E1
+G1 X1 Y3 Z4.2 E1
+"""))
+        f = gs.tail_findings(r, 3, current_tool=0)
+        self.assertEqual([c for _, c in f["forbidden"]], ["G28", "BED_MESH_CALIBRATE"])
+        self.assertEqual(f["tool_change"], [(6, "T1")])
+        self.assertEqual(f["m82"][0][0], 7)
+        self.assertEqual(f["non_monotonic_z"][0][0], 8)
+        self.assertEqual(f["vase"], [])            # 2 moves < VASE_MIN_MOVES
+        f_after = gs.tail_findings(r, 9, current_tool=0)
+        self.assertEqual(f_after["forbidden"], [])
+
+    def test_vase(self):
+        body = "\n".join("G1 X%d Y1 Z%.2f E.1" % (i, 1 + i * 0.01) for i in range(12))
+        r = gs.scan(recs("M83\n" + body))
+        self.assertEqual(len(gs.tail_findings(r, 1, 0)["vase"]), 1)
+
+
+class Denylist(unittest.TestCase):
+    """N11: homing, probing, start macros and forced positions are all refused."""
+
+    FORMS = ["START_PRINT_EXTRA", "START_PRINT", "HOME", "G30", "G32", "G28", "G28 X",
+             "G28 X Y", "G28 Z", "G28 Z0", "g28x", "G28X", "SET_KINEMATIC_POSITION Z=20",
+             "SET_KINEMATIC_POSITION X=10 Y=10", "FORCE_MOVE STEPPER=stepper_z DISTANCE=1",
+             "_SP_PRINT_START", "BED_MESH_CALIBRATE", "QUAD_GANTRY_LEVEL"]
+
+    def test_every_form_is_flagged_in_the_tail(self):
+        for form in self.FORMS:
+            with self.subTest(form=form):
+                r = gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form))
+                f = gs.tail_findings(r, 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+                self.assertEqual(f["forbidden"][0][0], 2)
+
+    def test_denylist_covers_the_phase_one_commands(self):
+        for cmd in ("G28", "G29", "G30", "G32", "HOME", "START_PRINT", "START_PRINT_EXTRA",
+                    "_SP_PRINT_START", "BED_MESH_CALIBRATE", "PROBE", "Z_TILT_ADJUST",
+                    "QUAD_GANTRY_LEVEL", "SET_KINEMATIC_POSITION", "FORCE_MOVE"):
+            with self.subTest(cmd=cmd):
+                self.assertIn(cmd, gs.FORBIDDEN_TAIL)
+
+
+class Robustness(unittest.TestCase):
+    """N2: malformed G-code gives a clear error, never a hang or a crash."""
+
+    def test_non_finite_parameters_are_ignored(self):
+        r = gs.scan(recs("SET_VELOCITY_LIMIT ACCEL=nan\nM220 S=inf\nM204 S=nan"))
+        self.assertEqual(r.state.accel, 4000.0)
+        self.assertEqual(r.state.speed_factor, 100.0)
+
+    def test_negative_speed_and_acceleration_are_ignored(self):
+        r = gs.scan(recs("SET_VELOCITY_LIMIT ACCEL=-5 VELOCITY=-1\nM220 S-50\nM204 S-900"))
+        self.assertEqual(r.state.accel, 4000.0)
+        self.assertEqual(r.state.max_velocity, 200.0)
+        self.assertEqual(r.state.speed_factor, 100.0)
+
+    def test_huge_arc_is_refused(self):
+        with self.assertRaises(ValueError):
+            gs.scan(recs("G90\nG1 X1 Y1 F600\nG2 X2 Y0 I1e300 J0"))
+
+    def test_huge_coordinate_is_refused(self):
+        with self.assertRaises(ValueError):
+            gs.scan(recs("G90\nG1 X1e9 Y0 F600"))
+
+
+class Incident(unittest.TestCase):
+    """The 2026-11-07 excerpt (fixtures/SOURCES.md)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ev, cls.res, cls.timed = fx.incident()
+
+    def test_part_box_and_height(self):
+        # The total box includes the first-layer skirt; it matches a scan of
+        # the full original file up to the same line.
+        b = self.res.total
+        self.assertEqual((round(b.x_min, 1), round(b.x_max, 1)), (29.8, 188.4))
+        self.assertEqual((round(b.y_min, 1), round(b.y_max, 1)), (29.8, 188.4))
+        self.assertAlmostEqual(b.z_max, 20.6)
+        obj = self.res.per_object["ps2-slim-wall-mount.stl_id_0_copy_0"]
+        self.assertAlmostEqual(obj.z_max, 20.6)
+
+    def test_layer_and_state(self):
+        st = gs.state_at(fx.records(), fx.LAST_LINE + 1, fx.limits())
+        self.assertEqual((st.layer, st.layer_z, st.layer_start_line),
+                         (158, 20.6, fx.CUT_LAYER_START))
+        self.assertEqual((st.accel, st.fan, st.extruder_temp, st.bed_temp,
+                          st.pressure_advance, st.tool),
+                         (2500.0, 255, 220.0, 60.0, 0.08, 0))
+        self.assertFalse(st.e_absolute)
+
+    def test_byte_mapping(self):
+        full = gs.scan(fx.records())
+        self.assertEqual(gs.line_at_byte(full, fx.EXIT_POSITION), 202397)
+        self.assertEqual(gs.last_processed_line(full, fx.EXIT_POSITION), fx.LAST_LINE)
+        self.assertEqual(gs.line_at_byte(full, 5398158), fx.SD_LINE_GOOD)
+        self.assertEqual(gs.line_at_byte(full, 5404152), fx.LAST_LINE)
+
+    def test_last_line_matches_log_last_position(self):
+        last = [m for m in self.res.moves if m.line == fx.LAST_LINE][-1]
+        self.assertEqual(list(last.end[:2]), self.ev.gcode_state["last_position"][:2])
+
+    def test_tail_is_clean(self):
+        f = gs.tail_findings(gs.scan(fx.records()), fx.CUT_LAYER_START, 0)
+        self.assertEqual(f["forbidden"] + f["tool_change"] + f["m82"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

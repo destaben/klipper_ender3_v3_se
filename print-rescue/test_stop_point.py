@@ -1,0 +1,279 @@
+import unittest
+
+import gcode_scan as gs
+import planner
+import rescue_fixtures as fx
+import stop_point as sp
+from gcode_scan import Move
+
+STATS = ("2026-11-07T09:09:45.731773044Z INFO:root:Stats 155033.2: gcodein=0 "
+         "mcu: mcu_awake=0.024 bytes_write=28097404 bytes_read=4945189 "
+         "send_seq=493669 receive_seq=493669 retransmit_seq=422729 freq=71998773 "
+         "PICO_MMU: send_seq=9044 receive_seq=9044 heater_bed: target=60 "
+         "sd_pos=5398158 PRINTER_MCU: temp=43.5 print_time=8761.661 "
+         "buffer_time=1.037 print_stall=0 extruder: target=220")
+
+
+def synthetic_log(rows, reason="Lost communication with MCU 'mcu'", after=8.0):
+    """rows: (eventtime, print_time, buffer_time, send_seq, receive_seq, bytes_read, sd)"""
+    out = []
+    for et, pt, bt, ss, rs, br, sd in rows:
+        out.append("INFO:root:Stats %.1f: gcodein=0 mcu: bytes_read=%d send_seq=%d "
+                   "receive_seq=%d sd_pos=%d print_time=%.3f buffer_time=%.3f"
+                   % (et, br, ss, rs, sd, pt, bt))
+    out.append("ERROR:root:Transition to shutdown state: %s" % reason)
+    out.append("INFO:root:Stats 9.0: gcodein=0 mcu: bytes_read=1 send_seq=1 "
+               "receive_seq=1 print_time=%.3f buffer_time=0.5" % after)
+    out.append("INFO:root:Exiting SD card print (position 100)")
+    return out
+
+
+class ParseStats(unittest.TestCase):
+    def test_sections_and_globals(self):
+        s = sp.parse_stats(STATS)
+        self.assertEqual(s.eventtime, 155033.2)
+        self.assertEqual(s.timestamp, "2026-11-07T09:09:45.731773044Z")
+        self.assertEqual((s.print_time, s.buffer_time, s.sd_pos), (8761.661, 1.037, 5398158))
+        # PICO_MMU's counters must not leak into the main MCU's
+        self.assertEqual(s.mcu["send_seq"], 493669)
+        self.assertEqual(s.mcu["receive_seq"], 493669)
+        self.assertEqual(s.mcu["bytes_read"], 4945189)
+
+    def test_plain_klippy_log_without_timestamp(self):
+        s = sp.parse_stats("Stats 12.5: gcodein=0 mcu: send_seq=1 receive_seq=1 print_time=3.0")
+        self.assertIsNone(s.timestamp)
+        self.assertEqual(s.print_time, 3.0)
+
+    def test_not_stats(self):
+        self.assertIsNone(sp.parse_stats("INFO:root:Starting Klippy..."))
+
+    def test_non_finite_and_negative_fields_are_ignored(self):
+        # A malformed log must not crash the analysis (int(inf), int(nan)).
+        s = sp.parse_stats("INFO:root:Stats 12.5: gcodein=0 mcu: send_seq=1 "
+                           "receive_seq=1 print_time=nan buffer_time=inf sd_pos=inf")
+        self.assertIsNone(s.print_time)
+        self.assertIsNone(s.buffer_time)
+        self.assertIsNone(s.sd_pos)
+        s = sp.parse_stats("INFO:root:Stats 12.5: gcodein=0 mcu: receive_seq=1 sd_pos=-7")
+        self.assertIsNone(s.sd_pos)
+
+
+class IncidentEvidence(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ev, cls.res, cls.timed = fx.incident()
+        cls.w = sp.compute_window(cls.ev, cls.timed, fx.LAST_LINE, fx.SD_LINE_GOOD)
+
+    def test_freeze_found(self):
+        ev = self.ev
+        self.assertTrue(ev.comm_loss)
+        self.assertTrue(ev.freeze)
+        self.assertEqual(ev.good.mcu["receive_seq"], 493669)
+        self.assertEqual(ev.good.timestamp, "2026-11-07T09:09:45.731773044Z")
+        self.assertEqual(ev.next_after_good.mcu["send_seq"], 493672)
+        self.assertEqual((ev.good.print_time, ev.good.buffer_time), (8761.661, 1.037))
+        self.assertEqual(ev.p_end, 8766.891)
+        self.assertEqual(ev.p_end_source, "first Stats after shutdown")
+        self.assertAlmostEqual(ev.p_end - ev.good.print_time, 5.23, places=2)
+        self.assertAlmostEqual(ev.interval, 1.0)
+        self.assertEqual(ev.reactor_busy_before, 0)
+
+    def test_shutdown_markers(self):
+        ev = self.ev
+        self.assertEqual(ev.exit_position, fx.EXIT_POSITION)
+        self.assertEqual(ev.sdcard_position, 5404152)
+        self.assertEqual(ev.gcode_state["last_position"][:3], [184.976, 143.031, 20.625])
+        self.assertEqual(ev.gcode_state["homing_position"][2], 0.025)
+        self.assertFalse(ev.gcode_state["absolute_extrude"])
+
+    def test_window_is_the_union_of_both_anchors(self):
+        # Conservative combination (council policy after the S1 finding):
+        # earliest = min of the two earliest stops, latest = max of the two latest.
+        w, d = self.w, self.w.detail
+        self.assertEqual(w.anchor, "sd+end")
+        self.assertAlmostEqual(w.earliest_t,
+                               min(d["sd_anchor_earliest_t"], d["end_anchor_earliest_t"]))
+        self.assertAlmostEqual(w.latest_t,
+                               max(d["sd_anchor_latest_t"], d["end_anchor_latest_t"]))
+        # The end anchor (the plan's formula) is the one that sets both ends here.
+        self.assertLess(d["end_anchor_earliest_t"], d["sd_anchor_earliest_t"])
+        self.assertGreater(d["end_anchor_latest_t"], d["sd_anchor_latest_t"])
+        self.assertEqual((w.earliest_line, w.latest_line), (201951, 202295))
+
+    def test_end_anchor_numbers(self):
+        # The plan's formula (end anchor): 4.23 s .. 6.27 s plus lookahead.
+        d = self.w.detail
+        self.assertAlmostEqual(self.w.file_end_t - d["end_anchor_latest_t"], 4.23, places=2)
+        self.assertAlmostEqual(self.w.file_end_t - d["end_anchor_earliest_t"],
+                               6.267 + d["lookahead_end_s"], places=3)
+        self.assertGreater(d["lookahead_end_s"], 1.5)   # line 202396 is one long move
+
+    def test_anchors_agree_on_endpoints(self):
+        # Endpoint differences are 0.56 s and 0.62 s: below the 1 s R10 limit.
+        self.assertIsNone(sp.anchors_disagree(self.w))
+
+    def test_sd_anchor_keeps_its_model_free_bound(self):
+        # The sd anchor alone: motion for lines dispatched after the link froze
+        # was never sent, so its latest stop is not after the first frozen sample.
+        d = self.w.detail
+        self.assertLessEqual(sp.line_at_t(self.timed, d["sd_anchor_latest_t"]),
+                             fx.SD_LINE_FIRST_FROZEN)
+        self.assertLess(d["sd_anchor_earliest_t"], d["sd_anchor_latest_t"])
+
+    def test_resume_choice_refuses_with_default_budget(self):
+        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.8 s (R12).
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 3.0)
+        self.assertIsNotNone(c.refusal)
+        self.assertIn("overlap", c.refusal)
+        self.assertEqual(c.line, 201925)
+        self.assertAlmostEqual(c.overlap_s, 4.83, places=2)
+
+    def test_resume_choice_with_five_second_budget(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0)
+        self.assertIsNone(c.refusal)
+        self.assertEqual(c.line, 201925)
+        self.assertGreaterEqual(c.line, fx.CUT_LAYER_START)
+        self.assertLessEqual(c.t, self.w.earliest_t - 0.5 + 1e-9)       # never a gap
+        self.assertLessEqual(c.overlap_s, 5.0)
+        self.assertGreater(c.overlap_mm, 50.0)
+        self.assertAlmostEqual(c.overlap_s, self.w.latest_t - c.t)
+
+    def test_auto_choice_is_before_both_earliest_stops_minus_margin(self):
+        # Regression for S1: the old code chose from the sd anchor only, which put
+        # the resume line after the end anchor's earliest stop minus the margin.
+        d = self.w.detail
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0)
+        self.assertLessEqual(c.t, d["end_anchor_earliest_t"] - 0.5 + 1e-9)
+        self.assertLessEqual(c.t, d["sd_anchor_earliest_t"] - 0.5 + 1e-9)
+
+    def test_auto_choice_respects_other_margins(self):
+        for margin in (0.0, 0.5, 2.0):
+            c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, margin, 1.0, 9.0)
+            self.assertIsNone(c.refusal)
+            self.assertLessEqual(c.t, self.w.earliest_t - margin + 1e-9, margin)
+
+    def test_negative_or_non_finite_margin_is_rejected(self):
+        for bad in (-0.5, float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, bad, 1.0, 5.0)
+
+    def test_no_line_meets_the_margin_inside_the_cut_layer(self):
+        # The target falls 0.2 s before the cut layer's first line: no line in
+        # the layer starts early enough, so the auto path must refuse.
+        layer_t = sp.line_start_t(self.timed, fx.CUT_LAYER_START)
+        margin = self.w.earliest_t - layer_t + 0.2
+        self.assertGreater(margin, 0)
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, margin, 1.0, 9.0)
+        self.assertIsNotNone(c.refusal)
+        self.assertIn("margin", c.refusal)
+
+    def test_manual_estimates_against_the_combined_window(self):
+        # Line 202282 (the hand-built resume) starts 0.14 s INSIDE the latest
+        # possible stop, not after it. Lines 202314 and 202335 do lie after it.
+        t = sp.line_start_t(self.timed, fx.MANUAL_RESUME_LINE)
+        self.assertLess(t, self.w.latest_t)
+        self.assertAlmostEqual(self.w.latest_t - t, 0.14, delta=0.01)
+        for line in (202314, 202335):
+            self.assertGreater(sp.line_start_t(self.timed, line), self.w.latest_t)
+        # It is still refused: it starts after the earliest possible stop (gap).
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0,
+                             manual_line=fx.MANUAL_RESUME_LINE)
+        self.assertTrue(c.manual)
+        self.assertIn("gap", c.refusal)
+
+    def test_manual_line_inside_budget_is_accepted(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0,
+                             manual_line=self.w.earliest_line - 5)
+        self.assertIsNone(c.refusal)
+        self.assertGreater(c.overlap_s, 0)
+
+    def test_tighter_overlap_budget_refuses(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 2.0)
+        self.assertIn("overlap", c.refusal)
+
+    def test_end_anchor_fallback_without_sd(self):
+        w = sp.compute_window(self.ev, self.timed, fx.LAST_LINE, None)
+        self.assertEqual(w.anchor, "end")
+        self.assertAlmostEqual(w.walkback_latest_s, 4.23, places=2)
+
+    def test_planner_agreement(self):
+        spread, pts = sp.planner_agreement(
+            self.ev, self.timed, lambda b: gs.line_at_byte(self.res, b))
+        self.assertLess(spread, 0.5)
+        self.assertEqual(pts[-1][0], fx.SD_LINE_GOOD)
+
+
+class Kernel(unittest.TestCase):
+    def test_incident_usb_stalls(self):
+        with open(fx.KERNEL, encoding="utf-8") as fh:
+            stalls = sp.kernel_usb_stalls(fh.read().splitlines())
+        # 10:09:45 local (UTC+1) is the 09:09:45 UTC freeze in the Stats lines
+        self.assertEqual(stalls, [("Nov 07 07:51:48", -32), ("Nov 07 10:09:45", -32)])
+
+
+class SyntheticEvidence(unittest.TestCase):
+    ROWS = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0),
+            (3.0, 12.0, 1.0, 23, 20, 200, 0), (4.0, 13.0, 1.0, 23, 20, 200, 0)]
+
+    def test_non_comm_shutdown(self):
+        ev = sp.analyze(synthetic_log(self.ROWS, reason="MCU 'mcu' shutdown: Timer too close"))
+        self.assertFalse(ev.comm_loss)
+
+    def test_no_freeze_visible(self):
+        rows = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0)]
+        ev = sp.analyze(synthetic_log(rows))
+        self.assertIsNone(ev.good)
+        self.assertTrue(any("no link freeze" in n for n in ev.notes))
+
+    def test_freeze(self):
+        ev = sp.analyze(synthetic_log(self.ROWS))
+        self.assertEqual(ev.good.eventtime, 2.0)
+        self.assertTrue(ev.freeze)
+        self.assertEqual(ev.p_end, 8.0)
+
+    def test_layer_start_inside_the_margin_refuses(self):
+        # 10 one-second moves; a layer starts at line 5 (t = 4 s).
+        items = [Move(line=i, start=(i * 100.0, 0, 0, 0), end=((i + 1) * 100.0, 0, 0, 1),
+                      speed=100.0, max_velocity=100.0, accel=1e9, accel_to_decel=1e9,
+                      square_corner_velocity=5.0, extruding=True) for i in range(1, 11)]
+        timed = planner.plan(items)
+        w = sp.Window("sd", earliest_t=4.2, latest_t=6.0, file_end_t=10.0,
+                      earliest_line=5, latest_line=7, walkback_earliest_s=5.8,
+                      walkback_latest_s=4.0, lookahead_bound_s=0.0)
+        # target 3.7 s is before the layer (4.0 s): the margin cannot be kept
+        c = sp.choose_resume(w, timed, 5, 0.5, 1.0, 3.0)
+        self.assertIsNotNone(c.refusal)
+        self.assertIn("margin", c.refusal)
+        self.assertEqual(c.line, 5)
+        # earliest 4.6 s: target 4.1 s lies inside the layer, so it is accepted
+        w.earliest_t = 4.6
+        c = sp.choose_resume(w, timed, 5, 0.5, 1.0, 3.0)
+        self.assertIsNone(c.refusal)
+        self.assertEqual(c.line, 5)
+        w.earliest_t = 3.5
+        c = sp.choose_resume(w, timed, 5, 0.5, 1.0, 3.0)
+        self.assertIn("before the cut layer", c.refusal)
+
+    def test_anchor_gap_compares_window_endpoints(self):
+        # Midpoints agree (15.0 vs 14.25 s) but the earliest endpoints differ by
+        # 1.5 s: R10 must fire.
+        w = sp.Window("sd+end", earliest_t=8.5, latest_t=20.0, file_end_t=30.0,
+                      earliest_line=1, latest_line=2, walkback_earliest_s=21.5,
+                      walkback_latest_s=10.0, lookahead_bound_s=0.0,
+                      detail={"sd_anchor_earliest_t": 10.0, "sd_anchor_latest_t": 20.0,
+                              "end_anchor_earliest_t": 8.5, "end_anchor_latest_t": 20.0})
+        gap = sp.anchors_disagree(w)
+        self.assertIsNotNone(gap)
+        self.assertAlmostEqual(gap, 1.5)
+
+    def test_anchor_gap_none_when_endpoints_agree(self):
+        w = sp.Window("sd+end", earliest_t=10.0, latest_t=20.0, file_end_t=30.0,
+                      earliest_line=1, latest_line=2, walkback_earliest_s=20.0,
+                      walkback_latest_s=10.0, lookahead_bound_s=0.0,
+                      detail={"sd_anchor_earliest_t": 10.0, "sd_anchor_latest_t": 20.0,
+                              "end_anchor_earliest_t": 10.4, "end_anchor_latest_t": 19.6})
+        self.assertIsNone(sp.anchors_disagree(w))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,649 @@
+"""Streaming G-code scanner: machine state, extrusion bounding box and tail checks.
+
+The scanner reads (line_number, byte_offset, text) records one at a time, so
+a full 8 MB print file is never held in memory. Line numbers are 1-based and
+always refer to the ORIGINAL file, which lets a test fixture that holds only
+an excerpt of a file (see fixtures/SOURCES.md) report the same numbers as the
+real file.
+
+What it models, as Klipper's gcode_move/gcode_arcs would see it:
+  G90/G91, M82/M83, G92, G0/G1, G2/G3 (G17 plane, split into segments of
+  gcode_arcs resolution like Klipper), F, G4, SET_VELOCITY_LIMIT, M204,
+  M220/M221, M104/M109/M140/M190, M106/M107, SET_PRESSURE_ADVANCE,
+  EXCLUDE_OBJECT_DEFINE/START/END/EXCLUDE_OBJECT, ;LAYER_CHANGE and ;Z:,
+  T<n> tool changes.
+
+Pure logic except the two record loaders at the bottom. Standard library only.
+"""
+
+import bisect
+import copy
+import gzip
+import json
+import math
+import re
+from array import array
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
+
+Record = Tuple[int, int, str]
+
+# Commands that must never run again in a resumed tail: they home, probe or
+# start a fresh print (which homes) with a part on the bed.
+FORBIDDEN_TAIL = {
+    "G28": "homing (any form)",
+    "G29": "bed probing",
+    "G30": "single probe",
+    "G32": "gantry levelling probe",
+    "HOME": "homing macro",
+    "START_PRINT": "print start macro (homes all axes)",
+    "START_PRINT_EXTRA": "print start macro (homes all axes)",
+    "_SP_PRINT_START": "MMU print start (loads a lane)",
+    "BED_MESH_CALIBRATE": "bed mesh probing",
+    "PROBE": "probing",
+    "PROBE_ACCURACY": "probing",
+    "PROBE_CALIBRATE": "probing",
+    "Z_TILT_ADJUST": "gantry levelling",
+    "QUAD_GANTRY_LEVEL": "gantry levelling",
+    "SCREWS_TILT_CALCULATE": "probing",
+    "FORCE_MOVE": "move without homing",
+    "SET_KINEMATIC_POSITION": "declares a position without a measurement",
+}
+
+# Extrusion moves that change Z by more than this count as vase-style.
+VASE_MIN_MOVES = 10
+EPS = 1e-9
+# Printer coordinates and filament lengths beyond this are not real moves
+# (a corrupt file, not a print); arcs longer than MAX_ARC_SEGMENTS are not
+# modelled. Both refuse with ValueError, which plan.py reports as exit 1.
+MAX_COORDINATE = 1e6
+MAX_ARC_SEGMENTS = 100000
+
+
+@dataclass
+class Limits:
+    """Toolhead limits as configured in printer.cfg ([printer], [extruder])."""
+    max_velocity: float = 200.0
+    max_accel: float = 4000.0
+    square_corner_velocity: float = 5.0
+    minimum_cruise_ratio: float = 0.5
+    max_z_velocity: float = 5.0
+    max_z_accel: float = 100.0
+    max_extrude_only_velocity: float = 45.0
+    max_extrude_only_accel: float = 3000.0
+    instant_corner_velocity: float = 1.0
+    arc_resolution: float = 1.0
+
+
+@dataclass
+class Move:
+    """One straight toolhead move as Klipper's toolhead receives it."""
+    line: int
+    start: Tuple[float, float, float, float]
+    end: Tuple[float, float, float, float]
+    speed: float            # requested mm/s (F/60 times the M220 factor)
+    max_velocity: float
+    accel: float
+    accel_to_decel: float
+    square_corner_velocity: float
+    extruding: bool         # E > 0 with XY motion
+
+
+@dataclass
+class Dwell:
+    """A pause in motion (G4) or a full lookahead flush (M400, M109, M190)."""
+    line: int
+    seconds: float
+    reason: str
+
+
+@dataclass
+class Bbox:
+    x_min: float = math.inf
+    x_max: float = -math.inf
+    y_min: float = math.inf
+    y_max: float = -math.inf
+    z_max: float = -math.inf
+
+    def add(self, x, y, z):
+        self.x_min = min(self.x_min, x)
+        self.x_max = max(self.x_max, x)
+        self.y_min = min(self.y_min, y)
+        self.y_max = max(self.y_max, y)
+        self.z_max = max(self.z_max, z)
+
+    @property
+    def empty(self):
+        return self.x_min > self.x_max
+
+    def as_dict(self):
+        return {"x_min": self.x_min, "x_max": self.x_max, "y_min": self.y_min,
+                "y_max": self.y_max, "z_max": self.z_max}
+
+
+@dataclass
+class State:
+    """Machine state after the last processed line."""
+    line: int = 0
+    pos: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    absolute: bool = True
+    e_absolute: bool = True
+    feed: float = 1500.0          # mm/min (Klipper's default speed is 25 mm/s)
+    max_velocity: float = 200.0
+    accel: float = 4000.0
+    minimum_cruise_ratio: float = 0.5
+    square_corner_velocity: float = 5.0
+    speed_factor: float = 100.0   # M220 percent
+    extrude_factor: float = 100.0  # M221 percent
+    extruder_temp: Optional[float] = None
+    bed_temp: Optional[float] = None
+    fan: Optional[int] = None     # 0-255
+    pressure_advance: Optional[float] = None
+    pa_smooth_time: Optional[float] = None
+    accel_to_decel_set: bool = False
+    mcr_set: bool = False
+    objects: Dict[str, str] = field(default_factory=dict)   # name -> define line
+    current_object: Optional[str] = None
+    excluded: List[str] = field(default_factory=list)
+    layer: int = 0
+    layer_z: Optional[float] = None
+    layer_start_line: Optional[int] = None
+    tool: Optional[int] = None
+    plane: str = "G17"
+    retracted: float = 0.0        # filament the slicer has retracted right now
+
+    @property
+    def accel_to_decel(self):
+        return self.accel * (1.0 - self.minimum_cruise_ratio)
+
+
+@dataclass
+class Event:
+    line: int
+    kind: str      # forbidden | tool | m82 | g91 | g92_xyz | plane | layer_z
+    detail: str
+    value: Optional[float] = None
+
+
+@dataclass
+class ScanResult:
+    state: State
+    total: Bbox
+    per_object: Dict[Optional[str], Bbox]
+    moves: List[object]           # Move | Dwell, the last `keep_layers` layers
+    events: List[Event]
+    line_offsets: Tuple[array, array]   # (byte offsets, line numbers)
+    layer_starts: List[Tuple[int, int, Optional[float]]]  # (line, layer, z)
+    vase_lines: List[int]          # extrusion moves that change Z
+    tools_used: List[int]
+    last_line: int
+    bbox_until: int
+
+
+def split_code(text: str) -> str:
+    return text.split(";", 1)[0].strip()
+
+
+_CLASSIC = re.compile(r"^([GMT])(\d+(?:\.\d+)?)(.*)$", re.IGNORECASE)
+_PARAM = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)?")
+
+
+def parse(text: str):
+    """Return (command, params) for one line, or (None, {}) for no command.
+
+    Classic commands (G1 X10 E.5) give single-letter float params; extended
+    commands (SET_VELOCITY_LIMIT ACCEL=2500) give KEY=VALUE string params.
+    """
+    code = split_code(text)
+    if not code:
+        return None, {}
+    m = _CLASSIC.match(code)
+    if m and "=" not in code.split()[0]:
+        num = m.group(2)
+        cmd = m.group(1).upper() + (num if "." in num else str(int(num)))
+        params = {}
+        for key, val in _PARAM.findall(m.group(3)):
+            key = key.upper()
+            if val in (None, ""):
+                params[key] = None
+            else:
+                params[key] = float(val)
+        return cmd, params
+    parts = code.split()
+    cmd = parts[0].upper()
+    params = {}
+    for p in parts[1:]:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            params[k.upper()] = v
+    return cmd, params
+
+
+def _fparam(params, key, default=None):
+    """A finite float parameter, or default (NaN and infinity are not values)."""
+    v = params.get(key)
+    if v is None:
+        return default
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
+
+
+class Scanner:
+    """Feed records with feed(); read results with result()."""
+
+    def __init__(self, limits: Limits = None, bbox_until: Optional[int] = None,
+                 keep_layers: int = 2, collect_moves_until: Optional[int] = None,
+                 until_byte: Optional[int] = None):
+        """until_byte: lines starting at or after this byte offset (Klipper's
+        exit position) count neither for the bounding box nor for the moves."""
+        self.until_byte = until_byte
+        self.limits = limits or Limits()
+        lim = self.limits
+        self.st = State(max_velocity=lim.max_velocity, accel=lim.max_accel,
+                        minimum_cruise_ratio=lim.minimum_cruise_ratio,
+                        square_corner_velocity=lim.square_corner_velocity)
+        self.bbox_until = bbox_until
+        self.collect_until = collect_moves_until
+        self.keep_layers = keep_layers
+        self.total = Bbox()
+        self.per_object: Dict[Optional[str], Bbox] = {}
+        self.layer_moves: List[List[object]] = [[]]
+        self.events: List[Event] = []
+        self.offsets = array("q")
+        self.lines = array("q")
+        self.layer_starts: List[Tuple[int, int, Optional[float]]] = []
+        self.vase_lines: List[int] = []
+        self.tools_used: List[int] = []
+        self.last_line = 0
+
+    # -- helpers -----------------------------------------------------------
+    def _bbox_active(self, line):
+        return self.bbox_until is None or line <= self.bbox_until
+
+    def _collect_active(self, line):
+        return self.collect_until is None or line <= self.collect_until
+
+    def _emit(self, item):
+        self.layer_moves[-1].append(item)
+
+    def _new_layer(self):
+        self.layer_moves.append([])
+        if self.keep_layers and len(self.layer_moves) > self.keep_layers:
+            del self.layer_moves[0]
+
+    def _speed(self):
+        return self.st.feed / 60.0 * self.st.speed_factor / 100.0
+
+    def _segment(self, line, start, end):
+        st = self.st
+        dxy = math.hypot(end[0] - start[0], end[1] - start[1])
+        de = end[3] - start[3]
+        extruding = de > EPS and dxy > EPS
+        if de < -EPS:
+            st.retracted += -de
+        elif de > EPS:
+            st.retracted = 0.0 if extruding else max(0.0, st.retracted - de)
+        if extruding and self._bbox_active(line):
+            z = max(start[2], end[2])
+            for box in (self.total,
+                        self.per_object.setdefault(st.current_object, Bbox())):
+                box.add(start[0], start[1], z)
+                box.add(end[0], end[1], z)
+        if extruding and abs(end[2] - start[2]) > EPS:
+            self.vase_lines.append(line)
+        if self._collect_active(line):
+            self._emit(Move(line=line, start=tuple(start), end=tuple(end),
+                            speed=self._speed(), max_velocity=st.max_velocity,
+                            accel=st.accel, accel_to_decel=st.accel_to_decel,
+                            square_corner_velocity=st.square_corner_velocity,
+                            extruding=extruding))
+
+    def _target(self, params, line):
+        st = self.st
+        tgt = list(st.pos)
+        for i, ax in enumerate("XYZ"):
+            v = _fparam(params, ax)
+            if v is not None:
+                tgt[i] = v if st.absolute else st.pos[i] + v
+        e = _fparam(params, "E")
+        if e is not None:
+            e *= st.extrude_factor / 100.0
+            tgt[3] = e if (st.e_absolute and st.absolute) else st.pos[3] + e
+        if any(abs(v) > MAX_COORDINATE for v in tgt):
+            raise ValueError("line %d: move target outside the modelled range "
+                             "(|value| > %g)" % (line, MAX_COORDINATE))
+        return tgt
+
+    def _linear(self, line, params):
+        f = _fparam(params, "F")
+        if f is not None and f > 0:
+            self.st.feed = f
+        tgt = self._target(params, line)
+        if any(abs(tgt[i] - self.st.pos[i]) > EPS for i in range(4)):
+            self._segment(line, self.st.pos, tgt)
+        self.st.pos = tgt
+
+    def _arc(self, line, params, clockwise):
+        """Split G2/G3 into segments exactly like klippy/extras/gcode_arcs.py."""
+        st = self.st
+        f = _fparam(params, "F")
+        if f is not None and f > 0:
+            st.feed = f
+        if st.plane != "G17":
+            self.events.append(Event(line, "plane", st.plane))
+        cur = list(st.pos)
+        tgt = self._target(params, line)
+        i_off = _fparam(params, "I", 0.0)
+        j_off = _fparam(params, "J", 0.0)
+        if not (i_off or j_off):
+            # Klipper rejects this; treat as a straight move for timing.
+            self._linear(line, params)
+            return
+        if max(abs(i_off), abs(j_off)) > MAX_COORDINATE:
+            raise ValueError("line %d: arc centre offset too large to model" % line)
+        cx, cy = cur[0] + i_off, cur[1] + j_off
+        r0, r1 = -i_off, -j_off
+        rt0, rt1 = tgt[0] - cx, tgt[1] - cy
+        ang = math.atan2(r0 * rt1 - r1 * rt0, r0 * rt0 + r1 * rt1)
+        if ang < 0.0:
+            ang += 2.0 * math.pi
+        if clockwise:
+            ang -= 2.0 * math.pi
+        if ang == 0.0 and cur[0] == tgt[0] and cur[1] == tgt[1]:
+            ang = 2.0 * math.pi
+        radius = math.hypot(r0, r1)
+        linear = tgt[2] - cur[2]
+        flat = radius * ang
+        travel = math.hypot(flat, linear) if linear else abs(flat)
+        if not math.isfinite(travel) or travel / self.limits.arc_resolution > MAX_ARC_SEGMENTS:
+            raise ValueError("line %d: arc too long to model (more than %d segments)"
+                             % (line, MAX_ARC_SEGMENTS))
+        segments = max(1.0, math.floor(travel / self.limits.arc_resolution))
+        n = int(segments)
+        d_theta = ang / segments
+        d_lin = linear / segments
+        d_e = (tgt[3] - cur[3]) / segments
+        prev = cur
+        for k in range(1, n + 1):
+            if k == n:
+                p = list(tgt)
+            else:
+                c, s = math.cos(k * d_theta), math.sin(k * d_theta)
+                p = [cx + r0 * c - r1 * s, cy + r0 * s + r1 * c,
+                     cur[2] + k * d_lin, cur[3] + k * d_e]
+            self._segment(line, prev, p)
+            prev = p
+        st.pos = list(tgt)
+
+    # -- main entry --------------------------------------------------------
+    def feed(self, line: int, offset: int, text: str):
+        if self.until_byte is not None and offset >= self.until_byte:
+            if self.bbox_until is None:
+                self.bbox_until = line - 1
+            if self.collect_until is None:
+                self.collect_until = line - 1
+            self.until_byte = None
+        self.offsets.append(offset)
+        self.lines.append(line)
+        self.last_line = line
+        st = self.st
+        st.line = line
+        stripped = text.strip()
+        if stripped.startswith(";"):
+            self._comment(line, stripped)
+            return
+        cmd, params = parse(text)
+        if cmd is None:
+            return
+        if cmd in ("G0", "G1"):
+            self._linear(line, params)
+        elif cmd in ("G2", "G3"):
+            self._arc(line, params, clockwise=(cmd == "G2"))
+        elif cmd == "G4":
+            ms = _fparam(params, "P", 0.0)
+            secs = _fparam(params, "S")
+            seconds = secs if secs is not None else ms / 1000.0
+            if self._collect_active(line):
+                self._emit(Dwell(line, seconds, "G4"))
+        elif cmd in ("M400",):
+            if self._collect_active(line):
+                self._emit(Dwell(line, 0.0, cmd))
+        elif cmd == "G90":
+            st.absolute = True
+        elif cmd == "G91":
+            st.absolute = False
+            self.events.append(Event(line, "g91", "relative XYZ moves"))
+        elif cmd == "M82":
+            st.e_absolute = True
+            self.events.append(Event(line, "m82", "absolute extrusion"))
+        elif cmd == "M83":
+            st.e_absolute = False
+        elif cmd == "G92":
+            for i, ax in enumerate("XYZE"):
+                v = _fparam(params, ax)
+                if v is not None:
+                    st.pos[i] = v
+                    if ax != "E":
+                        self.events.append(Event(line, "g92_xyz", "G92 " + ax))
+            if not params:
+                st.pos = [0.0, 0.0, 0.0, 0.0]
+                self.events.append(Event(line, "g92_xyz", "G92 (all axes)"))
+        elif cmd in ("G17", "G18", "G19"):
+            st.plane = cmd
+        elif cmd == "M204":
+            s = _fparam(params, "S")
+            if s is None:
+                p, t = _fparam(params, "P"), _fparam(params, "T")
+                s = min(v for v in (p, t) if v is not None) if (p or t) else None
+            if s and s > 0:
+                st.accel = s
+        elif cmd == "SET_VELOCITY_LIMIT":
+            v = _fparam(params, "VELOCITY")
+            if v and v > 0:
+                st.max_velocity = v
+            a = _fparam(params, "ACCEL")
+            if a and a > 0:
+                st.accel = a
+            scv = _fparam(params, "SQUARE_CORNER_VELOCITY")
+            if scv is not None and scv >= 0:
+                st.square_corner_velocity = scv
+            mcr = _fparam(params, "MINIMUM_CRUISE_RATIO")
+            a2d = _fparam(params, "ACCEL_TO_DECEL")
+            if mcr is not None:
+                st.minimum_cruise_ratio = min(max(mcr, 0.0), 1.0)
+                st.mcr_set = True
+            elif a2d is not None and a2d >= 0:
+                # Recent Klipper maps the deprecated ACCEL_TO_DECEL to a
+                # minimum_cruise_ratio relative to the current accel.
+                st.minimum_cruise_ratio = min(max(1.0 - min(1.0, a2d / st.accel), 0.0), 1.0)
+                st.accel_to_decel_set = True
+        elif cmd == "M220":
+            s = _fparam(params, "S")
+            if s and s > 0:
+                st.speed_factor = s
+        elif cmd == "M221":
+            s = _fparam(params, "S")
+            if s and s > 0:
+                st.extrude_factor = s
+        elif cmd in ("M104", "M109"):
+            s = _fparam(params, "S")
+            if s is not None:
+                st.extruder_temp = s
+            if cmd == "M109" and self._collect_active(line):
+                self._emit(Dwell(line, 0.0, cmd))
+        elif cmd in ("M140", "M190"):
+            s = _fparam(params, "S")
+            if s is not None:
+                st.bed_temp = s
+            if cmd == "M190" and self._collect_active(line):
+                self._emit(Dwell(line, 0.0, cmd))
+        elif cmd == "M106":
+            s = _fparam(params, "S")
+            st.fan = int(round(s)) if s is not None else 255
+        elif cmd == "M107":
+            st.fan = 0
+        elif cmd == "SET_PRESSURE_ADVANCE":
+            pa = _fparam(params, "ADVANCE")
+            if pa is not None:
+                st.pressure_advance = pa
+            sm = _fparam(params, "SMOOTH_TIME")
+            if sm is not None:
+                st.pa_smooth_time = sm
+        elif cmd == "EXCLUDE_OBJECT_DEFINE":
+            name = params.get("NAME")
+            if name:
+                st.objects[name.upper()] = split_code(text)
+        elif cmd == "EXCLUDE_OBJECT_START":
+            st.current_object = params.get("NAME") or None
+        elif cmd == "EXCLUDE_OBJECT_END":
+            st.current_object = None
+        elif cmd == "EXCLUDE_OBJECT":
+            name = params.get("NAME") or ""
+            if name and name.upper() not in [n.upper() for n in st.excluded]:
+                st.excluded.append(name)
+        elif re.match(r"^T\d+$", cmd):
+            tool = int(cmd[1:])
+            self.events.append(Event(line, "tool", cmd, float(tool)))
+            if tool not in self.tools_used:
+                self.tools_used.append(tool)
+            st.tool = tool
+        if cmd in FORBIDDEN_TAIL:
+            self.events.append(Event(line, "forbidden", cmd))
+
+    def _comment(self, line, text):
+        st = self.st
+        if text.startswith(";LAYER_CHANGE"):
+            st.layer += 1
+            st.layer_start_line = line
+            if self._collect_active(line):
+                self._new_layer()
+            self.layer_starts.append((line, st.layer, None))
+        elif text.startswith(";Z:"):
+            try:
+                z = float(text[3:].strip())
+            except ValueError:
+                return
+            st.layer_z = z
+            self.events.append(Event(line, "layer_z", text, z))
+            if self.layer_starts and self.layer_starts[-1][1] == st.layer:
+                ln, layer, _ = self.layer_starts[-1]
+                self.layer_starts[-1] = (ln, layer, z)
+
+    def result(self) -> ScanResult:
+        moves = [m for layer in self.layer_moves for m in layer]
+        return ScanResult(state=copy.deepcopy(self.st), total=self.total,
+                          per_object=self.per_object, moves=moves,
+                          events=self.events,
+                          line_offsets=(self.offsets, self.lines),
+                          layer_starts=self.layer_starts,
+                          vase_lines=self.vase_lines,
+                          tools_used=list(self.tools_used),
+                          last_line=self.last_line,
+                          bbox_until=self.bbox_until or self.last_line)
+
+
+def scan(records: Iterable[Record], limits: Limits = None,
+         until_line: Optional[int] = None, bbox_until: Optional[int] = None,
+         collect_moves_until: Optional[int] = None,
+         keep_layers: int = 2, until_byte: Optional[int] = None) -> ScanResult:
+    """Scan records. Stops after until_line (inclusive) if given."""
+    sc = Scanner(limits, bbox_until=bbox_until, keep_layers=keep_layers,
+                 collect_moves_until=collect_moves_until, until_byte=until_byte)
+    for line, offset, text in records:
+        if until_line is not None and line > until_line:
+            break
+        sc.feed(line, offset, text)
+    return sc.result()
+
+
+def state_at(records: Iterable[Record], line: int, limits: Limits = None) -> State:
+    """State in effect just BEFORE `line` runs (after line - 1)."""
+    return scan(records, limits, until_line=line - 1, keep_layers=1,
+                collect_moves_until=0).state
+
+
+def line_at_byte(result: ScanResult, offset: int) -> Optional[int]:
+    """Line containing byte `offset` (the line that starts at or before it)."""
+    offsets, lines = result.line_offsets
+    i = bisect.bisect_right(offsets, offset) - 1
+    if i < 0:
+        return None
+    return lines[i]
+
+
+def last_processed_line(result: ScanResult, exit_position: int) -> Optional[int]:
+    """Klipper's 'Exiting SD card print (position N)': N is the byte after the
+    last dispatched line, so that line contains byte N - 1."""
+    return line_at_byte(result, exit_position - 1)
+
+
+def tail_findings(result: ScanResult, from_line: int,
+                  current_tool: Optional[int]) -> Dict[str, list]:
+    """Problems in the part of the file that a resume would run again."""
+    out = {"forbidden": [], "tool_change": [], "m82": [], "vase": [],
+           "non_monotonic_z": [], "g91": [], "g92_xyz": []}
+    max_z = None
+    for ev in result.events:
+        if ev.line < from_line:
+            if ev.kind == "layer_z":
+                max_z = ev.value if max_z is None else max(max_z, ev.value)
+            continue
+        if ev.kind == "forbidden":
+            out["forbidden"].append((ev.line, ev.detail))
+        elif ev.kind == "tool" and current_tool is not None and \
+                int(ev.value) != current_tool:
+            out["tool_change"].append((ev.line, ev.detail))
+        elif ev.kind == "m82":
+            out["m82"].append((ev.line, ev.detail))
+        elif ev.kind == "g91":
+            out["g91"].append((ev.line, ev.detail))
+        elif ev.kind == "g92_xyz":
+            out["g92_xyz"].append((ev.line, ev.detail))
+        elif ev.kind == "layer_z":
+            if max_z is not None and ev.value < max_z - 1e-6:
+                out["non_monotonic_z"].append((ev.line, ev.detail))
+            max_z = ev.value if max_z is None else max(max_z, ev.value)
+    vase = [ln for ln in result.vase_lines if ln >= from_line]
+    if len(vase) >= VASE_MIN_MOVES:
+        out["vase"].append((vase[0], "%d extrusion moves change Z" % len(vase)))
+    return out
+
+
+# -- loaders (the only I/O in this module) ---------------------------------
+
+def iter_file(path: str, start_line: int = 1) -> Iterator[Record]:
+    """Records of a plain G-code file (byte offsets exact, any line ending)."""
+    offset = 0
+    with open(path, "rb") as fh:
+        for n, raw in enumerate(fh, 1):
+            if n >= start_line:
+                yield n, offset, raw.decode("utf-8", "replace").rstrip("\r\n")
+            offset += len(raw)
+
+
+def iter_excerpt(gz_path: str, map_path: str) -> Iterator[Record]:
+    """Records of a fixture excerpt.
+
+    The map file holds runs [original_first_line, line_count, byte_offset of
+    that line in the original file]; lines inside a run are consecutive in the
+    original, so their offsets follow from their lengths (plus one newline).
+    """
+    with open(map_path, "r", encoding="utf-8") as fh:
+        runs = json.load(fh)["runs"]
+    with gzip.open(gz_path, "rt", encoding="utf-8", newline="\n") as fh:
+        lines = fh.read().split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    idx = 0
+    for first, count, offset in runs:
+        for k in range(count):
+            text = lines[idx]
+            idx += 1
+            yield first + k, offset, text
+            offset += len(text.encode("utf-8")) + 1
+    if idx != len(lines):
+        raise ValueError("excerpt map covers %d lines, file has %d"
+                         % (idx, len(lines)))

@@ -75,5 +75,11 @@ Standard library only, no Docker needed:
 python3 -m unittest discover -s mmu-fallback -v
 ```
 
+### Print-rescue unit tests (if you touched `print-rescue/`)
+Runs `print-rescue/test_*.py` (also run by `.github/workflows/print-rescue-test.yml`). Standard library only, no Docker needed; on the Pi use `nice -n 19` while Klipper is connected:
+```bash
+python3 -m unittest discover -s print-rescue -v
+```
+
 If any of these fail, fix the issue — even in a file your change didn't
 touch — before pushing.
