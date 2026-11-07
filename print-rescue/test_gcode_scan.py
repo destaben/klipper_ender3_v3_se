@@ -216,6 +216,17 @@ class Denylist(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertIn(cmd, gs.FORBIDDEN_TAIL)
 
+    def test_command_cannot_hide_behind_spaces_or_a_line_number(self):
+        for form in ("G 28 X0", "N5 G28", "g  28", "N12 G 29"):
+            with self.subTest(form=form):
+                r = gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form))
+                f = gs.tail_findings(r, 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+
+    def test_stop_and_restart_commands_are_forbidden(self):
+        for cmd in ("M112", "M999", "M410", "FIRMWARE_RESTART", "RESTART", "SAVE_CONFIG"):
+            self.assertIn(cmd, gs.FORBIDDEN_TAIL)
+
     def test_mmu_homing_macros_are_forbidden(self):
         for cmd in ("SP_HOME", "_SP_CONDITIONAL_HOME", "_SP_PRINT_START_B",
                     "SP_FORCE_MOVE_LANE"):

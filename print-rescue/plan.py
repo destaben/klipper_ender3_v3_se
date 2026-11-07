@@ -34,6 +34,7 @@ import json
 import os
 import stat
 import sys
+import zlib
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -207,7 +208,8 @@ def run(args, out=sys.stdout) -> int:
     except InputError as e:
         print("error: %s" % e, file=sys.stderr)
         return EXIT_USAGE
-    except (ValueError, ArithmeticError, OSError, LookupError, RecursionError) as e:
+    except (ValueError, ArithmeticError, OSError, LookupError, RecursionError,
+            EOFError, zlib.error) as e:
         print("error: input could not be analysed: %s" % e, file=sys.stderr)
         return EXIT_USAGE
 

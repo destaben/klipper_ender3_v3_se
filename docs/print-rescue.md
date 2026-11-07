@@ -16,7 +16,8 @@ hardware or in the Klipper fork source. They are listed again in
 ## Scope today (phase 1)
 
 `print-rescue/plan.py` is a **read-only planner**. It reads the print file, the
-Klippy log and a machine profile, and prints:
+Klippy log, a machine profile and, optionally, the job history, the job queue,
+`printer.cfg` and the kernel log, and prints:
 
 - the window in which the toolhead physically stopped, mapped to G-code lines;
 - the resume line, XY, Z and the planned overlap (seconds and mm of path);
@@ -419,6 +420,13 @@ next one.
   safe).
 - **KI-16**: a non-ASCII source file name is refused through the R17 path;
   the code is misleading but the refusal fails closed.
+- **KI-17**: the R17 tail check is a deny-list, and the copied tail is not run
+  through the allow-list. A harmful command that is not in the list (and not
+  normalised to a listed name) is copied into the preview. P2 must check the
+  tail with an allow-list or the live macro set before upload.
+- **KI-18**: `--log` and `--gcode-map` are read whole into memory, and
+  `--preview --force-preview` may replace any regular file the user names that
+  is not an input. Both are explicit operator inputs; no size limit is applied.
 - The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
   N17-N20) was interrupted before it was recorded as complete. The IDs are
   cited in code comments; treat any without a matching test as open.

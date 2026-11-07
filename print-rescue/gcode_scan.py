@@ -28,7 +28,7 @@ from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 Record = Tuple[int, int, str]
 
-# Commands that must never run again in a resumed tail: they home, probe or
+# A DENY-LIST (anything not listed passes). Commands that must never run again in a resumed tail: they home, probe or
 # start a fresh print (which homes) with a part on the bed.
 FORBIDDEN_TAIL = {
     "G28": "homing (any form)",
@@ -50,6 +50,12 @@ FORBIDDEN_TAIL = {
     "_SP_CONDITIONAL_HOME": "MMU conditional homing macro",
     "_SP_PRINT_START_B": "MMU print start (homes all axes)",
     "SP_FORCE_MOVE_LANE": "lane move without homing",
+    "M112": "emergency stop",
+    "M999": "reset after shutdown",
+    "M410": "quick stop",
+    "FIRMWARE_RESTART": "restarts the firmware",
+    "RESTART": "restarts the host",
+    "SAVE_CONFIG": "restarts the host",
     "FORCE_MOVE": "move without homing",
     "SET_KINEMATIC_POSITION": "declares a position without a measurement",
 }
@@ -192,6 +198,10 @@ _CLASSIC = re.compile(r"^([GMT])(\d+(?:\.\d+)?)(.*)$", re.IGNORECASE)
 _PARAM = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)?")
 
 
+_LINE_NUMBER = re.compile(r"^\s*[Nn]\d+\s*")
+_SPACED_CLASSIC = re.compile(r"^\s*([GMTgmt])\s+(\d)")
+
+
 def parse(text: str):
     """Return (command, params) for one line, or (None, {}) for no command.
 
@@ -199,6 +209,12 @@ def parse(text: str):
     commands (SET_VELOCITY_LIMIT ACCEL=2500) give KEY=VALUE string params.
     """
     code = split_code(text)
+    if not code:
+        return None, {}
+    # Normalise like Klipper so a command cannot hide: drop an N<line>
+    # prefix and the spaces between a G/M/T letter and its number.
+    code = _LINE_NUMBER.sub("", code, count=1)
+    code = _SPACED_CLASSIC.sub(r"\1\2", code, count=1)
     if not code:
         return None, {}
     m = _CLASSIC.match(code)
