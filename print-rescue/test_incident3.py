@@ -2,7 +2,6 @@
 numbers of the live rescue, on a scrubbed excerpt of the G-code and the log."""
 
 import contextlib
-import copy
 import io
 import json
 import os

@@ -23,7 +23,11 @@ Klippy log, a machine profile and, optionally, the job history, the job queue,
 - the window in which the toolhead physically stopped, mapped to G-code lines;
 - the resume line, XY, Z and the planned overlap (seconds and mm of path);
 - the part's bounding box and height;
-- the verdict for every probe spot in the profile;
+- the verdict for every probe spot in the profile and for every spot proposed
+  with `--probe-spot X,Y`, and with `--suggest-spots` a ranked list of
+  candidate spots for this part (search mode);
+- a content check of the print file (R07): the logged exit position must be the
+  end of a line of the file, whatever its modified time says;
 - whether the CR Touch pin would land on the part at boot;
 - every refusal and warning as a console-ready line;
 - optionally a resume G-code **preview** (`--preview`), labelled NOT VERIFIED.
@@ -59,7 +63,8 @@ Steps:
 1. **Do not restart anything yet.** Save the evidence first: the Klippy log
    (`docker logs --timestamps klipper`; pass `--since`/`--until` with a `Z`
    suffix, without it they are local time), the kernel log
-   (`journalctl -k`), Moonraker's job history, and a copy of the print file.
+   (`journalctl -k`), Moonraker's job history, the job queue, `printer.cfg` and
+   a copy of the print file. Docker logs rotate; capture them early.
 2. **Pause Moonraker's job queue** and empty it
    (`POST /server/job_queue/pause`, check `/server/job_queue/status`).
    **TO VERIFY:** that `[job_queue] load_on_startup: True` starts the next
@@ -67,10 +72,12 @@ Steps:
    job starts with `START_PRINT`, which homes all axes into the part. A Prusa
    Connect start while the printer looks "off" is queued too (klipper-connect
    patch), so make sure nothing is pending there.
-3. **Run `plan.py`** (below) on the saved evidence. Stop on any non-zero exit:
-   2 (refused), 3 (motion blocked by an unverified profile field) or 1 (input
-   rejected). Only exit 0 may go on, and then only after every warning is
-   confirmed. Exit 0 is not yet a complete safety verdict (see
+3. **Run `plan.py`** (below) on the saved evidence, with `--history`,
+   `--queue` and `--printer-cfg`. Stop on any non-zero exit: 2 (refused), 3
+   (motion blocked by an unverified profile field, or evidence not supplied)
+   or 1 (input rejected). Only exit 0 may go on, and then only after every
+   warning is confirmed (an overlap above the budget, R12, is a warning with
+   the extra material: choose the budget with `--max-overlap-s`). Exit 0 is not yet a complete safety verdict (see
    [Known issues](#known-issues-and-pending-work-end-of-phase-1)).
 4. **Check the probe pin at boot.** The CR Touch sits at nozzle + (-23, -14.5).
    If `plan.py` reports `PIN_AT_BOOT`, the pin is predicted to deploy onto the
@@ -82,28 +89,50 @@ Steps:
 6. **Never `G28 Z`**: Z is probed at the `safe_z_home` point (134, 123), which
    is on most parts. **Never a `G28` without axis letters.** Homing X and Y is
    only allowed as step 8 describes.
-7. **Z is unknown.** The user measures the nozzle-to-part gap (feeler gauge or
-   paper) and confirms it. Declare the position from that measurement, then
-   only make **relative upward** moves until Z has been probed. The Z axis
-   uses T8 leadscrews (`rotation_distance: 8`), which can back-drive under the
-   gantry's weight while the motors are off: re-measure the gap right before
-   the first move. The preview never declares Z and never moves Z down before
-   the gate in step 9; the operator does the declaration by hand.
-8. **Lift to the pass-1 height** (`plan.py` prints it: part top + travel
-   clearance + whatever hangs below the nozzle). Only above it, home X and Y,
-   **one axis per command**: `G28 X`, then `G28 Y`. Before each homing move,
-   check on paper that its swept path (at the lifted height) clears the part
-   box and the probe pin. **TO VERIFY:** that `safe_z_home` lifts Z by `z_hop`
-   (10 mm) first when Z is not homed, also for an X or Y home. Make sure that
-   lift has room.
-9. **Re-reference Z at measured probe spots only.** A spot is accepted only
-   if it is verified (source `measured`, with `measured_on` and `method`), the
-   nozzle is inside the envelope and at most X=205 (cutter lever), the probe
-   point is on the meshed area and at least 5 mm from the part, and the head
-   footprint at probe height clears the part box + 3 mm (`plan.py` checks all
-   of this). Probe **two** spots to detect a tilted gantry (one Z leadscrew
-   turned while the motors were off). After a `PROBE` the next move is **up**.
-   The preview's lowering to the resume height comes only after this step.
+7. **Declare a provisional Z, then lift.** After an MCU shutdown or restart
+   nothing is homed. `SET_KINEMATIC_POSITION Z=<provisional> SET_HOMED=z`
+   marks **only** Z as homed (observed: `homed_axes` was `z`). Declare Z
+   **before** any `G28 X` or `G28 Y`: in this fork `safe_z_home` with Z not
+   homed sets Z=0 and lifts `z_hop`, which fakes the reference. Then lift with
+   **relative** moves up only (`G91`, steps of 10 mm, F300-600) until the
+   nozzle is above the part top + the 5 mm pin + a margin. The Z axis uses T8
+   leadscrews (`rotation_distance: 8`) that can back-drive while the motors
+   are off: re-measure the gap right before the first move.
+8. **Home X and Y at height, one axis per command**: `G28 X`, then `G28 Y`.
+   With Z declared at least `z_hop` they home only their own axis (observed:
+   X -6, Y -14). `G28 Y` moves the **bed**, so the part sweeps under the head:
+   lift first, and check on paper that the swept path clears the part box and
+   the probe pin.
+9. **Re-reference Z with bounded `PROBE` strokes, at a spot chosen for this
+   part.** Use `plan.py --suggest-spots` and check the chosen spot with
+   `--probe-spot X,Y`. A spot is accepted when the nozzle is inside the
+   envelope and at most X=205 (cutter lever), the probe point is on the bed
+   and at least 5 mm from the part, and the head footprint at probe height
+   clears the part box + 3 mm. The spot does **not** have to lie inside the
+   bed mesh: outside it the planner only warns (R20) and prints the distance.
+   With the owner's head estimate (left 70, right 100, front 50, back 65) the
+   only possible spots for a part in the middle of the bed are at the **rear**;
+   any front spot puts the X crossbar over the part. Descend toward the bed
+   **only** with `PROBE PROBE_SPEED=5` whose physical length is bounded by
+   (declared Z - `z_min` of -3); declare Z higher at the same physical spot to
+   start the next stroke (the live run used 98 mm, 10 mm and 15 mm strokes).
+   Plain `G1` descents toward the bed are not allowed. After a `PROBE` the next
+   move is **up**. Probe two spots to detect a tilted gantry (**TO VERIFY**,
+   not done in the live run).
+
+   Z formula (observed output of this Klipper:
+   `// probe: at X,Y bed will contact at z=4.9125`):
+   `probe.last_z_result` is the **trigger** Z of the toolhead (7.8725 in the
+   live run) and `last_probe_position[2]` is trigger - `z_offset` (4.9125). At
+   the trigger point the nozzle is `z_offset` (2.96) above the bed, so after the
+   probe declare `SET_KINEMATIC_POSITION Z=<z_offset> SET_HOMED=z`, plus the
+   bed-mesh difference between the probe spot and the home point (below
+   0.01 mm in the live run). The `z_offset` comes from the live `printer.cfg`
+   (it drifts after every `PROBE_CALIBRATE`; the profile copy is replaced by
+   the live value). Error sources to state with the result: the bed was 50 C,
+   not the 60 C used for printing (about 0.05 mm), and the mesh extrapolation
+   outside the meshed area (below 0.05 mm at the live run's rear spot, one
+   observation).
 10. **Thermal and drip rules.** The preview's order is:
     1. retract to `retract_before_travel` (2.5 mm) before any move;
     2. lift relatively (`G91`) by 3 mm;
@@ -130,7 +159,11 @@ Steps:
     profile), the G-code Z offset (baby-steps; the shutdown dump's
     `homing_position` Z), fan, pressure advance, acceleration and
     temperatures.
-12. **Paper test** at the resume point before the first extrusion.
+12. **Paper test on the part, with the bed mesh LOADED**, at the resume point
+    before the first extrusion. In the live run, loading the mesh after the
+    paper test shifted the commanded Z 53.0 to a reported 52.957 (-0.043 mm).
+    Cross-check by approaching in decreasing gaps (5, 2, 1, 0.5 mm), then
+    paper-rub at the resume Z. Only then start the resume file.
 13. **Overlap, never a gap**: resume at the earliest possible stop minus a
     margin. A few seconds of re-printed path is a small blemish; a gap in a
     wall is a weak spot.
@@ -224,6 +257,36 @@ refusal (R17) with exit 2 and no preview. The original file's lines after the
 resume point are copied as they are; R17 refuses the plan if they contain a
 forbidden command.
 
+What a resume skips: **a resume does not run `START_PRINT`**, so everything
+`START_PRINT` does for the whole job must be restated in the file. The preview
+restates `CANCEL_PRINTER_SHUTDOWN` (an armed auto power-off would otherwise cut
+the power mid-print), clears the display message it leaves behind (`M117`
+without text), and sets `G17` (the slicer's arc plane) before the original
+lines. `SET_IDLE_TIMEOUT TIMEOUT=600` restates the configured `[idle_timeout]`
+default so the file does not depend on an earlier change; the longer timeout
+the rescue itself needs (the idle gcode turns the heaters off and clears
+homing) is a runner step outside the file, the live run used 14400 (memory
+only, a restart resets it).
+
+UI metadata (what Mainsail shows). The live run's hand-built file dropped the
+slicer header, and the job panel showed "Layer 0 of 0", no slicer, no
+thumbnail and an incoherent estimate. The preview therefore keeps the original
+file's leading comment block (slicer header and thumbnails) right after its own
+first line (the NOT VERIFIED label), keeps the footer with the tail, rewrites
+`;TIME:`, `;Filament used:` and `estimated printing time` comments to the
+**remaining** values, and emits `SET_PRINT_STATS_INFO TOTAL_LAYER=<n>
+CURRENT_LAYER=<k>` at the start and `CURRENT_LAYER` after every
+`;LAYER_CHANGE`. The remaining share is the filament still to be printed
+(net extrusion up to the resume line against the header's total), so it is
+proportional, not a re-simulation; the planner's timeline only covers the
+layers around the stop. **TO VERIFY** (we could not query the printer): how
+Moonraker derives layer count, slicer and estimate from a file (which part of
+the file it scans, whether a leading comment before the header is accepted,
+whether `SET_PRINT_STATS_INFO` overrides the metadata), and that Mainsail
+shows them for a generated file. This is a P2 pre-check
+([P2 design](print-rescue-p2-design.md)). Nothing is changed for a print that
+is already running.
+
 The preview is never written when the plan is refused. An existing file is not
 overwritten without `--force-preview`. `--preview` is also refused (exit 1,
 before anything is read) when it names an input file, a symbolic link, or a hard
@@ -242,18 +305,22 @@ Each finding prints as one ASCII line, safe inside
 | Code | Kind | Meaning |
 |------|------|---------|
 | R01 | refused | Part too tall: part top + `min_lift` > `z_max` - `z_top_margin`. |
-| R02 | refused | No valid **verified** probe spot (each spot's reasons are listed), or no part geometry. |
+| R02 | refused | No valid probe spot: none of the profile's spots (which must be verified) and none proposed with `--probe-spot` passes the geometry check for this part, or there is no part geometry. With `--suggest-spots` the report lists candidates. |
 | R03 | warning | Resume point within `travel_clearance` of a no-go zone. The park spot and the approach moves are not checked yet (KI-11). |
 | R04 | warning | Multi-tool print (or lane mismatch) and `multi_tool_resume` is false. |
 | R05 | warning | Absolute extrusion (M82) at the resume line or in the tail. |
 | R06 | warning | Vase mode (extrusion moves that change Z) or non-monotonic layer Z. |
-| R07 | refused | G-code file missing or not a regular file, or name/size/mtime differ from the job history. |
+| R07 | refused | G-code file missing or not a regular file, name or size differ from the job history, or the content check fails: the logged `Exiting SD card print (position N)` is not the end of a line (or of the file), so this is not the file that was printing. |
 | R08 | warning | Cut before `min_resume_layer`. |
 | R09 | refused | The shutdown was not an MCU communication loss. |
 | R10 | warning | Insufficient log evidence, manual line needed (anchor endpoints more than 1 s apart, planner timing off by more than 0.5 s, no clean freeze). |
 | R11 | warning | Long time since the shutdown (part may have cooled loose). |
-| R12 | refused | The stop window needs more overlap than `max_overlap_s`, starts before the cut layer, has no line in the cut layer that meets the margin, or a manual line would leave a gap or overlap too much. |
-| R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. |
+| R12 | warning | The overlap from the resume line to the latest possible stop is above the budget (`stop_estimation.max_overlap_s`, or `--max-overlap-s`). The line states the path (mm), the filament (mm) and an estimate of the material printed twice (mm3). Refusing would favour a gap in the part, so it only warns. |
+| R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
+| R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
+| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s): the evidence and the plan do not fit together. |
+| R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
+| R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. The owner's head estimate has source `user`, so it keeps this block on. |
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
@@ -284,6 +351,26 @@ until phase 3 measures them. The cutter is also a no-go zone (`frame: gantry`,
 X >= 205) that only `_SP_TIP_FORM` may enter: `config/macros/sp_mmu.cfg` cuts
 at X=225 on purpose.
 
+Changes after the live rescue of incident 3:
+
+- `head_footprint` now holds the owner's estimate of the whole head: left 70,
+  right 100 (cutter lever extended), front 50, back 65 (counting the X
+  crossbar, about 30 to the carriage), lowest point at nozzle level. These are
+  **estimates, not calipers**: the source is `user`, never `measured`, so R13
+  keeps motion blocked until phase 3 measures them. A first attempt with the
+  old placeholder footprint put the fan over the part and the emergency stop
+  was needed; motion must stay blocked while any footprint tier is not
+  `measured`.
+- `envelope.bed` is the printable bed (0-220); a probe point outside it is a
+  hard reason. `envelope.probe_area` is now the bed **mesh** area; outside it
+  is only R20.
+- `config_fingerprint.bltouch.z_offset` is marked `"live": true`. It drifts
+  after every `PROBE_CALIBRATE` (the profile said 3.035, the live value was
+  2.96). With `--printer-cfg` the live value replaces the profile copy in
+  memory and R14 does not compare it; without it the profile copy is used and
+  R14 is NOT CHECKED. The profile file is never written.
+- `stop_estimation.absurd_overlap_s` (default 30) is the R21 limit.
+
 Two further fields are used by the preview:
 
 - `park`: the off-part spot where the preview heats and primes (`park.xy`,
@@ -296,8 +383,8 @@ Two further fields are used by the preview:
 The profile is validated before anything is planned: section types, finite
 numbers, ranges (for example `margin_s`, `snap_window_s` and `max_overlap_s`
 must be finite and not negative) and required keys. A profile without
-`envelope.probe_area` is invalid. A malformed profile exits 1 with the list
-of problems. The spot check also refuses any spot when no probe area is
+`envelope.probe_area` or `envelope.bed` is invalid. A malformed profile exits 1 with the list
+of problems. The spot check also refuses any spot when no bed area is
 given, so the check is never skipped.
 
 `test_machine_profile.py` checks that `config/printer.cfg` still matches the
@@ -322,7 +409,15 @@ python3 print-rescue/plan.py \
 - `--history`, `--queue`: saved JSON of `/server/history/list` and
   `/server/job_queue/status`.
 - `--line N`: manual resume line. It is checked against the window and refused
-  without one.
+  without one. A line without motion resolves to the next line with motion and
+  the report says so.
+- `--max-overlap-s S`: the overlap budget in seconds (default: the profile's
+  `max_overlap_s`). An overlap above it is the R12 warning with the extra
+  material; the operator sets the budget knowingly.
+- `--probe-spot X,Y` (repeatable): a nozzle position to check for this part.
+- `--suggest-spots`: search mode, a grid of nozzle positions that pass the
+  geometry check, ranked by head margin (capped at 15 mm), then by the smaller
+  mesh extrapolation, then by the closeness to the part's X centre. Advice only.
 - `--preview FILE`: write the NOT VERIFIED preview, only when nothing is
   refused. `--force-preview` is needed to replace an existing file, and is a
   usage error (exit 1) without `--preview`. FILE is refused if it is an input
@@ -336,10 +431,10 @@ Exit codes:
 
 | Exit | Meaning |
 |------|---------|
-| 0 | Resumable: no refusal and every safety-critical profile field verified. Confirm every warning before any motion. Any `NOT CHECKED:` line means that evidence was not supplied and the operator must check it by hand (KI-04). |
-| 3 | Resumable on paper only: the only refusal is R13 (a profile field is not verified). Motion is blocked; the report and the preview are still produced. |
-| 2 | Refused: at least one hard refusal (R01-R18 except R13 alone). Never 0 without a chosen resume line. |
-| 1 | Usage or input error (bad arguments, unreadable or malformed input, an invalid `margin_s`). Nothing was planned. |
+| 0 | Resumable: no refusal, every safety-critical profile field verified, and all evidence inputs supplied. Confirm every warning before any motion. |
+| 3 | Resumable on paper only: the only refusals are R13 (a profile field is not verified, motion is blocked) or `--history`, `--queue` or `--printer-cfg` was not given (printed as `NOT CHECKED:`). The report and the preview are still produced. |
+| 2 | Refused: at least one hard refusal (R01-R22 except R13 alone). Never 0 without a chosen resume line. |
+| 1 | Usage or input error (bad arguments, unreadable or malformed input, an invalid `margin_s`, an input larger than the size cap). Nothing was planned. |
 
 On the Pi, run it under `nice -n 19` while Klipper is connected. A full 8 MB
 file takes about 35 s.
@@ -355,7 +450,7 @@ python3 -m unittest discover -s print-rescue -v
 | Phase | Content |
 |-------|---------|
 | P1 (code complete; review pass open, see the known issues) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
-| P2 | Resume builder that uploads and starts the resume file; pauses the job queue; a `START_PRINT` lock while a rescue is active. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
+| P2 | Moonraker-only interactive runner, see [the P2 design](print-rescue-p2-design.md): pauses the job queue, a `START_PRINT` lock while a rescue is active, uploads a state-and-tail resume file and starts it. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
 | P3 | Cold, empty-bed calibration: envelope corners; cutter approach in 0.5 mm steps to measure `x_max_safe`; head footprint tiers; probe spots; re-reference accuracy against homed truth (the user's dry-run idea: run the whole procedure on an empty bed and compare with a real `G28`). |
 | P4 | Interactive runner: confirm before every move, short moves, emergency stop, state re-read after every error. Gantry-tilt check from two probe points. |
 | P5 | Recorder/witness (periodic position and state snapshots during prints), start-of-print check. |
@@ -380,120 +475,189 @@ next one.
 | 10 | Sacrificial print, simulated stop (unplug USB), full procedure | Resume with overlap and no gap | Anything else: back to the failing step |
 | 11 | Park spot, heat and drip rules (step 10) | Park spot measured clear; the open conflict resolved by the council | - |
 
+The live run of 2026-11-07 covered parts of steps 3, 4 and 8 by hand and
+observed the rest only partly; see
+[the live validation record](print-rescue-live-validation-2026-11-07.md) for
+which steps are covered and which remain.
+
 ## Known issues and pending work (end of phase 1)
 
+Numbers are stable references (KI-05 to KI-07 are intentionally unused). A
+"Design notes" section below justifies the choices behind the open items.
+
+Open:
+
 - **KI-01**: phase 1 is a read-only planner. Phases 2+ (motion, upload/start)
-  are not implemented and must not be started before the hardware validation
-  order above has been followed. No motion code has ever been run on hardware.
+  are not implemented. No motion code of this repository has ever run on
+  hardware; the live rescue of 2026-11-07 was done by hand through Moonraker
+  ([live validation](print-rescue-live-validation-2026-11-07.md)).
 - **KI-02**: `--gcode-map` exists only for the test fixture excerpts.
 - **KI-03**: a preview that is not written does not change the exit code.
-- **KI-04**: the evidence inputs `--history` (R07), `--queue` (R15) and
-  `--printer-cfg` (R14) are optional. When one is missing the plan prints
-  `NOT CHECKED: ...` but does not refuse. P2 must require all three before it
-  acts on an exit code.
-- KI-05 to KI-07 are intentionally unused (numbers kept stable for references
-  made during development).
-- **KI-08**: the R17 tail check matches command names exactly (the list is in
-  `print-rescue/gcode_scan.py`, including the MMU homing macros). A macro
-  that homes but is not listed is not caught. `G92` on X, Y or Z in the tail
-  is refused (R17). P2 must check the tail against
-  the macros of the live configuration before it uploads anything.
+- **KI-08**: the R17 tail check is a deny-list of exact command names (after
+  normalising spaces and `N` line numbers); see `FORBIDDEN_TAIL` in
+  `print-rescue/gcode_scan.py`. A macro that homes or stops but is not listed
+  is not caught, and the copied tail is not run through the allow-list. P2
+  must check the tail against the live macro set or an allow-list.
 - **KI-09**: `safety_critical` in the profile is a self-declared flag, so
-  clearing it removes a field from R13. The profile is reviewed in git; P2
-  should derive the critical set from code instead.
+  clearing it removes a field from R13; plain-number safety values
+  (`clearances`, `stop_estimation`) never reach R13. The profile is reviewed in
+  git. P2 should derive the critical set from code.
 - **KI-10**: an object name containing a space in `EXCLUDE_OBJECT_DEFINE` is
-  refused (R17, exit 2, no preview). Klipper splits parameters on whitespace,
-  so such a line is not valid for Klipper either; the refusal fails closed.
+  refused (R17); Klipper splits parameters on whitespace, so the refusal fails
+  closed.
 - **KI-11**: the park spot and the approach moves are not checked against the
   no-go zones (only the resume point is, R03).
-- **KI-12**: `--line` (manual resume line) is accepted when it starts at or
-  before the earliest possible stop, without the safety margin the automatic
-  choice keeps. It is an explicit operator override and still has to fit the
-  overlap budget (R12); a test pins this behaviour.
-- **KI-13**: the preview preamble always sets `G90`. A tail that resumes in
-  relative mode (`G91`) is not translated, and `G91` in the tail is not
-  refused. P2 must emit the mode active at the resume line before it runs a
-  preview.
-- **KI-14**: the `GATE_MARK` line in the preview is only a comment. It does
-  not pause anything by itself; the next line, `GATE_STOP`, is deliberately
-  not a valid command, so Klipper stops the SD print there with "Unknown
-  command" until the operator removes it after step 9. P2 must implement the real gate (re-reference on two
-  verified probe spots) in the runner; R02 today only requires at least one
-  verified spot.
-- **KI-15**: a last dispatched line that is a dwell (`G4`, `M109`) has no
-  end position in the planner and can raise R10 falsely (a warning, fails
-  safe).
-- **KI-16**: a non-ASCII source file name is refused through the R17 path;
-  the code is misleading but the refusal fails closed.
-- **KI-17**: the R17 tail check is a deny-list (it includes print-ending and
-  pausing commands such as `CANCEL_PRINT`, `PAUSE`, `M600` and
-  `PRINTER_SHUTDOWN`; `END_PRINT` is accepted only as the end of the file, and
-  refused when extrusion follows it), and the copied tail is not run
-  through the allow-list. A harmful command that is not in the list (and not
-  normalised to a listed name) is copied into the preview. P2 must check the
-  tail with an allow-list or the live macro set before upload.
-- **KI-18**: `--log` and `--gcode-map` are read whole into memory, and
-  `--preview --force-preview` may replace any regular file the user names that
-  is not an input. Both are explicit operator inputs; no size limit is applied.
-- **KI-19**: the preview lifts by a fixed relative amount and travels over the
-  part at that height. The planner computes the safe pass-1 height but does not
-  pass it to the preview, and Z is unknown before re-referencing. The preview
-  must not be run (the gate stops it); P2 must decide how Z is known and use
-  the computed height.
-- **KI-20**: smaller gaps, all warnings or phase-2 items: `motion_ready` checks
-  only profile leaves (plain-number safety values do not reach R13); G91 and
-  non-G17 arcs in the tail are not refused; `M84`/`M18`, `BLTOUCH_DEBUG`,
-  `M290` and `SET_GCODE_OFFSET` are not on the tail deny-list; the pin-at-boot
-  check samples about 25 move endpoints; `--line` is not checked against the
-  cut layer; a missing `size` or `modified` in the history skips R07 silently.
-- **KI-21**: open estimation limits, all fail towards a warning or are P2
-  gates: when the log has no Stats line after the shutdown, `P_end` is a lower
-  bound and the window can be biased late (reported as R10; a gap is possible,
-  so the operator must not accept it without checking); the prime amount does
-  not model a slicer retraction larger than `retract_before_travel`; the
-  pin-at-boot check falls back to the last move end when no move endpoint lies
-  in the stop window, and can then report "clear" wrongly. None of this is
-  acted on automatically in phase 1.
-- The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
-  N17-N20) was interrupted before it was recorded as complete. The IDs are
-  cited in code comments; treat any without a matching test as open.
-- Every item under "To verify against the Klipper fork" below is open.
+- **KI-12**: `--line` is accepted when it starts at or before the earliest
+  possible stop, without the safety margin of the automatic choice. It is an
+  explicit operator override; the overlap warning still applies.
+- **KI-13**: the preview preamble always sets `G90`; a tail that resumes in
+  relative mode (`G91`) or non-G17 arcs are not translated or refused.
+- **KI-14**: the preview stops at `GATE_STOP`, a deliberately invalid command.
+  That Klipper stops the SD print on an unknown command is **TO VERIFY** on the
+  printer. The P2 design removes the trick: the resume file holds state and
+  tail only, and the gate is the runner's state machine.
+- **KI-15**: a last dispatched line that is a dwell has no end position in the
+  planner and can raise R10 falsely (a warning).
+- **KI-16**: a non-ASCII source file name is refused through the R17 path.
+- **KI-17**: see KI-08 (the deny-list also covers print-ending and pausing
+  commands; `END_PRINT` is accepted only as the end of the file).
+- **KI-18**: `--preview --force-preview` may replace any regular file the user
+  names that is not an input. It is an explicit operator choice. Text inputs
+  and unpacked excerpts are capped at 256 million characters.
+- **KI-19**: the preview lifts by a fixed relative amount and travels at that
+  height; the planner's safe pass-1 height is not used and Z is unknown before
+  re-referencing. The preview must not be run; the P2 design replaces it with
+  a state-and-tail file and runner-controlled motion.
+- **KI-20**: smaller gaps, all warnings or P2 items: `M84`/`M18`,
+  `BLTOUCH_DEBUG`, `M290`, `SET_GCODE_OFFSET` are not on the tail deny-list;
+  `--line` is not checked against the cut layer; a missing `size` or
+  `modified` in the history skips that comparison; the pin-at-boot check
+  samples about 25 positions of the moves in the stop window.
+- **KI-21**: when the log has no Stats line after the shutdown, `P_end` is a
+  lower bound and the stop window can be biased late (reported as R10).
+- **KI-22**: the R07 content check is necessary, not sufficient: a different
+  file that happens to have a line boundary at that offset passes. The log's
+  `Virtual sdcard (N)` / `Upcoming (N)` dumps hold the file's text at that
+  offset and could be compared byte for byte (not done).
+- **KI-23**: the remaining-time and remaining-filament rewrite of the resume
+  file's header is proportional to filament, and how Moonraker/Mainsail use the
+  header is TO VERIFY.
+- **KI-24**: the head footprint is the owner's estimate (source `user`); the
+  rear probe spot and its mesh extrapolation (below 0.05 mm) rest on one
+  observation. Both keep R13 on until phase 3 measures them.
+- **KI-25**: the CR Touch alarm episode of the live run (pin down / touch mode
+  read TRIGGERED with a red blinking LED, `PROBE` failing with "Probe
+  triggered prior to movement", cleared after another power cycle) has an
+  unknown root cause. QUERY_PROBE alone is not evidence of a broken sensor.
+- The review IDs S1, S2, N1-N6, N8, N11, N14, N17-N20 come from a review pass
+  of the first (interrupted) session. See "Design notes" for their status.
+
+Closed in this change:
+
+- **KI-04** (evidence inputs optional): a run without `--history`, `--queue`
+  or `--printer-cfg` now exits 3, not 0.
+- Prime amount with a slicer retraction larger than `retract_before_travel`
+  (test `PrimeAmount`); firmware retraction (`G10`/`G11`) and R-form arcs are
+  refused in the tail; the pin-at-boot sample covers the start and end of
+  every move in the stop window; oversized text input and excerpts are
+  refused; a manual `--line` without motion is reported.
+- The `z_offset` drift (profile 3.035, live 2.96) is gone by taking the live
+  value from `printer.cfg`; the placeholder footprint was replaced by the
+  owner's estimate; the "probe spot must be on the meshed area" rule became
+  the R20 warning.
+
+## Design notes
+
+Choices behind items that the automated reviews raised repeatedly.
+
+- **Why an overlap above the budget is only a warning (R12).** In the
+  incident-3 rescue the planner refused for 3.55 s of overlap against a 3.0 s
+  budget. The alternative to an overlap is a gap, which is a weak spot in the
+  wall; a few seconds of material printed twice is a blemish. So the budget is
+  advice with the cost spelled out (mm, mm3) and the operator can set it
+  (`--max-overlap-s`). Only a clearly absurd overlap (R21) or a window that
+  forces a gap (R22) refuses.
+- **Why the R07 check moved from mtime to content.** The file had been
+  re-uploaded, so its mtime differed while the bytes were identical. The
+  logged exit position is the byte right after the last dispatched line: in
+  the same file it is a line boundary (8772080 is the end of line 391419).
+  The mtime is kept as the R19 warning. KI-22 states what the check cannot do.
+- **Why exit 3 without evidence.** An exit code is what a runner reads.
+  `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
+  or R15 never exits 0.
+- **Why the G-code gate is not made real in phase 1.** The preview is a
+  review artefact; the P2 design makes the resume file hold state and tail
+  only and moves every motion and gate into the runner. Investing in the
+  invalid-command trick (KI-14, KI-19) would be wasted.
+- **Why the deny-list stays a deny-list for now (KI-08).** An allow-list for
+  the tail needs the macro set of the live configuration, which the planner
+  does not read. The P2 pre-checks require it.
+- **Why plain-number safety values do not reach R13 (KI-09).** They are
+  tuning values (clearances, budgets), not measured geometry; the schema change
+  to make them leaves is part of phase 3.
+- **Review IDs.** The IDs S1, S2, N1-N6, N8, N11, N14 each have a code site and
+  a test naming the ID. N7, N9, N10, N12, N13, N15, N16 and N17-N20 have no code,
+  test or recorded text in the repository: the findings were lost with the
+  interrupted session, so they are retired rather than guessed. Anything real
+  among them would have to be found again by a review of the current code,
+  which the automated PR reviews do on every push.
+- **Why the hand-run rescue is evidence, not validation.** See
+  [the live validation record](print-rescue-live-validation-2026-11-07.md).
 
 ## To verify against the Klipper fork
 
-These behaviours matter for P2-P4 and were not checked against the source of
-the Klipper fork in the `klipper` image:
+Closed by observation in the live run of 2026-11-07 (this fork, container
+source read and Moonraker queries):
+
+- `SET_KINEMATIC_POSITION Z=<z> SET_HOMED=z` marks **only** Z as homed
+  (`homed_axes` was `z`).
+- With Z declared at least `z_hop`, `G28 X` and `G28 Y` home only their own
+  axis and do no hop (observed X -6, Y -14).
+- `safe_z_home` with Z **not** homed sets Z=0 and lifts `z_hop`, which fakes
+  the Z reference. Declare Z first.
+- `PROBE` output: `// probe: at X,Y bed will contact at z=4.9125`;
+  `probe.last_z_result` is the toolhead Z at the trigger (7.8725), and
+  `last_probe_position[2]` is that minus `z_offset`. The nozzle is `z_offset`
+  above the bed at the trigger.
+- A Moonraker power-device cycle (off, at least 15-20 s, on) resets a shutdown
+  MCU; `FIRMWARE_RESTART` does not. The print state goes from `paused` to
+  `standby` and position, homing and heaters are lost. Klippy was `ready`
+  about 25 s later.
+- `[idle_timeout] timeout: 600` runs the idle gcode (heaters off, `M84`),
+  which also clears homing; `SET_IDLE_TIMEOUT TIMEOUT=14400` held it (memory
+  only).
+- The shutdown dump's `Exiting SD card print (position N)` is the end of the
+  last dispatched line (8772080 = end of line 391419).
+
+Still open:
 
 - **TO VERIFY (pin at boot):** whether `[bltouch]` deploys the pin on Klippy
-  connect, and when. The CR Touch's own power-on self-test only runs when the
-  probe is powered. The `PIN_AT_BOOT` check assumes it deploys at the nozzle +
-  offset position.
-- **TO VERIFY (job queue):** whether `[job_queue] load_on_startup: True` starts
-  the next queued job on every Klippy `ready`, and whether a paused queue
-  survives a restart.
+  connect, and when. The owner saw no mark on the part after a boot
+  self-test, which is not proof. `PIN_AT_BOOT` stays a pre-check.
+- **TO VERIFY (gantry tilt):** whether two probe points detect a tilt after
+  the motors were off.
+- **TO VERIFY (KI-14):** that an unknown command stops an SD print.
+- **TO VERIFY (job queue):** whether `[job_queue] load_on_startup: True`
+  starts the next queued job on every Klippy `ready`, and whether a paused
+  queue survives a restart (in the live run the queue was empty and paused
+  throughout).
 - **TO VERIFY (after M112):** the state Klipper and the MCU are left in after
-  an emergency stop, and what a later `FIRMWARE_RESTART` does to the toolhead
-  position and the homed axes.
-- `SET_KINEMATIC_POSITION`: which axes it marks homed (all, or only the ones
-  given), and whether a later `G28 X Y` keeps Z homed.
-- `PROBE` parameters (`SPEED`, `LIFT_SPEED`, `SAMPLES`) and whether a probe
-  error leaves the toolhead where it triggered.
-- `probe.last_z_result`: toolhead Z at trigger, with or without `z_offset`.
-- `safe_z_home` `z_hop` when Z is not homed (lift by setting Z=0 first, then
-  clearing the Z homed state), and whether it applies to an X or Y home.
-- `BED_MESH_PROFILE LOAD=`: that it only loads the mesh and does not move.
+  an emergency stop (the live run's stop was followed by a power cycle).
+- **TO VERIFY (UI metadata):** how Moonraker and Mainsail derive layer, slicer
+  and estimate (KI-23).
+- `PROBE` parameters other than `PROBE_SPEED` (`LIFT_SPEED`, `SAMPLES`) and
+  whether a probe error leaves the toolhead where it triggered.
+- `BED_MESH_PROFILE LOAD=`: that it only loads the mesh and does not move (it
+  does change the commanded-versus-reported Z by about 0.04 mm, see step 12).
 - Toolhead `print_time` semantics near long moves (why it ran about 0.9 s
-  ahead of the planned stream in the incident log), `LOOKAHEAD_FLUSH_TIME`
-  and lazy flushing.
-- `virtual_sdcard` `file_position` at shutdown (taken here as the start of
-  the line being dispatched, consistent with `Upcoming (N)` and
-  `Exiting SD card print (position N)`).
+  ahead of the planned stream in the incident log) and lazy flushing.
 - `G2/G3` with `P` (ignored) and the full-circle rule; `SET_VELOCITY_LIMIT
   ACCEL_TO_DECEL` vs `MINIMUM_CRUISE_RATIO`; `RESPOND TYPE=error`.
 
 ## Fixtures and privacy
 
-`print-rescue/fixtures/` holds scrubbed excerpts of the incident; see
+`print-rescue/fixtures/` holds scrubbed excerpts of two incidents (the
+`inc3-*` files are the 2026-11-07 vase rescue); see
 `print-rescue/fixtures/SOURCES.md` for what each file contains. After adding
 or changing fixtures, check that no personal data slipped in (both commands
 must print nothing):
@@ -503,6 +667,7 @@ must print nothing):
 pat='/home/[a-z]|@[a-z0-9-]+\.|tok''en|api''_key|<hostname>|<usb serial>|ttyUSB.*serial'
 grep -rnEi "$pat" print-rescue/
 zcat print-rescue/fixtures/gcode-excerpt.gcode.gz | grep -nEi "$pat"
+zcat print-rescue/fixtures/inc3-gcode-excerpt.gcode.gz | grep -nEi "$pat"
 ```
 
 Replace `<hostname>` and `<usb serial>` with the host name and the USB

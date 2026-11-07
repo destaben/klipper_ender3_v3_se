@@ -29,3 +29,26 @@ that need the box rely on that.
 The privacy check described in `docs/print-rescue.md` ("Fixtures and
 privacy") was run on this directory and on the decompressed excerpt after
 scrubbing and finds nothing.
+
+## Incident 3 (the `inc3-*` files)
+
+From the live rescue of 2026-11-07 (18:59, a vase printed in OrcaSlicer 2.4.2,
+22 647 469 bytes, 500 layers, 53.0 mm tall at the stop, part box X/Y
+71.1-148.9). Same stop cause as incident 1: `Lost communication with MCU`
+with `urb stopped: -32` in the same minute. Numbers are unchanged.
+
+| File | Origin | What was kept | Scrubbing |
+|------|--------|---------------|-----------|
+| `inc3-klippy-excerpt.log` | Klippy stdout of the host, lines 1000-1640 of the capture | The last 188 `Stats` lines before the shutdown (with `sd_pos`, `print_time`, `buffer_time`), the shutdown dump, `gcode state: ...`, `Virtual sdcard (8771029)`, `Upcoming (8772053)`, `Exiting SD card print (position 8772080)` and a few `Stats` lines after it. | None needed: checked with the pattern in `docs/print-rescue.md` (no addresses, paths, serial numbers). The temperature sensor names are generic. |
+| `inc3-gcode-excerpt.gcode.gz` + `.map.json` | The print file | Every state line (anything that is not a `G0-G3` move or a comment), `;LAYER_CHANGE` and `;Z:` for all 500 layers, every move with a `Z` word, the moves that set the extrusion box (and the move before each), and the full region 390300-391700 around the cut. The thumbnail block and the slicer comment block are not kept. The map keeps the original line numbers and byte offsets, so the exit position 8772080 is the end of line 391419. | None needed: only G-code and slicer comments. |
+| `inc3-history-job.json` | Moonraker job history | Only the interrupted job: file name, times, durations, filament, `size`, `modified`, slicer, layer count, heights. | User field, UUID, filament names and thumbnails dropped. |
+| `inc3-queue.json` | Moonraker job queue | An empty, paused queue. | - |
+| `inc3-kernel-usb.log` | `journalctl -k` | The one `urb stopped: -32` line (18:59:43 local). | Host name replaced with `pi`, the tty name with `<tty>`. |
+| `inc3-printer-cfg.cfg` | The live `printer.cfg` | The sections the profile fingerprint reads (`stepper_x/y/z`, `printer`, `bltouch`, `safe_z_home`, `bed_mesh`) and a SAVE_CONFIG block with `z_offset = 2.960` (the repository file has 3.035). | Everything else dropped (it holds the MCU serial path). |
+
+The planner result on the excerpt (stop window, resume line 390866, overlap
+3.55 s / 104.8 mm, part box, pin at boot) is identical to the result on the
+full file. What the excerpt cannot reproduce: positions between the sparse
+state lines are stale, so motion before line 390300 is not timed meaningfully,
+the slicer header is absent (tests for the header use synthetic lines), and
+`e_total` is not the real net filament.

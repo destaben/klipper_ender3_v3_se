@@ -3,7 +3,8 @@
 
     python3 plan.py --gcode FILE --log KLIPPY_LOG --profile PROFILE.json
                     [--printer-cfg PATH] [--history JSON] [--queue JSON]
-                    [--kernel-log PATH] [--line N]
+                    [--kernel-log PATH] [--line N] [--max-overlap-s S]
+                    [--probe-spot X,Y ...] [--suggest-spots]
                     [--preview OUT [--force-preview]]
                     [--now ISO8601]
                     [--gcode-map MAP]   (only for fixture excerpts)
