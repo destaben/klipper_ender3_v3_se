@@ -1,4 +1,5 @@
 import math
+import os
 import unittest
 
 import gcode_scan as gs
@@ -246,6 +247,29 @@ class Denylist(unittest.TestCase):
     def test_names_that_start_with_n_are_not_mangled(self):
         cmd, _ = gs.parse("NEOPIXEL_SET RED=1")
         self.assertEqual(cmd, "NEOPIXEL_SET")
+
+    def test_every_repo_macro_that_homes_or_probes_is_on_the_deny_list(self):
+        """Derived from config/: a macro whose own body homes, probes or
+        force-moves must be in FORBIDDEN_TAIL (transitive callers are listed by
+        hand; KI-08 explains why an allow-list is the P2 answer)."""
+        import glob, re
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config")
+        bad = re.compile(r"\b(G28|G29|G30|G32|PROBE(?:_\w+)?|BED_MESH_CALIBRATE|FORCE_MOVE|"
+                         r"SET_KINEMATIC_POSITION|Z_TILT_ADJUST)\b", re.I)
+        found, cur = set(), None
+        for path in glob.glob(os.path.join(root, "**", "*.cfg"), recursive=True):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for ln in fh:
+                    m = re.match(r"\[gcode_macro\s+([^\]]+)\]", ln)
+                    if m:
+                        cur = m.group(1).strip().upper()
+                    elif ln.startswith("["):
+                        cur = None
+                    elif cur and bad.search(re.sub(r"[;#].*", "", ln)):
+                        found.add(cur)
+        self.assertTrue(found, "no macros found under config/")
+        missing = sorted(n for n in found if n not in gs.FORBIDDEN_TAIL)
+        self.assertEqual(missing, [])
 
     def test_stepper_commands_are_forbidden(self):
         for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):

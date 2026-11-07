@@ -52,7 +52,7 @@ import resume_file  # noqa: E402
 import stop_point as sp  # noqa: E402
 
 R11_HOURS = 2.0
-PIN_SAMPLES = 25
+_ABSURD_CAP = 30.0   # --max-overlap-s never exceeds the default R21 limit
 EXIT_RESUMABLE = 0
 EXIT_USAGE = 1
 EXIT_REFUSED = 2
@@ -260,6 +260,10 @@ def _check_args(args):
     if args.max_overlap_s is not None and not (args.max_overlap_s > 0 and
                                                args.max_overlap_s < float("inf")):
         raise InputError("--max-overlap-s must be a number > 0")
+    if args.max_overlap_s is not None and args.max_overlap_s > _ABSURD_CAP:
+        raise InputError("--max-overlap-s %g is above %g s, the limit for any budget; the "
+                         "profile's absurd_overlap_s (R21) is not moved by it"
+                         % (args.max_overlap_s, _ABSURD_CAP))
     for text in args.probe_spot or []:
         _parse_spot(text)
     if args.force_preview and not args.preview:
@@ -463,7 +467,7 @@ def _run(args, out) -> int:
         starts = [ls for ls, _, _ in res.layer_starts if ls <= window.latest_line]
         layer_start = max(starts) if starts else None
         budget = args.max_overlap_s if args.max_overlap_s is not None else se["max_overlap_s"]
-        absurd = max(se.get("absurd_overlap_s", 30.0), budget)
+        absurd = max(se.get("absurd_overlap_s", 30.0), se["max_overlap_s"])
         choice = sp.choose_resume(window, timed, layer_start, se["margin_s"],
                                   se["snap_window_s"], budget,
                                   manual_line=args.line, absurd_overlap_s=absurd)
@@ -522,6 +526,11 @@ def _run(args, out) -> int:
         if near:
             add("R03", "resume point within %.0f mm of %s"
                 % (cl["travel_clearance"], ", ".join(near)))
+        park = prof.park_xy(p)
+        near = geometry.path_near_zones(p, [tuple(park)], cl["travel_clearance"])
+        if near:
+            add("R03", "park spot %s within %.0f mm of %s"
+                % (list(park), cl["travel_clearance"], ", ".join(near)))
 
     if res is not None:
         mmu = prof.val(p["accessories"].get("mmu", {}))
@@ -607,22 +616,18 @@ def _run(args, out) -> int:
                     "the profile has no measured probe spots and none was proposed") + hint)
 
     if window is not None and part is not None and timed:
-        # Every nozzle position the head may have had in the stop window: the
-        # start and end of each move that overlaps it, thinned to PIN_SAMPLES.
-        pts = []
-        for tm in timed:
-            if tm.kind == "move" and tm.t_end >= window.earliest_t and \
-                    tm.t_start <= window.latest_t:
-                pts.append(tm.start_xy)
-                pts.append(tm.end_xy)
-        if not pts:
+        # The head may have stopped anywhere along any move that overlaps the
+        # stop window, so the whole path of each such move is tested (not only
+        # its end points).
+        segs = [(tm.start_xy, tm.end_xy) for tm in timed
+                if tm.kind == "move" and tm.t_end >= window.earliest_t and
+                tm.t_start <= window.latest_t]
+        if not segs:
             add("PIN_AT_BOOT", "the stop window holds no move, so the head position at "
                 "the stop is unknown; assume the pin is over the part")
             say("probe pin at boot: unknown (no move in the stop window)")
         else:
-            step = max(1, len(pts) // PIN_SAMPLES)
-            pts = pts[::step] + [pts[-1]]
-            pin = geometry.check_pin_at_boot(pts, part, p)
+            pin = geometry.check_pin_at_boot_paths(segs, part, p)
             say("probe pin at boot: %s" % ("clear of the part" if pin.ok else pin.reasons[0]))
             if not pin.ok:
                 add("PIN_AT_BOOT", "%s, raise Z or move the head off the part before "

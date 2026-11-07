@@ -137,6 +137,31 @@ class IncidentThreeGeometry(unittest.TestCase):
         self.assertEqual(g.suggest_probe_spots(huge, self.p), [])
 
 
+class PinAtBootPaths(unittest.TestCase):
+    def test_a_travel_whose_ends_are_clear_but_whose_middle_is_over_the_part(self):
+        p = fx.profile()
+        part = g.Part(90, 130, 90, 110, 30.0)
+        # Nozzle (20,125) -> (200,125): both ends map outside the part's margin
+        # rectangle, the middle of the pin path (Y 110.5) crosses it.
+        self.assertTrue(g.check_pin_at_boot([(20, 125), (200, 125)], part, p).ok)
+        v = g.check_pin_at_boot_paths([((20, 125), (200, 125))], part, p)
+        self.assertFalse(v.ok)
+        self.assertIn("along 1 move", v.reasons[0])
+
+    def test_a_clear_path_is_clear(self):
+        part = g.Part(90, 130, 90, 110, 30.0)
+        v = g.check_pin_at_boot_paths([((20, 225), (200, 225))], part, fx.profile())
+        self.assertTrue(v.ok)
+
+    def test_segment_rect_cases(self):
+        r = (0, 10, 0, 10)
+        self.assertTrue(g.segment_hits_rect((-5, 5), (15, 5), r))
+        self.assertTrue(g.segment_hits_rect((5, 5), (5, 5), r))
+        self.assertFalse(g.segment_hits_rect((-5, 11), (15, 11), r))
+        self.assertFalse(g.segment_hits_rect((11, 0), (11, 10), r))
+        self.assertFalse(g.segment_hits_rect((-5, -5), (-1, 20), r))
+
+
 class PinAtBoot(unittest.TestCase):
     def test_incident_stop_puts_the_pin_over_the_part(self):
         # Nozzle positions along the incident stop window (lines 202002-202238)

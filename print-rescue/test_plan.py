@@ -214,6 +214,18 @@ class MeasuredProfile(unittest.TestCase):
         self.assertIn("R21", codes(r.out))
         self.assertIsNone(r.preview)
 
+    def test_budget_above_the_absurd_cap_is_a_usage_error(self):
+        r = run_full("--max-overlap-s", "31", profile=fx.measured_profile())
+        self.assertEqual(r.code, 1)
+        self.assertIn("limit for any budget", r.err)
+
+    def test_park_spot_inside_the_cutter_zone_warns_r03(self):
+        p = resumable_profile()
+        p["park"]["xy"]["value"] = [215, 100]
+        r = run_full(profile=p)
+        self.assertIn("R03", codes(r.out))
+        self.assertIn("park spot", r.out)
+
     def test_bad_overlap_budget_is_a_usage_error(self):
         for bad in ("0", "-1", "nan", "inf"):
             with self.subTest(bad=bad):

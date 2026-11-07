@@ -248,6 +248,50 @@ def check_pin_at_boot(nozzle_xy: Sequence[Tuple[float, float]], part: Part,
     return Verdict(not over, reasons)
 
 
+def segment_hits_rect(p0, p1, r: Rect) -> bool:
+    """Does the segment p0-p1 touch the rectangle r (x_min, x_max, y_min, y_max)?
+    Liang-Barsky clipping, exact for the whole segment, not only its ends."""
+    x0, y0 = p0
+    dx, dy = p1[0] - x0, p1[1] - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, x0 - r[0]), (dx, r[1] - x0), (-dy, y0 - r[2]), (dy, r[3] - y0)):
+        if p == 0:
+            if q < 0:
+                return False
+            continue
+        t = q / p
+        if p < 0:
+            if t > t1:
+                return False
+            t0 = max(t0, t)
+        else:
+            if t < t0:
+                return False
+            t1 = min(t1, t)
+    return t0 <= t1
+
+
+def check_pin_at_boot_paths(segments: Sequence[Tuple[Tuple[float, float], Tuple[float, float]]],
+                            part: Part, profile: dict) -> Verdict:
+    """Like check_pin_at_boot, for nozzle PATHS: the head may have stopped at
+    any point of a move, so the whole segment (shifted by the probe offset) is
+    tested against the part rectangle plus the probe-spot margin."""
+    xo, yo, _ = probe_offsets(profile)
+    if not segments:
+        return Verdict(True, [])
+    r = part.rect(val(profile["clearances"]["probe_spot_margin"]))
+    over = [(a, b) for a, b in segments
+            if segment_hits_rect((a[0] + xo, a[1] + yo), (b[0] + xo, b[1] + yo), r)]
+    if not over:
+        return Verdict(True, [])
+    xs = [v for a, b in over for v in (a[0] + xo, b[0] + xo)]
+    ys = [v for a, b in over for v in (a[1] + yo, b[1] + yo)]
+    return Verdict(False, ["probe pin at boot (%.0f-%.0f, %.0f-%.0f along %d move(s)) can be "
+                           "over the part (%.1f-%.1f, %.1f-%.1f, top %.2f)"
+                           % (min(xs), max(xs), min(ys), max(ys), len(over), part.x_min,
+                              part.x_max, part.y_min, part.y_max, part.top)])
+
+
 def path_near_zones(profile: dict, points: Iterable[Tuple[float, float]],
                     margin: float) -> List[str]:
     """No-go zones within `margin` of any of the points (R03)."""
