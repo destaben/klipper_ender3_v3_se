@@ -223,6 +223,20 @@ class Denylist(unittest.TestCase):
                 f = gs.tail_findings(r, 1, None)
                 self.assertEqual(len(f["forbidden"]), 1, form)
 
+    def test_g0_extrusion_after_end_print_is_refused(self):
+        r = gs.scan(recs("G1 X1 Y1 E1\nEND_PRINT\nG0 X20 Y20 E0.5"))
+        f = gs.tail_findings(r, 1, None)
+        self.assertEqual([c for _, c in f["forbidden"]], ["END_PRINT"])
+
+    def test_tool_change_in_tail_with_unknown_current_tool_is_reported(self):
+        r = gs.scan(recs("G1 X1 Y1 E1\nT1\nG1 X2 E1"))
+        self.assertTrue(gs.tail_findings(r, 1, None)["tool_change"])
+
+    def test_carriage_return_inside_a_line_is_refused(self):
+        r = gs.scan(recs("G1 X1 Y1 E1\nG1 X10 F3000\rM112\nG1 X2 E1"))
+        f = gs.tail_findings(r, 1, None)
+        self.assertIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
+
     def test_stop_and_restart_commands_are_forbidden(self):
         for cmd in ("M112", "M999", "M410", "FIRMWARE_RESTART", "RESTART", "SAVE_CONFIG"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

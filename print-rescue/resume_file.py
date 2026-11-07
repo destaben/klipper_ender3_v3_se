@@ -20,6 +20,7 @@ interactively). check_generated() is an ALLOW-LIST for every generated line
 Pure logic, standard library only.
 """
 
+import math
 import re
 from typing import Iterable, List, Optional
 
@@ -203,6 +204,8 @@ def build(state: State, source_name: str, resume_line: int,
                                  else state.extrude_factor))
     if state.fan is not None:
         gen.append("M106 S%d" % state.fan if state.fan > 0 else "M107")
+    if gcode_offset_z is not None and not math.isfinite(gcode_offset_z):
+        raise ResumeRefused("gcode offset Z from the log is not a finite number")
     if gcode_offset_z is not None:
         gen.append("SET_GCODE_OFFSET Z=%s ; baby-step from the log" % _num(gcode_offset_z))
     # Filament: the slicer retracted state.retracted already; top up to the

@@ -37,6 +37,12 @@ class Build(unittest.TestCase):
         args.update(kw)
         return rfile.build(self.state, "part.gcode", LINE, self.tail, **args).split("\n")
 
+    def test_non_finite_gcode_offset_is_refused(self):
+        for bad in (float("nan"), float("inf")):
+            with self.subTest(bad=bad):
+                with self.assertRaises(rfile.ResumeRefused):
+                    self.build(gcode_offset_z=bad)
+
     def test_header_order(self):
         out = self.build(gcode_offset_z=0.025, speed_factor=100.0, extrude_factor=100.0)
         self.assertTrue(out[0].startswith("; print-rescue resume PREVIEW"))

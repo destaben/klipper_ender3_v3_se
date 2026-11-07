@@ -58,6 +58,7 @@ FORBIDDEN_TAIL = {
     "M0": "stop",
     "M1": "stop",
     "PRINTER_SHUTDOWN": "powers the printer off",
+    "CR_IN_LINE": "carriage return inside a line (hidden command)",
     "SP_CHANGE": "MMU lane change",
     "_SP_CHANGE": "MMU lane change",
     "_SP_PAUSE": "MMU pause",
@@ -424,6 +425,9 @@ class Scanner:
         st = self.st
         st.line = line
         stripped = text.strip()
+        if "\r" in stripped and not stripped.startswith(";"):
+            # A bare CR may start a second command that this scanner cannot see.
+            self.events.append(Event(line, "forbidden", "CR_IN_LINE"))
         if stripped.startswith(";"):
             self._comment(line, stripped)
             return
@@ -546,7 +550,7 @@ class Scanner:
             self.events.append(Event(line, "forbidden", cmd))
         if cmd in END_MACROS:
             self.end_seen = True
-        elif self.end_seen and cmd in ("G1", "G2", "G3"):
+        elif self.end_seen and cmd in ("G0", "G1", "G2", "G3"):
             e = params.get("E")
             if e is not None and e > 0:
                 # The end-of-print macro cools, parks and powers off: it is
@@ -634,8 +638,8 @@ def tail_findings(result: ScanResult, from_line: int,
             continue
         if ev.kind == "forbidden":
             out["forbidden"].append((ev.line, ev.detail))
-        elif ev.kind == "tool" and current_tool is not None and \
-                int(ev.value) != current_tool:
+        elif ev.kind == "tool" and (current_tool is None or
+                                    int(ev.value) != current_tool):
             out["tool_change"].append((ev.line, ev.detail))
         elif ev.kind == "m82":
             out["m82"].append((ev.line, ev.detail))
