@@ -28,8 +28,10 @@ from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 Record = Tuple[int, int, str]
 
+# END_PRINT is allowed at the end of the file only (see END_MACROS).
 # A DENY-LIST (anything not listed passes). Commands that must never run again in a resumed tail: they home, probe or
 # start a fresh print (which homes) with a part on the bed.
+END_MACROS = ("END_PRINT",)
 FORBIDDEN_TAIL = {
     "G28": "homing (any form)",
     "G29": "bed probing",
@@ -50,6 +52,12 @@ FORBIDDEN_TAIL = {
     "_SP_CONDITIONAL_HOME": "MMU conditional homing macro",
     "_SP_PRINT_START_B": "MMU print start (homes all axes)",
     "SP_FORCE_MOVE_LANE": "lane move without homing",
+    "CANCEL_PRINT": "ends the print (runs the end-of-print macro)",
+    "PAUSE": "pauses the print",
+    "M600": "filament change pause",
+    "M0": "stop",
+    "M1": "stop",
+    "PRINTER_SHUTDOWN": "powers the printer off",
     "M112": "emergency stop",
     "M999": "reset after shutdown",
     "M410": "quick stop",
@@ -271,6 +279,7 @@ class Scanner:
         self.total = Bbox()
         self.per_object: Dict[Optional[str], Bbox] = {}
         self.layer_moves: List[List[object]] = [[]]
+        self.end_seen = False
         self.events: List[Event] = []
         self.offsets = array("q")
         self.lines = array("q")
@@ -532,6 +541,15 @@ class Scanner:
             st.tool = tool
         if cmd in FORBIDDEN_TAIL:
             self.events.append(Event(line, "forbidden", cmd))
+        if cmd in END_MACROS:
+            self.end_seen = True
+        elif self.end_seen and cmd in ("G1", "G2", "G3"):
+            e = params.get("E")
+            if e is not None and e > 0:
+                # The end-of-print macro cools, parks and powers off: it is
+                # only legitimate as the end of the file.
+                self.events.append(Event(line, "forbidden", "END_PRINT"))
+                self.end_seen = False
 
     def _comment(self, line, text):
         st = self.st

@@ -227,6 +227,17 @@ class Denylist(unittest.TestCase):
         for cmd in ("M112", "M999", "M410", "FIRMWARE_RESTART", "RESTART", "SAVE_CONFIG"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)
 
+    def test_ending_and_pausing_commands_are_forbidden(self):
+        for cmd in ("CANCEL_PRINT", "PAUSE", "M600", "M0", "PRINTER_SHUTDOWN"):
+            self.assertIn(cmd, gs.FORBIDDEN_TAIL)
+
+    def test_end_print_is_allowed_only_at_the_end_of_the_file(self):
+        at_end = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\nG1 X2 E1\nEND_PRINT")), 1, None)
+        self.assertEqual(at_end["forbidden"], [])
+        mid = gs.tail_findings(
+            gs.scan(recs("G1 X1 Y1 E1\nEND_PRINT\nG1 X2 E1\nG1 X3 E1")), 1, None)
+        self.assertEqual([c for _, c in mid["forbidden"]], ["END_PRINT"])
+
     def test_mmu_homing_macros_are_forbidden(self):
         for cmd in ("SP_HOME", "_SP_CONDITIONAL_HOME", "_SP_PRINT_START_B",
                     "SP_FORCE_MOVE_LANE"):

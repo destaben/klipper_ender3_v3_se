@@ -15,7 +15,8 @@ hardware or in the Klipper fork source. They are listed again in
 
 ## Scope today (phase 1)
 
-`print-rescue/plan.py` is a **read-only planner**. It reads the print file, the
+`print-rescue/plan.py` is a **read-only planner** (read-only towards the printer: it sends nothing
+to it; its only write is the optional `--preview` file). It reads the print file, the
 Klippy log, a machine profile and, optionally, the job history, the job queue,
 `printer.cfg` and the kernel log, and prints:
 
@@ -256,7 +257,7 @@ Each finding prints as one ASCII line, safe inside
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
-| R17 | refused | Forbidden command in the resumed tail: any `G28` form, `G29`, `G30`, `G32`, `HOME`, `START_PRINT`, `START_PRINT_EXTRA`, `_SP_PRINT_START`, `BED_MESH_CALIBRATE`, `PROBE`, `PROBE_ACCURACY`, `PROBE_CALIBRATE`, `Z_TILT_ADJUST`, `QUAD_GANTRY_LEVEL`, `SCREWS_TILT_CALCULATE`, `FORCE_MOVE`, `SET_KINEMATIC_POSITION` (exact command names; other macros are not matched, KI-08), or a change to another tool. |
+| R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
 | PIN_AT_BOOT | warning | The probe pin self-test at Klippy start would land on the part (**TO VERIFY**: when the pin deploys). |
 
@@ -335,7 +336,7 @@ Exit codes:
 
 | Exit | Meaning |
 |------|---------|
-| 0 | Resumable: no refusal and every safety-critical profile field verified. Confirm every warning before any motion. |
+| 0 | Resumable: no refusal and every safety-critical profile field verified. Confirm every warning before any motion. Any `NOT CHECKED:` line means that evidence was not supplied and the operator must check it by hand (KI-04). |
 | 3 | Resumable on paper only: the only refusal is R13 (a profile field is not verified). Motion is blocked; the report and the preview are still produced. |
 | 2 | Refused: at least one hard refusal (R01-R18 except R13 alone). Never 0 without a chosen resume line. |
 | 1 | Usage or input error (bad arguments, unreadable or malformed input, an invalid `margin_s`). Nothing was planned. |
@@ -420,7 +421,10 @@ next one.
   safe).
 - **KI-16**: a non-ASCII source file name is refused through the R17 path;
   the code is misleading but the refusal fails closed.
-- **KI-17**: the R17 tail check is a deny-list, and the copied tail is not run
+- **KI-17**: the R17 tail check is a deny-list (it includes print-ending and
+  pausing commands such as `CANCEL_PRINT`, `PAUSE`, `M600` and
+  `PRINTER_SHUTDOWN`; `END_PRINT` is accepted only as the end of the file, and
+  refused when extrusion follows it), and the copied tail is not run
   through the allow-list. A harmful command that is not in the list (and not
   normalised to a listed name) is copied into the preview. P2 must check the
   tail with an allow-list or the live macro set before upload.

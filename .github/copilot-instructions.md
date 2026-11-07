@@ -61,6 +61,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── Dockerfile-klipper-connect
 ├── Dockerfile-mmu-fallback       # Optional virtual Pico MMU image (watcher + virtual MCU)
 ├── mmu-fallback/                 # Watcher (mmu_link.py), run_virtual.sh and unit tests
+├── print-rescue/                 # Read-only print rescue planner (phase 1) and unit tests
 ├── serial-links/                 # Tracked default symlink for the Pico MMU serial path
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── docker-compose.yaml

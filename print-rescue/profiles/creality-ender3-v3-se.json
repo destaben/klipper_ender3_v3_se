@@ -118,7 +118,7 @@
   "witness": {"enabled": false},
   "park": {
     "xy": {"value": [15, 205], "unit": "mm", "source": "default", "safety_critical": true,
-           "note": "off-part spot where the preview heats and primes; unmeasured placeholder. Must be clear of the part, the probe pin and the cutter (X >= 205)."}
+           "note": "off-part spot where the preview heats and primes; unmeasured placeholder. Must be clear of the part, the probe pin and the cutter. The placeholder [15, 205] is X 15, Y 205; it has not been checked against the cutter position."}
   },
   "bed_mesh_profile": "default"
 }
