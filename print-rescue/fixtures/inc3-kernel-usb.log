@@ -1,0 +1,1 @@
+Nov 07 18:59:43 pi kernel: ch341-uart <tty>: usb_serial_generic_read_bulk_callback - urb stopped: -32

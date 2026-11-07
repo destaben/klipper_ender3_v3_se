@@ -41,9 +41,10 @@ of the two latest (the end anchor alone when there is no sd_pos).
 Policy (council): resume at a line starting no later than the EARLIEST possible
 stop minus margin_s (a gap is never acceptable, an overlap is); snap back to a
 travel or unretract within snap_window_s if that keeps the overlap within
-budget; never cross the start of the cut layer, and refuse (R12) when no line
-of the layer meets the margin; refuse (R12) when the overlap from the resume
-point to the latest possible stop exceeds max_overlap_s.
+budget; never cross the start of the cut layer, and refuse (R22) when no line
+of the layer meets the margin. An overlap above max_overlap_s is only a
+warning (R12) that states the extra material, because the alternative is a
+gap in the part; it refuses (R21) only above absurd_overlap_s.
 
 Pure logic, standard library only.
 """
@@ -54,6 +55,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+FILAMENT_DIAMETER = 1.75       # mm, for the extra-material estimate
 LOOKAHEAD_FLUSH_TIME = 0.250   # klippy/toolhead.py LOOKAHEAD_FLUSH_TIME
 ANCHOR_AGREEMENT_S = 1.0       # anchors further apart than this -> R10
 
@@ -255,7 +257,10 @@ class Choice:
     overlap_mm: float
     snapped: bool
     manual: bool
-    refusal: Optional[str] = None   # text for R12 when refused
+    refusal: Optional[str] = None   # why no resume line is possible
+    refusal_code: str = "R22"       # R22 gap-type refusal, R21 absurd overlap
+    warning: Optional[str] = None   # overlap above the budget (R12 warning)
+    extra_filament_mm: float = 0.0  # filament re-extruded over the overlap
     note: Optional[str] = None
 
 
@@ -383,12 +388,41 @@ def _path_mm(timed, t0, t1):
     return mm
 
 
+def _filament_mm(timed, t0, t1):
+    """Filament (mm of E) pushed between planned times t0 and t1."""
+    mm = 0.0
+    for tm in timed:
+        if tm.kind != "move" or tm.e_mm <= 0 or tm.t_end <= t0 or tm.t_start >= t1:
+            continue
+        span = tm.t_end - tm.t_start
+        frac = 1.0 if span <= 0 else (min(tm.t_end, t1) - max(tm.t_start, t0)) / span
+        mm += tm.e_mm * max(0.0, min(1.0, frac))
+    return mm
+
+
+def _overlap_verdict(ch: "Choice", timed, w, max_overlap_s, absurd_overlap_s):
+    """An overlap above the budget is a WARNING with the extra material, never
+    a reason to leave a gap; only a clearly absurd overlap refuses."""
+    ch.extra_filament_mm = _filament_mm(timed, ch.t, w.latest_t)
+    if ch.overlap_s > absurd_overlap_s + 1e-9:
+        ch.refusal_code = "R21"
+        ch.refusal = ("overlap %.2f s is clearly absurd (> %.0f s): the evidence and "
+                      "the plan do not fit together" % (ch.overlap_s, absurd_overlap_s))
+    elif ch.overlap_s > max_overlap_s + 1e-9:
+        ch.warning = ("overlap %.2f s > budget %.1f s: %.1f mm of path, %.0f mm of "
+                      "filament (about %.0f mm3) printed twice; raise or lower the budget "
+                      "with --max-overlap-s"
+                      % (ch.overlap_s, max_overlap_s, ch.overlap_mm, ch.extra_filament_mm,
+                         ch.extra_filament_mm * math.pi * (FILAMENT_DIAMETER / 2.0) ** 2))
+
+
 def choose_resume(w: Window, timed, layer_start_line: Optional[int],
                   margin_s: float, snap_window_s: float, max_overlap_s: float,
-                  manual_line: Optional[int] = None) -> Choice:
+                  manual_line: Optional[int] = None,
+                  absurd_overlap_s: float = 30.0) -> Choice:
     """Pick the resume line. The auto path never returns a line that starts
     after earliest_t - margin_s (a gap); when no such line exists inside the
-    cut layer it refuses (R12) instead of clamping to the layer start.
+    cut layer it refuses (R22) instead of clamping to the layer start.
     A manual line is checked against the window (gap and overlap) only."""
     if not (isinstance(margin_s, (int, float)) and not isinstance(margin_s, bool)
             and math.isfinite(margin_s) and margin_s >= 0):
@@ -414,13 +448,15 @@ def choose_resume(w: Window, timed, layer_start_line: Optional[int],
         line = lines[k]
         ch = Choice(line, t, xy_at(line), w.latest_t - t,
                     _path_mm(timed, t, w.latest_t), False, True)
+        if line != manual_line:
+            ch.note = ("manual line %d has no planned motion; the next line with motion, "
+                       "%d, is used" % (manual_line, line))
         if t > w.earliest_t + 1e-6:
             ch.refusal = ("manual line %d starts %.2f s after the earliest "
                           "possible stop (a gap is possible)"
                           % (manual_line, t - w.earliest_t))
-        elif ch.overlap_s > max_overlap_s:
-            ch.refusal = ("manual line %d overlaps %.2f s > max %.1f s"
-                          % (manual_line, ch.overlap_s, max_overlap_s))
+        else:
+            _overlap_verdict(ch, timed, w, max_overlap_s, absurd_overlap_s)
         return ch
 
     target = w.earliest_t - margin_s
@@ -454,9 +490,8 @@ def choose_resume(w: Window, timed, layer_start_line: Optional[int],
     if t > target + 1e-9:
         ch.refusal = ("no line starts at or before the earliest possible stop "
                       "minus the %.2f s margin" % margin_s)
-    elif ch.overlap_s > max_overlap_s + 1e-9:
-        ch.refusal = ("resuming at the earliest possible stop needs %.2f s of "
-                      "overlap > max %.1f s" % (ch.overlap_s, max_overlap_s))
+    else:
+        _overlap_verdict(ch, timed, w, max_overlap_s, absurd_overlap_s)
     return ch
 
 

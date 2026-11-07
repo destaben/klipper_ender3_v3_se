@@ -17,7 +17,7 @@ Pure logic, standard library only.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from machine_profile import probe_offsets, val
@@ -47,6 +47,12 @@ class Part:
 class Verdict:
     ok: bool
     reasons: List[str]
+    warnings: List[str] = field(default_factory=list)
+    # Distance (mm) the probe point lies outside the bed-mesh area; 0 inside.
+    mesh_extrapolation_mm: float = 0.0
+    # Smallest distance (mm) between the head footprint at probe height and
+    # the part box; None when no tier reaches below the part top.
+    margin_mm: Optional[float] = None
 
 
 def rects_overlap(a: Rect, b: Rect) -> bool:
@@ -116,9 +122,29 @@ def too_tall(part: Part, profile: dict) -> Optional[str]:
     return None
 
 
+def rect_distance(a: Rect, b: Rect) -> float:
+    """Gap between two rectangles (0 when they touch or overlap)."""
+    dx = max(a[0] - b[1], b[0] - a[1], 0.0)
+    dy = max(a[2] - b[3], b[2] - a[3], 0.0)
+    return math.hypot(dx, dy)
+
+
+def _area_rect(leaf) -> Optional[Rect]:
+    area = val(leaf) if leaf is not None else None
+    if not area:
+        return None
+    return (area["x_min"], area["x_max"], area["y_min"], area["y_max"])
+
+
 def check_probe_spot(spot: dict, part: Part, profile: dict) -> Verdict:
-    """Is it safe to probe with the NOZZLE at spot {x, y}?"""
-    reasons = []
+    """Is it safe to probe with the NOZZLE at spot {x, y}?
+
+    Hard reasons: nozzle outside the axis envelope or beyond x_max_safe, in a
+    no-go zone, the probe point off the bed, too close to the part, or any
+    head tier at probe height overlapping the part. Being outside the bed
+    MESH area is only a warning (the mesh is extrapolated there; the probe
+    itself works anywhere on the bed), see Verdict.mesh_extrapolation_mm."""
+    reasons, warnings = [], []
     x, y = float(spot["x"]), float(spot["y"])
     env = {k: val(v) for k, v in profile["envelope"].items()}
     cl = {k: val(v) for k, v in profile["clearances"].items()}
@@ -131,30 +157,73 @@ def check_probe_spot(spot: dict, part: Part, profile: dict) -> Verdict:
     if hit:
         reasons.append("nozzle in no-go zone: %s" % ", ".join(hit))
     px, py = x + xo, y + yo
-    area = env.get("probe_area")
-    if not area:
-        # N2: without a probe area the check cannot pass, so the spot is refused.
-        reasons.append("the profile has no probe area, so the probe point cannot be checked")
-    elif not point_in_rect(px, py, (area["x_min"], area["x_max"],
-                                    area["y_min"], area["y_max"])):
-        reasons.append("probe point (%.1f,%.1f) outside the probe area" % (px, py))
+    bed = _area_rect(profile["envelope"].get("bed"))
+    if bed is None:
+        # N2: without a bed rectangle the check cannot pass.
+        reasons.append("the profile has no bed area, so the probe point cannot be checked")
+    elif not point_in_rect(px, py, bed):
+        reasons.append("probe point (%.1f,%.1f) is off the bed" % (px, py))
+    mesh = _area_rect(profile["envelope"].get("probe_area"))
+    extrapolation = 0.0
+    if mesh is not None and not point_in_rect(px, py, mesh):
+        extrapolation = point_rect_distance(px, py, mesh)
+        warnings.append("probe point (%.1f,%.1f) is %.1f mm outside the bed mesh area, "
+                        "so the mesh is extrapolated there" % (px, py, extrapolation))
     d = point_rect_distance(px, py, part.rect())
     if d < cl["probe_spot_margin"]:
         reasons.append("probe point (%.1f,%.1f) %.1f mm from the part < %.1f"
                        % (px, py, d, cl["probe_spot_margin"]))
     # Head footprint with the nozzle at probe trigger height (about z_offset).
     inflated = part.rect(cl["footprint_margin"])
+    margin = None
     for tier in profile["head_footprint"]["tiers"]:
         t = val(tier)
         if zo + t["z_from"] >= part.top:
             continue
         r = (x + t["x_min"], x + t["x_max"], y + t["y_min"], y + t["y_max"])
+        gap = rect_distance(r, part.rect())
+        margin = gap if margin is None else min(margin, gap)
         if rects_overlap(r, inflated):
             reasons.append("head tier %r (z %.1f-%.1f above the nozzle) overlaps "
                            "the part + %.0f mm at probe height"
                            % (tier.get("name"), t["z_from"], t["z_to"],
                               cl["footprint_margin"]))
-    return Verdict(not reasons, reasons)
+    return Verdict(not reasons, reasons, warnings, extrapolation, margin)
+
+
+MARGIN_CAP_MM = 15.0
+
+
+def suggest_probe_spots(part: Part, profile: dict, step: float = 5.0,
+                        limit: int = 5) -> List[Tuple[dict, Verdict]]:
+    """SEARCH mode: nozzle positions on a grid (multiples of `step` inside the
+    axis envelope) that pass check_probe_spot for this part, best first.
+
+    Rank: footprint margin to the part (capped at MARGIN_CAP_MM, more is not
+    better once it is comfortable), then the smaller mesh extrapolation, then
+    the closer to the part's X centre. Suggestions are advice only: the
+    operator still confirms a spot, and R13 still blocks motion while any
+    safety tier is not measured."""
+    env = {k: val(v) for k, v in profile["envelope"].items()}
+    out = []
+    x = math.ceil(env["x_min"] / step) * step
+    while x <= env["x_max_safe"] + 1e-9:
+        y = math.ceil(env["y_min"] / step) * step
+        while y <= env["y_max"] + 1e-9:
+            v = check_probe_spot({"x": x, "y": y}, part, profile)
+            if v.ok:
+                out.append(({"x": x, "y": y}, v))
+            y += step
+        x += step
+    cx = (part.x_min + part.x_max) / 2.0
+
+    def key(item):
+        spot, v = item
+        m = MARGIN_CAP_MM if v.margin_mm is None else min(v.margin_mm, MARGIN_CAP_MM)
+        return (-m, v.mesh_extrapolation_mm, abs(spot["x"] - cx), spot["y"])
+
+    out.sort(key=key)
+    return out[:limit]
 
 
 def check_pin_at_boot(nozzle_xy: Sequence[Tuple[float, float]], part: Part,

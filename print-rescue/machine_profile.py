@@ -63,7 +63,7 @@ SECTION_TYPES = {
 }
 REQUIRED_SECTIONS = tuple(SECTION_TYPES)
 ENVELOPE_KEYS = ("x_min", "x_max", "y_min", "y_max", "x_max_safe", "z_max",
-                 "z_top_margin", "probe_area")
+                 "z_top_margin", "probe_area", "bed")
 MOTION_KEYS = ("max_velocity", "max_accel", "square_corner_velocity",
                "minimum_cruise_ratio", "max_z_velocity", "max_z_accel",
                "max_extrude_only_velocity", "max_extrude_only_accel",
@@ -191,12 +191,13 @@ def _check_structure(p: dict) -> List[str]:
         if k not in env:
             errs.append("envelope.%s missing" % k)
     for k in ENVELOPE_KEYS:
-        if k in env and k != "probe_area" and not _is_num(val(env[k])):
+        if k in env and k not in ("probe_area", "bed") and not _is_num(val(env[k])):
             errs.append("envelope.%s must be a finite number" % k)
-    if "probe_area" in env:
-        area = val(env["probe_area"])
-        if not isinstance(area, dict) or not all(_is_num(area.get(k)) for k in RECT_KEYS):
-            errs.append("envelope.probe_area needs numeric x_min, x_max, y_min, y_max")
+    for rect_key in ("probe_area", "bed"):
+        if rect_key in env:
+            area = val(env[rect_key])
+            if not isinstance(area, dict) or not all(_is_num(area.get(k)) for k in RECT_KEYS):
+                errs.append("envelope.%s needs numeric x_min, x_max, y_min, y_max" % rect_key)
     for k in STOP_KEYS:
         if k not in p["stop_estimation"]:
             errs.append("stop_estimation.%s missing" % k)
@@ -269,9 +270,10 @@ def _check_ranges(p: dict) -> List[str]:
         errs.append("envelope.z_max must be > 0")
     if val(env["z_top_margin"]) < 0:
         errs.append("envelope.z_top_margin must be >= 0")
-    area = val(env["probe_area"])
-    if not (area["x_min"] < area["x_max"] and area["y_min"] < area["y_max"]):
-        errs.append("envelope.probe_area: need min < max on both axes")
+    for rect_key in ("probe_area", "bed"):
+        area = val(env[rect_key])
+        if not (area["x_min"] < area["x_max"] and area["y_min"] < area["y_max"]):
+            errs.append("envelope.%s: need min < max on both axes" % rect_key)
     for k, v in p["motion"].items():
         if k not in MOTION_KEYS:
             continue
@@ -291,6 +293,9 @@ def _check_ranges(p: dict) -> List[str]:
     for k in ("margin_s", "snap_window_s", "max_overlap_s"):
         if se[k] < 0:
             errs.append("stop_estimation.%s must be >= 0 (got %r)" % (k, se[k]))
+    absurd = se.get("absurd_overlap_s")
+    if absurd is not None and (not _is_num(absurd) or absurd < se["max_overlap_s"]):
+        errs.append("stop_estimation.absurd_overlap_s must be a number >= max_overlap_s")
     if se["min_resume_layer"] < 0:
         errs.append("stop_estimation.min_resume_layer must be >= 0")
     for t in p["head_footprint"]["tiers"]:
@@ -398,6 +403,27 @@ def _cfg_value(cfg, section, option, kind):
         return raw
 
 
+def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
+    """Replace every fingerprint leaf marked "live" by the value in the live
+    printer.cfg (in memory only; the profile file is never written). Used for
+    values that drift, such as the CR Touch z_offset after a PROBE_CALIBRATE.
+    Returns one note per replaced value; a value missing from the cfg keeps
+    the profile copy and is reported as an R14 mismatch by the caller."""
+    notes = []
+    for (sec, opt), (csec, copt, kind) in FINGERPRINT_KEYS.items():
+        leaf = p.get("config_fingerprint", {}).get(sec, {}).get(opt)
+        if not (isinstance(leaf, dict) and leaf.get("live") is True):
+            continue
+        have = _cfg_value(cfg, csec, copt, kind)
+        if have is None:
+            continue
+        if leaf.get("value") != have:
+            notes.append("%s.%s: live printer.cfg %s replaces the profile copy %s"
+                         % (sec, opt, have, leaf.get("value")))
+        leaf["value"] = have
+    return notes
+
+
 def fingerprint_mismatches(p: dict, cfg: Dict[str, Dict[str, str]],
                            tol: float = 1e-6) -> List[str]:
     """Differences between config_fingerprint and parsed printer.cfg (R14)."""
@@ -406,6 +432,12 @@ def fingerprint_mismatches(p: dict, cfg: Dict[str, Dict[str, str]],
     for (sec, opt), (csec, copt, kind) in FINGERPRINT_KEYS.items():
         if sec not in fp or opt not in fp[sec]:
             out.append("%s.%s: not in the profile fingerprint (not checked)" % (sec, opt))
+            continue
+        if isinstance(fp[sec][opt], dict) and fp[sec][opt].get("live") is True:
+            # Taken from the live printer.cfg (apply_live_config), so there is
+            # nothing to compare; only a missing value is a problem.
+            if _cfg_value(cfg, csec, copt, kind) is None:
+                out.append("%s.%s: missing in printer.cfg (live value needed)" % (sec, opt))
             continue
         want = val(fp[sec][opt])
         have = _cfg_value(cfg, csec, copt, kind)

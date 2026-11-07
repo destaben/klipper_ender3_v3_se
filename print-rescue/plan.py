@@ -20,7 +20,8 @@ Exit codes:
   0  resumable: no refusal and every safety-critical profile field verified
      (warnings must still be confirmed before any motion)
   3  resumable on paper only: a safety-critical profile field is not verified
-     (R13), so motion is blocked; the report and preview are still produced
+     (R13), or --history, --queue or --printer-cfg was not given (NOT CHECKED),
+     so motion is blocked; the report and preview are still produced
   2  refused: a hard refusal, including R18 when no resume line can be chosen
      (no 'Exiting SD card print' position, no usable Stats lines, no line)
   1  usage or input error (bad arguments, unreadable or malformed input, an
@@ -29,8 +30,10 @@ Standard library only.
 """
 
 import argparse
+import bisect
 import datetime
 import json
+import math
 import os
 import stat
 import sys
@@ -82,16 +85,42 @@ def _load_json(path, what):
         raise InputError("%s %s: %s" % (what, os.path.basename(path), e))
 
 
+MAX_TEXT_CHARS = 256 * 1024 * 1024
+
+
 def _read_text(path, what):
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            return fh.read()
+            text = fh.read(MAX_TEXT_CHARS + 1)
+        if len(text) > MAX_TEXT_CHARS:
+            raise InputError("%s %s: larger than %d characters"
+                             % (what, os.path.basename(path), MAX_TEXT_CHARS))
+        return text
     except OSError as e:
         raise InputError("%s %s: %s" % (what, os.path.basename(path), e.strerror or e))
 
 
 def _is_number(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _exit_boundary(res, exit_position, size):
+    """Content check (R07): Klipper's 'Exiting SD card print (position N)' is
+    the byte right after the last dispatched line. In the file that was
+    printing, N is therefore the start of a line (or the end of the file).
+    A re-uploaded file with the same contents passes whatever its modified
+    time says; an edited or different file almost never lands on a line
+    boundary by chance. Returns (ok, text)."""
+    offsets, lines = res.line_offsets
+    i = bisect.bisect_left(offsets, exit_position)
+    if i < len(offsets) and offsets[i] == exit_position:
+        prev = lines[i - 1] if i > 0 else None
+        return True, ("exit position %d is the end of line %s and the start of line %d"
+                      % (exit_position, prev, lines[i]))
+    if size is not None and size == exit_position:
+        return True, "exit position %d is the end of the file" % exit_position
+    return False, ("exit position %d is not a line boundary in this file, so it is not "
+                   "the file that was printing" % exit_position)
 
 
 def _gcode_identity(args):
@@ -183,6 +212,16 @@ def _check_preview_target(args):
                          % name)
 
 
+def _parse_spot(text):
+    try:
+        x, y = (float(v) for v in text.split(","))
+    except ValueError:
+        raise InputError("--probe-spot must look like X,Y (got %r)" % text)
+    if not (abs(x) < 1e4 and abs(y) < 1e4):
+        raise InputError("--probe-spot %r is not a plausible position" % text)
+    return {"x": x, "y": y}
+
+
 def _check_args(args):
     """Usage errors and the preview target, before anything is read."""
     now = None
@@ -193,6 +232,11 @@ def _check_args(args):
                              "2026-11-07T09:30:00Z (got %r)" % args.now)
     if args.line is not None and args.line < 1:
         raise InputError("--line must be a line number >= 1")
+    if args.max_overlap_s is not None and not (args.max_overlap_s > 0 and
+                                               args.max_overlap_s < float("inf")):
+        raise InputError("--max-overlap-s must be a number > 0")
+    for text in args.probe_spot or []:
+        _parse_spot(text)
     if args.force_preview and not args.preview:
         raise InputError("--force-preview needs --preview")
     if args.preview:
@@ -244,6 +288,7 @@ def _run(args, out) -> int:
     ev = sp.analyze(_read_text(args.log, "log").splitlines())
 
     size, mtime, source_name = _gcode_identity(args)
+    mtime_differs = False
     if args.history:
         job = _history_job(_load_json(args.history, "history"))
         if job is None:
@@ -261,7 +306,7 @@ def _run(args, out) -> int:
                 add("R07", "size %s != %s in history" % (size, meta["size"]))
             if meta.get("modified") is not None and mtime is not None and \
                     (not _is_number(meta["modified"]) or abs(meta["modified"] - mtime) > 1.0):
-                add("R07", "modified time differs from the history")
+                mtime_differs = True
     if not args.history:
         not_checked.append("R07 history identity (no --history)")
     if not args.queue:
@@ -272,8 +317,10 @@ def _run(args, out) -> int:
         q = _queued(_load_json(args.queue, "queue"))
         if q:
             add("R15", "%d queued job(s) would start on the next Klippy ready" % len(q))
+    live_notes = []
     if args.printer_cfg:
         cfg = prof.parse_printer_cfg(_read_text(args.printer_cfg, "printer.cfg"))
+        live_notes = prof.apply_live_config(p, cfg)
         for mm in prof.fingerprint_mismatches(p, cfg):
             add("R14", mm)
 
@@ -285,6 +332,8 @@ def _run(args, out) -> int:
     say("== print-rescue plan (read-only, phase 1) ==")
     for item in not_checked:
         say("NOT CHECKED: %s" % item)
+    for note in live_notes:
+        say("live config: %s" % note)
     say("source: %s" % os.path.basename(source_name))
     say("shutdown: %s at %s" % (ev.shutdown_reason, ev.shutdown_timestamp))
     say("reactor busy warnings before the shutdown: %d" % ev.reactor_busy_before)
@@ -312,8 +361,16 @@ def _run(args, out) -> int:
         add("R10", "no 'Exiting SD card print' position in the log")
         add("R18", "the last dispatched line is unknown (no exit position)")
 
+    if res is None and mtime_differs:
+        add("R19", "the contents could not be checked (no exit position or file)")
     if res is not None:
         say("last dispatched line: %s (exit position %d)" % (last_line, ev.exit_position))
+        same, why = _exit_boundary(res, ev.exit_position, size)
+        say("content check: %s" % why)
+        if not same:
+            add("R07", why)
+        elif mtime_differs:
+            add("R19", "contents match the print (byte offset check), so a re-upload is the likely cause")
         if part is not None:
             say("part box X %.1f-%.1f Y %.1f-%.1f, top %.2f mm (extrusions through line %d)"
                 % (part.x_min, part.x_max, part.y_min, part.y_max, part.top, res.bbox_until))
@@ -375,28 +432,46 @@ def _run(args, out) -> int:
                 add("R10", "planner timing disagrees with the log by %.2f s" % agree[0])
         starts = [ls for ls, _, _ in res.layer_starts if ls <= window.latest_line]
         layer_start = max(starts) if starts else None
+        budget = args.max_overlap_s if args.max_overlap_s is not None else se["max_overlap_s"]
+        absurd = max(se.get("absurd_overlap_s", 30.0), budget)
         choice = sp.choose_resume(window, timed, layer_start, se["margin_s"],
-                                  se["snap_window_s"], se["max_overlap_s"],
-                                  manual_line=args.line)
+                                  se["snap_window_s"], budget,
+                                  manual_line=args.line, absurd_overlap_s=absurd)
+        if choice.note:
+            say("note: %s" % choice.note)
         if choice.refusal:
-            add("R12", choice.refusal)
+            add(choice.refusal_code, choice.refusal)
+        if choice.warning:
+            add("R12", choice.warning)
     elif args.line is not None:
         # N3: a manual line is only ever checked against a window.
         add("R18", "manual --line %d refused: there is no stop window to check it against"
             % args.line)
 
     if choice is not None and choice.line is not None and res is not None:
+        say("")
+        say("Z after a restart: not homed. Declare a provisional Z, probe at a spot that "
+            "clears the part, set Z = z_offset at the trigger, then do the paper test ON "
+            "THE PART with the bed mesh LOADED (docs/print-rescue.md, Z re-reference).")
         state = gs.state_at(records(), choice.line, lim)
         say("")
         say("-- resume candidate (%s) --"
-            % ("refused, see R12" if choice.refusal else "chosen"))
+            % ("refused, see %s" % choice.refusal_code if choice.refusal else "chosen"))
         say("resume line %d at X%.3f Y%.3f Z%.3f (layer %d, Z %.2f)%s%s"
             % (choice.line, state.pos[0], state.pos[1], state.pos[2], state.layer,
                state.layer_z or 0.0, " snapped to travel/unretract" if choice.snapped else "",
                " (manual)" if choice.manual else ""))
         if choice.overlap_s == choice.overlap_s:
-            say("overlap to the latest possible stop: %.2f s, %.1f mm"
-                % (choice.overlap_s, choice.overlap_mm))
+            say("overlap to the latest possible stop: %.2f s, %.1f mm of path, "
+                "%.0f mm of filament (about %.0f mm3)"
+                % (choice.overlap_s, choice.overlap_mm, choice.extra_filament_mm,
+                   choice.extra_filament_mm * math.pi * (sp.FILAMENT_DIAMETER / 2.0) ** 2))
+        for ev_ in res.events:
+            if ev_.kind == "forbidden" and ev_.detail in ("G10", "G11") and ev_.line < choice.line:
+                add("R10", "firmware retraction (%s, line %d) before the resume line: the "
+                    "retracted length is not modelled, so the prime amount is unreliable"
+                    % (ev_.detail, ev_.line))
+                break
         tail = gs.tail_findings(res, choice.line, state.tool)
         for ln, cmd in tail["forbidden"]:
             add("R17", "line %d: %s (%s)" % (ln, cmd, gs.FORBIDDEN_TAIL.get(cmd, "")))
@@ -436,8 +511,10 @@ def _run(args, out) -> int:
     else:
         say("-- probe spots (no part geometry: pass-1 height unknown) --")
     spots = p.get("probe_spots", [])
+    proposed = [_parse_spot(t) for t in args.probe_spot or []]
     good_spots = 0
     reasons = []
+    extrapolated = []
     for leaf in spots:
         name = leaf.get("name", "spot")
         if not prof.is_verified(leaf):
@@ -450,26 +527,76 @@ def _run(args, out) -> int:
             say("%s: REJECTED no part geometry" % name)
             continue
         v = geometry.check_probe_spot(prof.val(leaf), part, p)
-        say("%s: %s %s" % (name, "ok" if v.ok else "REJECTED", "; ".join(v.reasons)))
+        say("%s: %s %s" % (name, "ok" if v.ok else "REJECTED", "; ".join(v.reasons + v.warnings)))
         if v.ok:
             good_spots += 1
+            if v.mesh_extrapolation_mm > 0:
+                extrapolated.append((name, v.mesh_extrapolation_mm))
         else:
             reasons.append("%s: %s" % (name, v.reasons[0]))
-    if not spots:
-        say("(none in the profile)")
+    for sp_xy in proposed:
+        name = "proposed (%g,%g)" % (sp_xy["x"], sp_xy["y"])
+        if part is None:
+            reasons.append("%s: no part geometry (the G-code was not read)" % name)
+            say("%s: REJECTED no part geometry" % name)
+            continue
+        v = geometry.check_probe_spot(sp_xy, part, p)
+        say("%s: %s %s" % (name, "ok" if v.ok else "REJECTED", "; ".join(v.reasons + v.warnings)))
+        if v.ok:
+            good_spots += 1
+            if v.mesh_extrapolation_mm > 0:
+                extrapolated.append((name, v.mesh_extrapolation_mm))
+        else:
+            reasons.append("%s: %s" % (name, v.reasons[0]))
+    if not spots and not proposed:
+        say("(none in the profile and none proposed)")
+    suggestions = []
+    if args.suggest_spots:
+        if part is None:
+            say("suggested spots: no part geometry (the G-code was not read)")
+        else:
+            suggestions = geometry.suggest_probe_spots(part, p)
+            if suggestions:
+                say("suggested nozzle spots, best first (grid search, advice only):")
+                for sg, v in suggestions:
+                    xo, yo, _ = prof.probe_offsets(p)
+                    say("  nozzle X%g Y%g, probe point X%g Y%g, head margin %s mm, mesh "
+                        "extrapolation %.1f mm" % (sg["x"], sg["y"], sg["x"] + xo, sg["y"] + yo,
+                                                   "n/a" if v.margin_mm is None else "%.1f" % v.margin_mm,
+                                                   v.mesh_extrapolation_mm))
+            else:
+                say("suggested spots: none; no grid position keeps the head clear of the part")
+    if extrapolated:
+        add("R20", "; ".join("%s is %.1f mm outside the mesh" % (n, d) for n, d in extrapolated)
+            + " (the probe works there; mesh error was < 0.05 mm at the live run's rear spot)")
     if good_spots == 0:
-        add("R02", "; ".join(reasons) if reasons else "the profile has no measured probe spots")
+        hint = ""
+        if suggestions:
+            hint = " (candidates exist, check one with --probe-spot X,Y)"
+        add("R02", ("; ".join(reasons) if reasons else
+                    "the profile has no measured probe spots and none was proposed") + hint)
 
     if window is not None and part is not None and timed:
-        pts = [tm.end_xy for tm in timed
-               if window.earliest_t <= tm.t_end <= window.latest_t and tm.kind == "move"]
-        step = max(1, len(pts) // PIN_SAMPLES)
-        pts = pts[::step] or [timed[-1].end_xy]
-        pin = geometry.check_pin_at_boot(pts, part, p)
-        say("probe pin at boot: %s" % ("clear of the part" if pin.ok else pin.reasons[0]))
-        if not pin.ok:
-            add("PIN_AT_BOOT", "%s, raise Z or move the head off the part before "
-                "FIRMWARE_RESTART" % pin.reasons[0])
+        # Every nozzle position the head may have had in the stop window: the
+        # start and end of each move that overlaps it, thinned to PIN_SAMPLES.
+        pts = []
+        for tm in timed:
+            if tm.kind == "move" and tm.t_end >= window.earliest_t and \
+                    tm.t_start <= window.latest_t:
+                pts.append(tm.start_xy)
+                pts.append(tm.end_xy)
+        if not pts:
+            add("PIN_AT_BOOT", "the stop window holds no move, so the head position at "
+                "the stop is unknown; assume the pin is over the part")
+            say("probe pin at boot: unknown (no move in the stop window)")
+        else:
+            step = max(1, len(pts) // PIN_SAMPLES)
+            pts = pts[::step] + [pts[-1]]
+            pin = geometry.check_pin_at_boot(pts, part, p)
+            say("probe pin at boot: %s" % ("clear of the part" if pin.ok else pin.reasons[0]))
+            if not pin.ok:
+                add("PIN_AT_BOOT", "%s, raise Z or move the head off the part before "
+                    "FIRMWARE_RESTART" % pin.reasons[0])
 
     shut = _parse_ts(ev.shutdown_timestamp)
     if now is None:
@@ -488,7 +615,7 @@ def _run(args, out) -> int:
     if args.preview:
         _preview(args, p, th, lim, ev, state, choice, records, source_name,
                  findings, say)
-    return _finish(findings, say, choice)
+    return _finish(findings, say, choice, not_checked)
 
 
 def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings, say):
@@ -505,6 +632,7 @@ def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings
     overlap_s = choice.overlap_s if choice.overlap_s == choice.overlap_s else 0.0
     overlap_mm = choice.overlap_mm if choice.overlap_mm == choice.overlap_mm else 0.0
     codes = sorted({f.code for f in findings})
+    header = resume_file.header_from_records(records())
     try:
         text = resume_file.build(
             state, os.path.basename(source_name), choice.line,
@@ -518,7 +646,8 @@ def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings
             extrude_factor=ef * 100.0 if isinstance(ef, float) else None,
             default_scv=lim.square_corner_velocity,
             default_velocity=lim.max_velocity,
-            refusal_codes=codes, open_codes=codes)
+            refusal_codes=codes, open_codes=codes, header_lines=header,
+            remaining_fraction=resume_file.remaining_fraction(state, header))
     except resume_file.ResumeRefused as e:
         # S1: a generated line that the allow-list refuses is a hard refusal.
         # R17 is the existing forbidden-command code; the detail says what failed.
@@ -558,7 +687,7 @@ def _write_preview(path, text):
         raise
 
 
-def _finish(findings, say, choice) -> int:
+def _finish(findings, say, choice, not_checked=()) -> int:
     """The verdict. Exit 0 needs a chosen line and no refusal of any kind."""
     chosen = choice is not None and choice.line is not None and not choice.refusal
     if not chosen and not rf.refused(findings):
@@ -577,6 +706,10 @@ def _finish(findings, say, choice) -> int:
         return EXIT_REFUSED
     if any(f.motion_only for f in findings):
         say("RESULT: resumable on paper; motion blocked until R13 is cleared")
+        return EXIT_MOTION_BLOCKED
+    if not_checked:
+        say("RESULT: resumable on paper; evidence not supplied (%d NOT CHECKED line(s)), "
+            "so exit 3: supply --history, --queue and --printer-cfg" % len(not_checked))
         return EXIT_MOTION_BLOCKED
     say("RESULT: resumable (confirm every warning before any motion)")
     return EXIT_RESUMABLE
@@ -597,6 +730,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--force-preview", action="store_true",
                     help="overwrite an existing --preview file")
     ap.add_argument("--now", help="current time, ISO 8601 UTC (default: now)")
+    ap.add_argument("--max-overlap-s", type=float,
+                    help="overlap budget in seconds (default: stop_estimation.max_overlap_s); "
+                         "an overlap above it is a warning with the extra material, not a refusal")
+    ap.add_argument("--probe-spot", action="append", metavar="X,Y",
+                    help="nozzle position of a probe spot to check for this part (repeatable)")
+    ap.add_argument("--suggest-spots", action="store_true",
+                    help="search mode: list the best candidate probe spots for this part")
     return ap
 
 

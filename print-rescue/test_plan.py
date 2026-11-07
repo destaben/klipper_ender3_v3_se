@@ -20,7 +20,7 @@ Result = namedtuple("Result", "code out err preview")
 
 
 def run_full(*extra, profile=None, profile_text=None, log=None, log_text=None,
-             gcode=None, preexisting_preview=None, gmap_source=None):
+             gcode=None, preexisting_preview=None, gmap_source=None, evidence=True):
     """Run plan.run with fixture defaults. Returns (exit code, stdout, stderr,
     preview text or None). {tmp} in extra arguments is the scratch directory.
     gmap_source replaces the "source" name in a copy of the excerpt map."""
@@ -61,6 +61,24 @@ def run_full(*extra, profile=None, profile_text=None, log=None, log_text=None,
             head = ["--gcode", gcode]
         argv = head + ["--log", log_path, "--profile", prof_path,
                        "--now", "2026-11-07T09:30:00Z"]
+        # Supply the evidence inputs by default: without them the run prints
+        # NOT CHECKED and exits 3, which most tests are not about.
+        defaults = []
+        if evidence:
+            defaults = [("--queue", fx.INC3_QUEUE), ("--printer-cfg", fx.REPO_PRINTER_CFG)]
+            if gcode is None:
+                hist = fx.HISTORY
+                if gmap_source is not None:
+                    with open(fx.HISTORY, encoding="utf-8") as fh:
+                        h = json.load(fh)
+                    h["job"]["filename"] = gmap_source
+                    hist = os.path.join(d, "history.json")
+                    with open(hist, "w", encoding="utf-8") as fh:
+                        json.dump(h, fh)
+                defaults.append(("--history", hist))
+        for flag, path in defaults:
+            if flag not in extra:
+                argv += [flag, path]
         argv += [a.replace("{tmp}", d) for a in extra]
         out, err = io.StringIO(), io.StringIO()
         ns = plan.build_parser().parse_args(argv)
@@ -107,7 +125,7 @@ class TemplateProfile(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.r = run_full("--history", fx.HISTORY, "--kernel-log", fx.KERNEL,
-                         "--preview", "{tmp}/preview.gcode")
+                         "--preview", "{tmp}/preview.gcode", evidence=False)
         cls.code, cls.out, cls.preview = cls.r.code, cls.r.out, cls.r.preview
 
     def test_fails_closed_with_r13_and_r02(self):
@@ -158,17 +176,54 @@ class MeasuredProfile(unittest.TestCase):
         self.assertEqual(codes(out), ["PIN_AT_BOOT"])
         self.assertIn("rear left: ok", out)
 
-    def test_incident_refused_with_default_budget(self):
-        # S1: the incident needs about 4.8 s of overlap; the 3 s budget refuses.
-        r = run_full(profile=fx.measured_profile())
-        self.assertEqual(r.code, 2)
+    def test_incident_over_budget_warns_with_extra_material(self):
+        # The incident needs about 4.8 s of overlap; the 3 s budget only warns
+        # (R12) and prints the extra material. A gap would be worse.
+        r = run_full("--preview", "{tmp}/preview.gcode", profile=fx.measured_profile())
+        self.assertEqual(r.code, 0, r.out)
         self.assertIn("R12", codes(r.out))
+        self.assertIn("mm3", r.out)
+        self.assertIsNotNone(r.preview)
+
+    def test_missing_evidence_exits_3_not_0(self):
+        r = run_full(profile=fx.measured_profile(), evidence=False)
+        self.assertEqual(r.code, 3, r.out)
+        self.assertIn("NOT CHECKED", r.out)
+        self.assertIn("evidence not supplied", r.out)
+
+    def test_oversized_text_input_is_a_usage_error(self):
+        old = plan.MAX_TEXT_CHARS
+        plan.MAX_TEXT_CHARS = 1000
+        try:
+            r = run_full(profile=fx.measured_profile())
+        finally:
+            plan.MAX_TEXT_CHARS = old
+        self.assertEqual(r.code, 1)
+        self.assertNotIn("Traceback", r.err)
+
+    def test_operator_budget_removes_the_warning(self):
+        r = run_full("--max-overlap-s", "5", profile=fx.measured_profile())
+        self.assertEqual(r.code, 0, r.out)
+        self.assertNotIn("R12", codes(r.out))
+
+    def test_absurd_overlap_is_refused_r21(self):
+        p = fx.measured_profile()
+        p["stop_estimation"]["absurd_overlap_s"] = 4.0
+        r = run_full(profile=p)
+        self.assertEqual(r.code, 2)
+        self.assertIn("R21", codes(r.out))
         self.assertIsNone(r.preview)
+
+    def test_bad_overlap_budget_is_a_usage_error(self):
+        for bad in ("0", "-1", "nan", "inf"):
+            with self.subTest(bad=bad):
+                r = run_full("--max-overlap-s", bad, profile=fx.measured_profile())
+                self.assertEqual(r.code, 1)
 
     def test_manual_line_with_gap_is_refused(self):
         code, out, _ = run("--line", str(fx.MANUAL_RESUME_LINE), profile=fx.measured_profile())
         self.assertEqual(code, 2)
-        self.assertIn("R12", codes(out))
+        self.assertIn("R22", codes(out))
 
     def test_r01_tall_part(self):
         p = fx.measured_profile()
@@ -478,7 +533,7 @@ class Inputs(unittest.TestCase):
                 fh.write(bytes(range(256)) * 40 + b"\nG1 X1e300 Y1\n")
             r = run_full(gcode=g, profile=fx.measured_profile())
         self.assertNotIn("Traceback", r.err)
-        self.assertIn(r.code, (1, 2))
+        self.assertIn(r.code, (0, 1, 2, 3))
 
     def test_huge_arc_exits_1(self):
         with tempfile.TemporaryDirectory() as d:
@@ -494,7 +549,7 @@ class Inputs(unittest.TestCase):
         r = run_full(log_text=log.encode("utf-8") + b"\n\xff\xfe\n",
                      profile=fx.measured_profile())
         self.assertNotIn("Traceback", r.err)
-        self.assertIn(r.code, (1, 2))
+        self.assertIn(r.code, (0, 1, 2))
 
 
 def command_words(text):
@@ -549,6 +604,7 @@ def _read_bytes(path):
 
 
 CORE = ["--gcode", "--gcode-map", "--log", "--profile"]
+EVIDENCE = CORE + ["--history", "--queue", "--printer-cfg"]
 OPTIONAL = ["--history", "--queue", "--printer-cfg", "--kernel-log"]
 FILE_NAMES = {"--gcode": "print.gcode.gz", "--gcode-map": "map.json",
               "--log": "klippy.log", "--profile": "profile.json",
@@ -571,8 +627,7 @@ def copied_inputs(d, flags):
             with open(dst, "w", encoding="utf-8") as fh:
                 json.dump({"result": {"queue_state": "ready", "queued_jobs": []}}, fh)
         elif flag == "--printer-cfg":
-            with open(dst, "w", encoding="utf-8") as fh:
-                fh.write("[printer]\n")
+            _copy_bytes(fx.REPO_PRINTER_CFG, dst)
         else:
             _copy_bytes(SOURCES[flag], dst)
         paths[flag] = dst
@@ -649,7 +704,7 @@ class PreviewTarget(unittest.TestCase):
 
     def test_force_replaces_a_regular_file_by_rename(self):
         with tempfile.TemporaryDirectory() as d:
-            paths = copied_inputs(d, CORE)
+            paths = copied_inputs(d, EVIDENCE)
             pv = os.path.join(d, "preview.gcode")
             with open(pv, "w", encoding="utf-8") as fh:
                 fh.write("OLD")

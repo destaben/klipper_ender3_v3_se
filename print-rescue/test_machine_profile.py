@@ -124,7 +124,7 @@ class Fingerprint(unittest.TestCase):
         self.assertEqual(prof.fingerprint_mismatches(fx.profile(), cfg), [])
 
     def test_probe_offsets(self):
-        self.assertEqual(prof.probe_offsets(fx.profile()), (-23.0, -14.5, 3.035))
+        self.assertEqual(prof.probe_offsets(fx.profile()), (-23.0, -14.5, 2.96))
 
     def test_profile_not_mutated(self):
         p = fx.profile()

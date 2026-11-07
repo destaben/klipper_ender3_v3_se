@@ -120,11 +120,15 @@ class IncidentEvidence(unittest.TestCase):
                              fx.SD_LINE_FIRST_FROZEN)
         self.assertLess(d["sd_anchor_earliest_t"], d["sd_anchor_latest_t"])
 
-    def test_resume_choice_refuses_with_default_budget(self):
-        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.8 s (R12).
+    def test_overlap_above_the_budget_warns_with_the_extra_material(self):
+        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.8 s. That
+        # is a warning (R12) with the extra material, not a refusal: the
+        # alternative would be a gap in the part.
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 3.0)
-        self.assertIsNotNone(c.refusal)
-        self.assertIn("overlap", c.refusal)
+        self.assertIsNone(c.refusal)
+        self.assertIn("budget", c.warning)
+        self.assertIn("mm3", c.warning)
+        self.assertGreater(c.extra_filament_mm, 0)
         self.assertEqual(c.line, 201925)
         self.assertAlmostEqual(c.overlap_s, 4.83, places=2)
 
@@ -187,9 +191,34 @@ class IncidentEvidence(unittest.TestCase):
         self.assertIsNone(c.refusal)
         self.assertGreater(c.overlap_s, 0)
 
-    def test_tighter_overlap_budget_refuses(self):
+    def test_tighter_overlap_budget_still_only_warns(self):
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 2.0)
-        self.assertIn("overlap", c.refusal)
+        self.assertIsNone(c.refusal)
+        self.assertIn("budget", c.warning)
+
+    def test_within_budget_has_no_warning(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0)
+        self.assertIsNone(c.warning)
+
+    def test_absurd_overlap_refuses_with_r21(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 2.0,
+                             absurd_overlap_s=4.0)
+        self.assertEqual(c.refusal_code, "R21")
+        self.assertIn("absurd", c.refusal)
+
+    def test_manual_line_without_motion_says_which_line_is_used(self):
+        have = {tm.line for tm in self.timed}
+        gap = next(n for n in range(self.w.earliest_line - 40, self.w.earliest_line)
+                   if n not in have)
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0,
+                             manual_line=gap)
+        self.assertIn("no planned motion", c.note)
+        self.assertGreater(c.line, gap)
+
+    def test_gap_type_refusal_uses_r22(self):
+        c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0,
+                             manual_line=self.w.earliest_line + 5)
+        self.assertEqual(c.refusal_code, "R22")
 
     def test_end_anchor_fallback_without_sd(self):
         w = sp.compute_window(self.ev, self.timed, fx.LAST_LINE, None)

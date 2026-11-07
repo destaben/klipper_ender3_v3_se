@@ -12,6 +12,13 @@ The generated part, in order:
   8. after the gate: lower to the resume Z, prime, and continue with the
      original file from the chosen line (the sliced job, copied as it is).
 
+UI metadata (A9): the original file's leading comment block (slicer header and
+thumbnails) is copied FIRST, with its time and filament estimates rewritten to
+the remaining values, the footer comes with the tail, and SET_PRINT_STATS_INFO
+sets the layer counter at the start and after every ;LAYER_CHANGE. How
+Moonraker and Mainsail derive layer, slicer and estimate from a file is TO
+VERIFY on the printer (docs/print-rescue.md).
+
 It never homes, probes or calls START_PRINT: the toolhead must already be
 re-referenced and parked above the part by the operator (P4 runs that
 interactively). check_generated() is an ALLOW-LIST for every generated line
@@ -31,8 +38,9 @@ Z_FEED = 300            # mm/min (Klipper clamps to max_z_velocity anyway)
 TRAVEL_FEED = 6000      # mm/min, deliberately slower than the slicer travel
 PRIME_FEED = 300        # mm/min
 GATE_MARK = "; GATE: Z is not re-referenced yet"
-# Not a valid command on purpose: Klipper reports "Unknown command" and the
-# SD print stops here, so the preview cannot run past the gate by accident.
+# Not a valid command on purpose: Klipper is EXPECTED to report "Unknown
+# command" and stop the SD print here (TO VERIFY on the printer, KI-14), so
+# the preview should not run past the gate by accident.
 # The operator removes this line only after procedure step 9.
 GATE_STOP = "PRINT_RESCUE_GATE_REMOVE_THIS_LINE_AFTER_STEP_9"
 
@@ -52,6 +60,16 @@ ALLOWED = {
     "EXCLUDE_OBJECT_DEFINE": ("NAME", "CENTER", "POLYGON", "RADIUS"),
     "EXCLUDE_OBJECT": ("NAME",),
     "EXCLUDE_OBJECT_START": ("NAME",),
+    # A resume skips START_PRINT, so what START_PRINT does for the whole job
+    # must be restated here: CANCEL_PRINTER_SHUTDOWN (an armed auto power-off
+    # must not cut the power mid-print) and G17 (the slicer's arc plane).
+    "CANCEL_PRINTER_SHUTDOWN": (),
+    "G17": (),
+    # M117 without text clears the stale display message that
+    # CANCEL_PRINTER_SHUTDOWN leaves in the job panel.
+    "M117": (),
+    # Layer counter for the UI (the resume file has no layer history).
+    "SET_PRINT_STATS_INFO": ("TOTAL_LAYER", "CURRENT_LAYER"),
 }
 _NUMBER = re.compile(r"^[-+]?(\d+\.?\d*|\.\d+)$")
 _VALUE = re.compile(r"^[A-Za-z0-9_.,+\-\[\]]*$")
@@ -64,6 +82,80 @@ class ResumeRefused(Exception):
 def _num(v: float) -> str:
     s = ("%.4f" % v).rstrip("0").rstrip(".")
     return "0" if s in ("-0", "") else s
+
+
+_TIME_LINE = re.compile(r"^(;\s*TIME\s*:\s*)(\d+(?:\.\d+)?)\s*$")
+_FILAMENT_M = re.compile(r"^(;\s*Filament used\s*:\s*)(\d+(?:\.\d+)?)\s*m\s*$")
+_EST_TIME = re.compile(r"^(;\s*estimated printing time[^=]*=\s*)(.+?)\s*$")
+_HMS = re.compile(r"(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$")
+_TOTAL_LAYERS = re.compile(r"^;\s*total layer number\s*:\s*(\d+)\s*$")
+
+
+def total_layers_from(header: Iterable[str]) -> Optional[int]:
+    for ln in header:
+        m = _TOTAL_LAYERS.match(ln)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def header_from_records(records: Iterable) -> List[str]:
+    """The leading comment block of the original file: every line up to the
+    first line that holds a command (slicer header, thumbnails)."""
+    out = []
+    for _, _, text in records:
+        if text.strip() and not text.lstrip().startswith(";"):
+            break
+        out.append(text)
+    return out
+
+
+def remaining_fraction(state: State, header: Iterable[str]) -> Optional[float]:
+    """Share of the job's filament still to be printed at the resume line, or
+    None when it cannot be known (no ';Filament used:' header, absolute
+    extrusion, or an E position that does not fit the total)."""
+    total_mm = None
+    for ln in header:
+        m = _FILAMENT_M.match(ln)
+        if m:
+            total_mm = float(m.group(2)) * 1000.0
+            break
+    if not total_mm or state.e_absolute:
+        return None
+    used = state.e_total
+    if not (0.0 <= used < total_mm):
+        return None
+    return (total_mm - used) / total_mm
+
+
+def _fmt_hms(seconds: float) -> str:
+    seconds = int(round(max(seconds, 0.0)))
+    h, rem = divmod(seconds, 3600)
+    m, sec = divmod(rem, 60)
+    return "%dh %dm %ds" % (h, m, sec) if h else "%dm %ds" % (m, sec)
+
+
+def rewrite_estimate(line: str, fraction: Optional[float]) -> str:
+    """Scale a slicer estimate comment (;TIME:, ;Filament used:, estimated
+    printing time) to the remaining fraction of the job. Other lines, and any
+    line when fraction is None, are returned unchanged. The scaling is
+    proportional to filament, so it is an estimate, and the file says so."""
+    if fraction is None or not line.startswith(";"):
+        return line
+    m = _TIME_LINE.match(line)
+    if m:
+        return "%s%.2f" % (m.group(1), float(m.group(2)) * fraction)
+    m = _FILAMENT_M.match(line)
+    if m:
+        return "%s%.2fm" % (m.group(1), float(m.group(2)) * fraction)
+    m = _EST_TIME.match(line)
+    if m:
+        hms = _HMS.match(m.group(2))
+        if hms and any(hms.groups()):
+            d, h, mi, sec = (int(g or 0) for g in hms.groups())
+            total = ((d * 24 + h) * 60 + mi) * 60 + sec
+            return "%s%s" % (m.group(1), _fmt_hms(total * fraction))
+    return line
 
 
 def _code_tokens(line: str) -> List[str]:
@@ -154,7 +246,10 @@ def build(state: State, source_name: str, resume_line: int,
           default_scv: Optional[float] = None,
           default_velocity: Optional[float] = None,
           refusal_codes: Iterable[str] = (),
-          open_codes: Iterable[str] = ()) -> str:
+          open_codes: Iterable[str] = (),
+          header_lines: Iterable[str] = (),
+          total_layers: Optional[int] = None,
+          remaining_fraction: Optional[float] = None) -> str:
     """Return the resume file text. Raises ResumeRefused if R17 is present or
     the generated part is not allowed."""
     if "R17" in set(refusal_codes):
@@ -167,6 +262,17 @@ def build(state: State, source_name: str, resume_line: int,
     codes = list(open_codes)
     if codes:
         label += "; open at planning time: %s" % ", ".join(codes)
+    header = [ln.rstrip("\r\n") for ln in header_lines]
+    for ln in header:
+        if ln.strip() and not ln.startswith(";"):
+            raise ResumeRefused("the copied header holds a command, not only comments")
+        if not _printable(ln):
+            raise ResumeRefused("the copied header holds a control or non-ASCII character")
+    if total_layers is None:
+        total_layers = total_layers_from(header)
+    if remaining_fraction is not None and not (0.0 < remaining_fraction <= 1.0):
+        remaining_fraction = None
+    header = [rewrite_estimate(ln, remaining_fraction) for ln in header]
     gen = [
         "; print-rescue resume PREVIEW (phase 1, %s)" % label,
         "; source file: %s" % source_name,
@@ -174,11 +280,24 @@ def build(state: State, source_name: str, resume_line: int,
         % (resume_line, _num(x), _num(y), _num(z)),
         "; planned overlap: %.2f s, %.1f mm of path (overlap, never a gap)"
         % (overlap_s, overlap_mm),
+        "; estimates in the header are scaled to the remaining filament (%s)"
+        % ("%.1f%%" % (remaining_fraction * 100.0) if remaining_fraction else "not scaled"),
+        # A resume skips START_PRINT: restate what it did for the whole job.
+        "CANCEL_PRINTER_SHUTDOWN",
+        "M117",
         "G90",
         "G21",
         "M83",
+        # 600 s is the configured [idle_timeout] default, restated so the file
+        # does not depend on an earlier SET_IDLE_TIMEOUT. The rescue itself
+        # (parking, heating, the paper test) needs a longer timeout, which is
+        # a runner step outside this file because the idle gcode turns the
+        # heaters off and clears homing.
         "SET_IDLE_TIMEOUT TIMEOUT=600",
     ]
+    if total_layers:
+        gen.append("SET_PRINT_STATS_INFO TOTAL_LAYER=%d CURRENT_LAYER=%d"
+                   % (total_layers, max(state.layer, 0)))
     for define in state.objects.values():
         gen.append(define)
     for name in list(state.excluded) + list(excluded or []):
@@ -239,10 +358,15 @@ def build(state: State, source_name: str, resume_line: int,
                % (_num(z), Z_FEED))
     if state.current_object:
         gen.append("EXCLUDE_OBJECT_START NAME=%s" % state.current_object)
-    prime = retract_before_travel + prime_extra - state.retracted
+    # The slicer's own retraction (state.retracted) is undone by the original
+    # lines, so only the rest of what is retracted at the gate is primed here.
+    # More than retract_before_travel retracted already: nothing is retracted
+    # on top of it (retract_pre above is 0), so the retracted total is the max.
+    retracted_total = max(retract_before_travel, state.retracted)
+    prime = retracted_total + prime_extra - state.retracted
     gen += [
         "G1 E%s F%d ; prime: %s retracted before travel + %s extra%s"
-        % (_num(max(prime, 0.0)), PRIME_FEED, _num(retract_before_travel),
+        % (_num(max(prime, 0.0)), PRIME_FEED, _num(retracted_total),
            _num(prime_extra),
            (" - %s already retracted by the slicer" % _num(state.retracted))
            if state.retracted else ""),
@@ -252,6 +376,16 @@ def build(state: State, source_name: str, resume_line: int,
     problems = check_generated(gen)
     if problems:
         raise ResumeRefused("generated output not allowed: " + problems[0])
+    gen.append("G17")
     gen.append("; ---- original file from line %d ----" % resume_line)
-    gen.extend(line.rstrip("\r\n") for line in tail)
-    return "\n".join(gen) + "\n"
+    layer = max(state.layer, 0)
+    for raw in tail:
+        line = raw.rstrip("\r\n")
+        gen.append(rewrite_estimate(line, remaining_fraction))
+        if line.startswith(";LAYER_CHANGE") and total_layers:
+            layer += 1
+            gen.append("SET_PRINT_STATS_INFO CURRENT_LAYER=%d" % layer)
+    # The NOT VERIFIED label stays the very first line; the copied slicer
+    # header follows it (Moonraker is expected to scan the head of the file,
+    # TO VERIFY on the printer).
+    return "\n".join(gen[:1] + header + gen[1:]) + "\n"

@@ -22,8 +22,8 @@
     "bltouch": {
       "x_offset": {"value": -23.0, "unit": "mm", "source": "config", "safety_critical": true},
       "y_offset": {"value": -14.5, "unit": "mm", "source": "config", "safety_critical": true},
-      "z_offset": {"value": 3.035, "unit": "mm", "source": "config", "safety_critical": true,
-                   "note": "from the SAVE_CONFIG block; update the profile after every PROBE_CALIBRATE"}
+      "z_offset": {"value": 2.96, "unit": "mm", "source": "config", "safety_critical": true, "live": true,
+                   "note": "from the SAVE_CONFIG block and it drifts after every PROBE_CALIBRATE: with --printer-cfg the live value replaces this one and R14 does not compare it; without it this copy may be stale"}
     },
     "stepper_x": {
       "position_min": {"value": -6, "unit": "mm", "source": "config", "safety_critical": true},
@@ -64,21 +64,25 @@
     "z_max": {"value": 250, "unit": "mm", "source": "config", "safety_critical": true},
     "z_top_margin": {"value": 10, "unit": "mm", "source": "default", "safety_critical": true,
                      "note": "unmeasured: real free height under the top bar not checked yet (P3)"},
+    "bed": {"value": {"x_min": 0, "x_max": 220, "y_min": 0, "y_max": 220}, "unit": "mm",
+            "source": "config", "safety_critical": true,
+            "note": "the printable bed; a probe point must lie inside it (Ender-3 V3 SE 220 x 220, not measured here)"},
     "probe_area": {"value": {"x_min": 30, "x_max": 190, "y_min": 30, "y_max": 190}, "unit": "mm",
                    "source": "config", "safety_critical": true,
-                   "note": "probe point limits; equal to [bed_mesh] mesh_min/mesh_max"}
+                   "note": "the bed MESH area, equal to [bed_mesh] mesh_min/mesh_max; a probe point outside it is only a warning (the mesh is extrapolated there)"}
   },
   "probe": {
     "offsets_from": "config_fingerprint.bltouch",
     "rescue_probe_speed": 5
   },
   "head_footprint": {
-    "note": "boxes relative to the nozzle tip (x, y in mm; z_from/z_to above the tip). Placeholders until measured in P3.",
+    "note": "boxes relative to the nozzle tip (x, y in mm; z_from/z_to above the tip). The head envelope is an ESTIMATE by the owner (not calipers): worst case, lowest point at nozzle level. Source stays user, so R13 keeps motion blocked until it is measured.",
     "tiers": [
       {"name": "nozzle tip", "unit": "mm", "source": "default", "safety_critical": true,
        "value": {"z_from": 0, "z_to": 2, "x_min": -3, "x_max": 3, "y_min": -3, "y_max": 3}},
-      {"name": "heater block and fan duct", "unit": "mm", "source": "default", "safety_critical": true,
-       "value": {"z_from": 2, "z_to": 15, "x_min": -25, "x_max": 25, "y_min": -20, "y_max": 20}},
+      {"name": "head and fan envelope (owner estimate)", "unit": "mm", "source": "user", "safety_critical": true,
+       "note": "left 70, right 100 with the cutter lever extended, front 50, back 65 counting the X crossbar (about 30 to the carriage); lowest point of fan and duct taken at nozzle level",
+       "value": {"z_from": 0, "z_to": 40, "x_min": -70, "x_max": 100, "y_min": -50, "y_max": 65}},
       {"name": "probe body", "unit": "mm", "source": "default", "safety_critical": true,
        "value": {"z_from": 4, "z_to": 30, "x_min": -30, "x_max": -16, "y_min": -21, "y_max": -8}},
       {"name": "probe pin deployed", "unit": "mm", "source": "default", "safety_critical": true,
@@ -108,6 +112,7 @@
     "margin_s": 0.5,
     "snap_window_s": 1.0,
     "max_overlap_s": 3.0,
+    "absurd_overlap_s": 30.0,
     "min_resume_layer": 3
   },
   "accessories": {

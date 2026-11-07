@@ -237,6 +237,29 @@ class Denylist(unittest.TestCase):
         f = gs.tail_findings(r, 1, None)
         self.assertIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
 
+    def test_firmware_retraction_and_arcs_without_ij_are_refused_in_the_tail(self):
+        for body in ("G10", "G11", "G2 X5 Y5 R3 E1"):
+            with self.subTest(body=body):
+                r = gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % body))
+                f = gs.tail_findings(r, 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, f)
+
+    def test_excerpt_size_is_capped(self):
+        import tempfile, gzip, os, json
+        with tempfile.TemporaryDirectory() as d:
+            gz, mp = os.path.join(d, "x.gz"), os.path.join(d, "x.json")
+            with gzip.open(gz, "wt") as fh:
+                fh.write("G1 X1 Y1 E1\n" * 100)
+            with open(mp, "w") as fh:
+                json.dump({"runs": [[1, 100, 0]]}, fh)
+            old = gs.MAX_EXCERPT_CHARS
+            gs.MAX_EXCERPT_CHARS = 100
+            try:
+                with self.assertRaises(ValueError):
+                    list(gs.iter_excerpt(gz, mp))
+            finally:
+                gs.MAX_EXCERPT_CHARS = old
+
     def test_stop_and_restart_commands_are_forbidden(self):
         for cmd in ("M112", "M999", "M410", "FIRMWARE_RESTART", "RESTART", "SAVE_CONFIG"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

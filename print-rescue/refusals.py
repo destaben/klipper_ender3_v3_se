@@ -18,7 +18,8 @@ HARD = {
     "R02": "no valid measured probe spot",
     "R07": "G-code file missing or changed since the print",
     "R09": "shutdown was not an MCU communication loss",
-    "R12": "stop window needs more overlap than allowed",
+    "R21": "overlap is clearly absurd for this stop window",
+    "R22": "no resume line without a gap in the part",
     "R13": "unmeasured safety-critical profile field (blocks motion)",
     "R14": "profile does not match printer.cfg",
     "R15": "job queue not empty",
@@ -33,7 +34,10 @@ WARN = {
     "R08": "cut before min_resume_layer",
     "R10": "insufficient log evidence, manual line needed",
     "R11": "long time since the shutdown",
+    "R12": "overlap above the budget (extra material, never a gap)",
     "R16": "unknown previously excluded objects",
+    "R19": "G-code modified time differs from the history (content check decides)",
+    "R20": "probe point outside the bed mesh (mesh extrapolated)",
     "PIN_AT_BOOT": "probe pin self-test at boot lands on the part",
 }
 MAX_LINE = 240

@@ -34,10 +34,11 @@ class ConsoleLine(unittest.TestCase):
             rf.console_line(rf.Finding("R99", ""))
 
     def test_catalogue_is_complete(self):
-        self.assertEqual(sorted(rf.HARD), ["R01", "R02", "R07", "R09", "R12",
-                                           "R13", "R14", "R15", "R17", "R18"])
+        self.assertEqual(sorted(rf.HARD), ["R01", "R02", "R07", "R09", "R13", "R14",
+                                           "R15", "R17", "R18", "R21", "R22"])
         self.assertEqual(sorted(rf.WARN), ["PIN_AT_BOOT", "R03", "R04", "R05", "R06",
-                                           "R08", "R10", "R11", "R16"])
+                                           "R08", "R10", "R11", "R12", "R16", "R19",
+                                           "R20"])
 
 
 class Refused(unittest.TestCase):

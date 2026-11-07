@@ -59,7 +59,7 @@ class ProbeSpots(unittest.TestCase):
         v = g.check_probe_spot({"x": 195, "y": 35}, PART, self.p)
         self.assertFalse(v.ok)
         self.assertTrue(all(r.startswith("head tier") for r in v.reasons), v.reasons)
-        self.assertIn("heater block", v.reasons[0])
+        self.assertIn("head tier", v.reasons[0])
 
     def test_rear_spot_accepted(self):
         spot = self.p["probe_spots"][0]["value"]
@@ -70,18 +70,71 @@ class ProbeSpots(unittest.TestCase):
         v = g.check_probe_spot({"x": 120, "y": 120}, PART, self.p)
         self.assertTrue(any("from the part" in r for r in v.reasons))
 
-    def test_missing_probe_area_refuses_instead_of_skipping(self):
-        # N2: without a probe area the spot cannot be checked, so it is refused.
-        del self.p["envelope"]["probe_area"]
-        v = g.check_probe_spot({"x": 60, "y": 60}, PART, self.p)
+    def test_missing_bed_area_refuses_instead_of_skipping(self):
+        # N2: without a bed rectangle the spot cannot be checked, so it is refused.
+        del self.p["envelope"]["bed"]
+        v = g.check_probe_spot({"x": 60, "y": 225}, PART, self.p)
         self.assertFalse(v.ok)
-        self.assertTrue(any("probe area" in r for r in v.reasons), v.reasons)
+        self.assertTrue(any("bed area" in r for r in v.reasons), v.reasons)
 
-    def test_probe_area_from_the_real_profile(self):
-        # With the real (mesh) probe area the rear spot's probe point
-        # (37, 210.5) is outside the meshed area.
-        v = g.check_probe_spot({"x": 60, "y": 225}, PART, fx.profile())
-        self.assertTrue(any("probe area" in r for r in v.reasons))
+    def test_probe_point_off_the_bed_is_a_hard_reason(self):
+        self.p["envelope"]["bed"]["value"] = {"x_min": 0, "x_max": 100, "y_min": 0, "y_max": 100}
+        v = g.check_probe_spot({"x": 60, "y": 225}, PART, self.p)
+        self.assertTrue(any("off the bed" in r for r in v.reasons), v.reasons)
+
+    def test_outside_the_mesh_is_only_a_warning_with_the_distance(self):
+        # Real profile: the mesh ends at 190. A nozzle at Y 225 probes at
+        # Y 210.5, 20.5 mm beyond it; that is allowed but reported.
+        p = fx.measured_profile()
+        p["envelope"]["probe_area"]["value"] = {"x_min": 30, "x_max": 190,
+                                                "y_min": 30, "y_max": 190}
+        small = g.Part(100, 120, 100, 120, 10.0)
+        v = g.check_probe_spot({"x": 60, "y": 225}, small, p)
+        self.assertTrue(v.ok, v.reasons)
+        self.assertAlmostEqual(v.mesh_extrapolation_mm, 20.5, places=1)
+        self.assertTrue(any("mesh" in w for w in v.warnings))
+
+
+class IncidentThreeGeometry(unittest.TestCase):
+    """The 2026-11-07 vase (X/Y 71.1-148.9, top 53.0) with the owner's head
+    estimate (left 70, right 100, front 50, back 65). The live run used a
+    REAR spot (nozzle X134 Y215) that is outside the bed mesh; any front
+    spot puts the crossbar over the part."""
+
+    PART3 = g.Part(71.1, 148.9, 71.1, 148.9, 53.0)
+
+    def setUp(self):
+        self.p = fx.measured_profile(owner_footprint=True)
+
+    def test_rear_spot_of_the_live_run_is_accepted_with_a_mesh_warning(self):
+        v = g.check_probe_spot({"x": 134, "y": 215}, self.PART3, self.p)
+        self.assertTrue(v.ok, v.reasons)
+        self.p["envelope"]["probe_area"]["value"] = {"x_min": 30, "x_max": 190,
+                                                     "y_min": 30, "y_max": 190}
+        v = g.check_probe_spot({"x": 134, "y": 215}, self.PART3, self.p)
+        self.assertTrue(v.ok, v.reasons)
+        self.assertAlmostEqual(v.mesh_extrapolation_mm, 10.5, places=1)
+        self.assertAlmostEqual(v.margin_mm, 16.1, places=1)
+
+    def test_every_front_spot_is_rejected(self):
+        for y in (-14, -9, 0, 10, 30, 60):
+            for x in (0, 60, 134, 200):
+                with self.subTest(x=x, y=y):
+                    v = g.check_probe_spot({"x": x, "y": y}, self.PART3, self.p)
+                    self.assertFalse(v.ok)
+
+    def test_search_returns_only_rear_spots_and_ranks_the_live_one_first(self):
+        found = g.suggest_probe_spots(self.PART3, self.p, limit=500)
+        self.assertTrue(found)
+        self.assertTrue(all(spot["y"] >= 202 for spot, _ in found), found[:3])
+        best, v = found[0]
+        self.assertEqual(best["y"], 215)
+        self.assertTrue(v.ok)
+        self.assertTrue(any(abs(s["x"] - 134) <= 5 and s["y"] == 215 for s, _ in found))
+
+    def test_search_finds_nothing_when_the_part_fills_the_bed(self):
+        huge = g.Part(0, 220, 0, 220, 50.0)
+        self.assertEqual(g.suggest_probe_spots(huge, self.p), [])
 
 
 class PinAtBoot(unittest.TestCase):

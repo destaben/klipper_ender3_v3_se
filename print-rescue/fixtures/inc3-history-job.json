@@ -1,0 +1,20 @@
+{
+ "job": {
+  "end_time": 1794074388.743441,
+  "filament_used": 11098.868690001485,
+  "filename": "Japandi+Vase+0.24_PLA_4h6m.gcode",
+  "metadata": {
+   "size": 22647469,
+   "modified": 1794064929.9698124,
+   "slicer": "OrcaSlicer",
+   "slicer_version": "2.4.2",
+   "layer_count": 500,
+   "object_height": 100.0,
+   "layer_height": 0.2
+  },
+  "print_duration": 8674.278866587003,
+  "start_time": 1794065559.106185,
+  "status": "klippy_shutdown",
+  "total_duration": 8829.91919210102
+ }
+}

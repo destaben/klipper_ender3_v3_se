@@ -58,6 +58,9 @@ FORBIDDEN_TAIL = {
     "M0": "stop",
     "M1": "stop",
     "PRINTER_SHUTDOWN": "powers the printer off",
+    "G10": "firmware retraction (its length is not modelled)",
+    "G11": "firmware unretraction (its length is not modelled)",
+    "ARC_NO_IJ": "arc without I/J (Klipper rejects it; not modelled)",
     "CR_IN_LINE": "carriage return inside a line (hidden command)",
     "SP_CHANGE": "MMU lane change",
     "_SP_CHANGE": "MMU lane change",
@@ -80,6 +83,7 @@ EPS = 1e-9
 # modelled. Both refuse with ValueError, which plan.py reports as exit 1.
 MAX_COORDINATE = 1e6
 MAX_ARC_SEGMENTS = 100000
+MAX_EXCERPT_CHARS = 256 * 1024 * 1024
 
 
 @dataclass
@@ -173,6 +177,7 @@ class State:
     tool: Optional[int] = None
     plane: str = "G17"
     retracted: float = 0.0        # filament the slicer has retracted right now
+    e_total: float = 0.0          # net filament pushed since the start (survives G92 E0)
 
     @property
     def accel_to_decel(self):
@@ -314,6 +319,7 @@ class Scanner:
         st = self.st
         dxy = math.hypot(end[0] - start[0], end[1] - start[1])
         de = end[3] - start[3]
+        st.e_total += de
         extruding = de > EPS and dxy > EPS
         if de < -EPS:
             st.retracted += -de
@@ -372,7 +378,9 @@ class Scanner:
         i_off = _fparam(params, "I", 0.0)
         j_off = _fparam(params, "J", 0.0)
         if not (i_off or j_off):
-            # Klipper rejects this; treat as a straight move for timing.
+            # Klipper rejects this (R-form arcs are not supported); treat as a
+            # straight move for timing and flag it for the tail check.
+            self.events.append(Event(line, "forbidden", "ARC_NO_IJ"))
             self._linear(line, params)
             return
         if max(abs(i_off), abs(j_off)) > MAX_COORDINATE:
@@ -679,7 +687,10 @@ def iter_excerpt(gz_path: str, map_path: str) -> Iterator[Record]:
     with open(map_path, "r", encoding="utf-8") as fh:
         runs = json.load(fh)["runs"]
     with gzip.open(gz_path, "rt", encoding="utf-8", newline="\n") as fh:
-        lines = fh.read().split("\n")
+        text = fh.read(MAX_EXCERPT_CHARS + 1)
+    if len(text) > MAX_EXCERPT_CHARS:
+        raise ValueError("excerpt is larger than %d characters when unpacked" % MAX_EXCERPT_CHARS)
+    lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
     idx = 0

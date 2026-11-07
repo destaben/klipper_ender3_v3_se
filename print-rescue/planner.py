@@ -56,6 +56,7 @@ class Timed:
     travel: bool = False         # XY motion without extrusion
     unretract: bool = False      # extrude-only move with E > 0
     retract: bool = False        # extrude-only move with E < 0
+    e_mm: float = 0.0            # filament pushed by this move (E > 0 only)
     start_xy: tuple = (0.0, 0.0)
     end_xy: tuple = (0.0, 0.0)
 
@@ -195,6 +196,7 @@ def _timed(pm: _PMove) -> Timed:
                  travel=dxy > 1e-9 and de <= 1e-9,
                  unretract=dxy <= 1e-9 and de > 1e-9,
                  retract=dxy <= 1e-9 and de < -1e-9,
+                 e_mm=max(de, 0.0),
                  start_xy=(mv.start[0], mv.start[1]),
                  end_xy=(mv.end[0], mv.end[1]))
 
