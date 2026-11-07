@@ -228,7 +228,8 @@ class Denylist(unittest.TestCase):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)
 
     def test_ending_and_pausing_commands_are_forbidden(self):
-        for cmd in ("CANCEL_PRINT", "PAUSE", "M600", "M0", "PRINTER_SHUTDOWN"):
+        for cmd in ("CANCEL_PRINT", "PAUSE", "M600", "M0", "PRINTER_SHUTDOWN",
+                    "SP_CHANGE", "_SP_CHANGE", "_SP_PAUSE"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)
 
     def test_end_print_is_allowed_only_at_the_end_of_the_file(self):

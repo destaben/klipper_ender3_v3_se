@@ -391,6 +391,8 @@ next one.
   `--printer-cfg` (R14) are optional. When one is missing the plan prints
   `NOT CHECKED: ...` but does not refuse. P2 must require all three before it
   acts on an exit code.
+- KI-05 to KI-07 are intentionally unused (numbers kept stable for references
+  made during development).
 - **KI-08**: the R17 tail check matches command names exactly (the list is in
   `print-rescue/gcode_scan.py`, including the MMU homing macros). A macro
   that homes but is not listed is not caught. `G92` on X, Y or Z in the tail
@@ -444,6 +446,14 @@ next one.
   `M290` and `SET_GCODE_OFFSET` are not on the tail deny-list; the pin-at-boot
   check samples about 25 move endpoints; `--line` is not checked against the
   cut layer; a missing `size` or `modified` in the history skips R07 silently.
+- **KI-21**: open estimation limits, all fail towards a warning or are P2
+  gates: when the log has no Stats line after the shutdown, `P_end` is a lower
+  bound and the window can be biased late (reported as R10; a gap is possible,
+  so the operator must not accept it without checking); the prime amount does
+  not model a slicer retraction larger than `retract_before_travel`; the
+  pin-at-boot check falls back to the last move end when no move endpoint lies
+  in the stop window, and can then report "clear" wrongly. None of this is
+  acted on automatically in phase 1.
 - The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
   N17-N20) was interrupted before it was recorded as complete. The IDs are
   cited in code comments; treat any without a matching test as open.
