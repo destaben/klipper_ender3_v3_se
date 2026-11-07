@@ -46,6 +46,10 @@ FORBIDDEN_TAIL = {
     "Z_TILT_ADJUST": "gantry levelling",
     "QUAD_GANTRY_LEVEL": "gantry levelling",
     "SCREWS_TILT_CALCULATE": "probing",
+    "SP_HOME": "MMU homing macro",
+    "_SP_CONDITIONAL_HOME": "MMU conditional homing macro",
+    "_SP_PRINT_START_B": "MMU print start (homes all axes)",
+    "SP_FORCE_MOVE_LANE": "lane move without homing",
     "FORCE_MOVE": "move without homing",
     "SET_KINEMATIC_POSITION": "declares a position without a measurement",
 }

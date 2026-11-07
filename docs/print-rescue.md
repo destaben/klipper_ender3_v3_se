@@ -210,9 +210,10 @@ computed window earlier in the file, toward more overlap.
 ## Resume file (preview)
 
 `print-rescue/resume_file.py` builds the preview. Its generated part is checked
-against an **allow-list** of commands and parameters (`check_generated`): a
-command that is not listed, including any `G28`, `G29`, `G30`, `G32`, `HOME`,
-`START_PRINT*`, `FORCE_MOVE`, `SET_KINEMATIC_POSITION`, `PROBE*`, is refused.
+against an **allow-list** of exact command names and parameters
+(`check_generated`, the `ALLOWED` table; no wildcards): a command that is not
+listed, such as `G28`, `G29`, `G30`, `G32`, `HOME`, `START_PRINT`,
+`FORCE_MOVE`, `SET_KINEMATIC_POSITION` or `PROBE`, is refused.
 The check runs over the generated text split into lines, so a newline inside a
 value (such as a source name) cannot hide a command. Any control or non-ASCII
 character in the generated part is refused as well. Before the gate, the only Z
@@ -247,13 +248,13 @@ Each finding prints as one ASCII line, safe inside
 | R07 | refused | G-code file missing or not a regular file, or name/size/mtime differ from the job history. |
 | R08 | warning | Cut before `min_resume_layer`. |
 | R09 | refused | The shutdown was not an MCU communication loss. |
-| R10 | warning | Insufficient or inconsistent log evidence (anchor endpoints more than 1 s apart, planner timing off by more than 0.5 s, no clean freeze). |
+| R10 | warning | Insufficient log evidence, manual line needed (anchor endpoints more than 1 s apart, planner timing off by more than 0.5 s, no clean freeze). |
 | R11 | warning | Long time since the shutdown (part may have cooled loose). |
 | R12 | refused | The stop window needs more overlap than `max_overlap_s`, starts before the cut layer, has no line in the cut layer that meets the margin, or a manual line would leave a gap or overlap too much. |
 | R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. |
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
-| R16 | warning | Several objects: exclusions made in the UI are not in the log. |
+| R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
 | R17 | refused | Forbidden command in the resumed tail: any `G28` form, `G29`, `G30`, `G32`, `HOME`, `START_PRINT`, `START_PRINT_EXTRA`, `_SP_PRINT_START`, `BED_MESH_CALIBRATE`, `PROBE`, `PROBE_ACCURACY`, `PROBE_CALIBRATE`, `Z_TILT_ADJUST`, `QUAD_GANTRY_LEVEL`, `SCREWS_TILT_CALCULATE`, `FORCE_MOVE`, `SET_KINEMATIC_POSITION` (exact command names; other macros are not matched, KI-08), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
 | PIN_AT_BOOT | warning | The probe pin self-test at Klippy start would land on the part (**TO VERIFY**: when the pin deploys). |
@@ -352,7 +353,7 @@ python3 -m unittest discover -s print-rescue -v
 | Phase | Content |
 |-------|---------|
 | P1 (done) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
-| P2 | Resume builder that uploads and starts the resume file; pauses the job queue; a `START_PRINT` lock while a rescue is active. Starts only after the P2-gate items are closed ([Roadmap and handoff](#roadmap-and-handoff)). |
+| P2 | Resume builder that uploads and starts the resume file; pauses the job queue; a `START_PRINT` lock while a rescue is active. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
 | P3 | Cold, empty-bed calibration: envelope corners; cutter approach in 0.5 mm steps to measure `x_max_safe`; head footprint tiers; probe spots; re-reference accuracy against homed truth (the user's dry-run idea: run the whole procedure on an empty bed and compare with a real `G28`). |
 | P4 | Interactive runner: confirm before every move, short moves, emergency stop, state re-read after every error. Gantry-tilt check from two probe points. |
 | P5 | Recorder/witness (periodic position and state snapshots during prints), start-of-print check. |
@@ -379,15 +380,31 @@ next one.
 
 ## Known issues and pending work (end of phase 1)
 
-- Phase 1 is a read-only planner. Phases 2+ (motion, upload/start) are not
-  implemented and must not be started before the hardware validation order
-  above has been followed.
-- The planner has been run read-only on the real logs of the 2026-11-07
-  incident; no motion code has ever been run on hardware.
+- **KI-01**: phase 1 is a read-only planner. Phases 2+ (motion, upload/start)
+  are not implemented and must not be started before the hardware validation
+  order above has been followed. No motion code has ever been run on hardware.
+- **KI-02**: `--gcode-map` exists only for the test fixture excerpts.
+- **KI-03**: a preview that is not written does not change the exit code.
+- **KI-04**: the evidence inputs `--history` (R07), `--queue` (R15) and
+  `--printer-cfg` (R14) are optional. When one is missing the plan prints
+  `NOT CHECKED: ...` but does not refuse. P2 must require all three before it
+  acts on an exit code.
+- **KI-08**: the R17 tail check matches command names exactly (the list is in
+  `print-rescue/gcode_scan.py`, including the MMU homing macros). A macro
+  that homes but is not listed is not caught. P2 must check the tail against
+  the macros of the live configuration before it uploads anything.
+- **KI-09**: `safety_critical` in the profile is a self-declared flag, so
+  clearing it removes a field from R13. The profile is reviewed in git; P2
+  should derive the critical set from code instead.
+- **KI-10**: an object name containing a space in `EXCLUDE_OBJECT_DEFINE` is
+  refused (R17, exit 2, no preview). Klipper splits parameters on whitespace,
+  so such a line is not valid for Klipper either; the refusal fails closed.
+- **KI-11**: the park spot and the approach moves are not checked against the
+  no-go zones (only the resume point is, R03).
+- The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
+  N17-N20) was interrupted before it was recorded as complete. The IDs are
+  cited in code comments; treat any without a matching test as open.
 - Every item under "To verify against the Klipper fork" below is open.
-- A review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
-  N17-N20) was interrupted before it was recorded as complete. Treat those
-  findings as open until re-reviewed.
 
 ## To verify against the Klipper fork
 

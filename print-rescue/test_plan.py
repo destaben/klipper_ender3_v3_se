@@ -119,6 +119,11 @@ class TemplateProfile(unittest.TestCase):
     def test_incident_overlap_refused(self):
         self.assertIn("R12", codes(self.out))
 
+    def test_missing_evidence_inputs_are_reported(self):
+        self.assertIn("NOT CHECKED: R15 job queue", self.out)
+        self.assertIn("NOT CHECKED: R14 printer.cfg", self.out)
+        self.assertNotIn("NOT CHECKED: R07", self.out)
+
     def test_pin_at_boot_warning(self):
         self.assertIn("PIN_AT_BOOT", codes(self.out))
 

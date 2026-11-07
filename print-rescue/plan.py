@@ -216,6 +216,8 @@ def _run(args, out) -> int:
     def add(code, detail=""):
         findings.append(rf.Finding(code, detail))
 
+    not_checked = []
+
     def say(text=""):
         print(text, file=out)
 
@@ -256,6 +258,12 @@ def _run(args, out) -> int:
             if meta.get("modified") is not None and mtime is not None and \
                     (not _is_number(meta["modified"]) or abs(meta["modified"] - mtime) > 1.0):
                 add("R07", "modified time differs from the history")
+    if not args.history:
+        not_checked.append("R07 history identity (no --history)")
+    if not args.queue:
+        not_checked.append("R15 job queue (no --queue)")
+    if not args.printer_cfg:
+        not_checked.append("R14 printer.cfg fingerprint (no --printer-cfg)")
     if args.queue:
         q = _queued(_load_json(args.queue, "queue"))
         if q:
@@ -271,6 +279,8 @@ def _run(args, out) -> int:
         add("R09", "shutdown reason: %s" % ev.shutdown_reason)
 
     say("== print-rescue plan (read-only, phase 1) ==")
+    for item in not_checked:
+        say("NOT CHECKED: %s" % item)
     say("source: %s" % os.path.basename(source_name))
     say("shutdown: %s at %s" % (ev.shutdown_reason, ev.shutdown_timestamp))
     say("reactor busy warnings before the shutdown: %d" % ev.reactor_busy_before)

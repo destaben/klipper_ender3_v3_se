@@ -216,6 +216,11 @@ class Denylist(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertIn(cmd, gs.FORBIDDEN_TAIL)
 
+    def test_mmu_homing_macros_are_forbidden(self):
+        for cmd in ("SP_HOME", "_SP_CONDITIONAL_HOME", "_SP_PRINT_START_B",
+                    "SP_FORCE_MOVE_LANE"):
+            self.assertIn(cmd, gs.FORBIDDEN_TAIL)
+
 
 class Robustness(unittest.TestCase):
     """N2: malformed G-code gives a clear error, never a hang or a crash."""
