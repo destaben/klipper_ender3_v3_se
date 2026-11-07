@@ -701,5 +701,12 @@ class Cli(unittest.TestCase):
         self.assertIn("R07", codes(out.getvalue()))
 
 
+class ParseTimestamp(unittest.TestCase):
+    def test_offset_is_converted_to_utc(self):
+        a = plan._parse_ts("2026-11-07T10:30:00+01:00")
+        b = plan._parse_ts("2026-11-07T09:30:00Z")
+        self.assertEqual(a, b)
+
+
 if __name__ == "__main__":
     unittest.main()

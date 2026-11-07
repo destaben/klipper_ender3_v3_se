@@ -150,7 +150,9 @@ def _parse_ts(text):
         d = datetime.datetime.fromisoformat(t)
     except ValueError:
         return None
-    return d.replace(tzinfo=datetime.timezone.utc)
+    if d.tzinfo is None:
+        return d.replace(tzinfo=datetime.timezone.utc)
+    return d.astimezone(datetime.timezone.utc)
 
 
 def _same_file(a: str, b: str) -> bool:
@@ -393,6 +395,8 @@ def _run(args, out) -> int:
         tail = gs.tail_findings(res, choice.line, state.tool)
         for ln, cmd in tail["forbidden"]:
             add("R17", "line %d: %s (%s)" % (ln, cmd, gs.FORBIDDEN_TAIL.get(cmd, "")))
+        for ln, what in tail["g92_xyz"]:
+            add("R17", "line %d: %s redefines the coordinate system" % (ln, what))
         for ln, cmd in tail["tool_change"]:
             add("R17", "line %d: tool change %s (printing T%s)" % (ln, cmd, state.tool))
         for ln, _ in tail["m82"][:1]:

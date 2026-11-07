@@ -247,5 +247,16 @@ class Validation(unittest.TestCase):
                 prof.load_profile(path)
 
 
+class FingerprintCoverage(unittest.TestCase):
+    def test_key_missing_from_profile_is_reported(self):
+        p = fx.profile()
+        sec = next(iter(p["config_fingerprint"]))
+        opt = next(iter(p["config_fingerprint"][sec]))
+        del p["config_fingerprint"][sec][opt]
+        mm = prof.fingerprint_mismatches(p, prof.parse_printer_cfg(CFG))
+        self.assertTrue(any("%s.%s: not in the profile fingerprint" % (sec, opt) in m
+                            for m in mm))
+
+
 if __name__ == "__main__":
     unittest.main()

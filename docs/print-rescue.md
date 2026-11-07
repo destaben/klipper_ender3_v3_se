@@ -391,7 +391,8 @@ next one.
   acts on an exit code.
 - **KI-08**: the R17 tail check matches command names exactly (the list is in
   `print-rescue/gcode_scan.py`, including the MMU homing macros). A macro
-  that homes but is not listed is not caught. P2 must check the tail against
+  that homes but is not listed is not caught. `G92` on X, Y or Z in the tail
+  is refused (R17). P2 must check the tail against
   the macros of the live configuration before it uploads anything.
 - **KI-09**: `safety_critical` in the profile is a self-declared flag, so
   clearing it removes a field from R13. The profile is reviewed in git; P2
@@ -401,6 +402,23 @@ next one.
   so such a line is not valid for Klipper either; the refusal fails closed.
 - **KI-11**: the park spot and the approach moves are not checked against the
   no-go zones (only the resume point is, R03).
+- **KI-12**: `--line` (manual resume line) is accepted when it starts at or
+  before the earliest possible stop, without the safety margin the automatic
+  choice keeps. It is an explicit operator override and still has to fit the
+  overlap budget (R12); a test pins this behaviour.
+- **KI-13**: the preview preamble always sets `G90`. A tail that resumes in
+  relative mode (`G91`) is not translated, and `G91` in the tail is not
+  refused. P2 must emit the mode active at the resume line before it runs a
+  preview.
+- **KI-14**: the `GATE_MARK` line in the preview is only a comment. It does
+  not pause anything. P2 must implement the real gate (re-reference on two
+  verified probe spots) in the runner; R02 today only requires at least one
+  verified spot.
+- **KI-15**: a last dispatched line that is a dwell (`G4`, `M109`) has no
+  end position in the planner and can raise R10 falsely (a warning, fails
+  safe).
+- **KI-16**: a non-ASCII source file name is refused through the R17 path;
+  the code is misleading but the refusal fails closed.
 - The review pass over the planner (findings S1, S2, N1-N6, N8, N11, N14,
   N17-N20) was interrupted before it was recorded as complete. The IDs are
   cited in code comments; treat any without a matching test as open.

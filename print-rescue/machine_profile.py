@@ -405,6 +405,7 @@ def fingerprint_mismatches(p: dict, cfg: Dict[str, Dict[str, str]],
     fp = p.get("config_fingerprint", {})
     for (sec, opt), (csec, copt, kind) in FINGERPRINT_KEYS.items():
         if sec not in fp or opt not in fp[sec]:
+            out.append("%s.%s: not in the profile fingerprint (not checked)" % (sec, opt))
             continue
         want = val(fp[sec][opt])
         have = _cfg_value(cfg, csec, copt, kind)
