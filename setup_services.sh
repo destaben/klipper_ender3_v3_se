@@ -16,7 +16,7 @@ if ! command -v docker &> /dev/null; then
     fi
     sudo sh get-docker.sh
     rm -f get-docker.sh
-    sudo usermod -aG docker "$USER"
+    sudo usermod -aG docker "${SUDO_USER:-$USER}"
     echo "Docker installed successfully. Please log out and log back in to apply group changes."
 else
     echo "Docker is already installed."
@@ -86,9 +86,9 @@ if [ -n "$CMDLINE" ]; then
 fi
 echo "Starting Docker containers..."
 # Add user to docker group if missing (requires sudo)
-if ! id -nG "$USER" | grep -qw docker; then
-    echo "Adding '$USER' to the docker group..."
-    sudo usermod -aG docker "$USER"
+if ! id -nG "${SUDO_USER:-$USER}" | grep -qw docker; then
+    echo "Adding '${SUDO_USER:-$USER}' to the docker group..."
+    sudo usermod -aG docker "${SUDO_USER:-$USER}"
 fi
 # Create bind-mount host directories for moonraker so the container user can write to them.
 # The permissions set inside the Dockerfile are masked by bind mounts, so they must be
@@ -99,7 +99,8 @@ mkdir -p moonraker/logs moonraker/database
 # `docker compose run`'s volumes) so this works even before config/moonraker.secrets
 # exists, since that bind mount has create_host_path: false and would otherwise
 # make this whole detection fail on a fresh install. Uses sg so the just-added
-# docker group membership above applies without requiring a new login session.
+# docker group membership above applies to the commands in this script without requiring
+# a new login session (your own shell still needs a re-login or `newgrp docker`).
 sg docker -c "docker compose build moonraker"
 MOONRAKER_IMAGE=$(sg docker -c "docker compose config --images moonraker")
 MOONRAKER_IDS=$(sg docker -c "docker run --rm --entrypoint sh '$MOONRAKER_IMAGE' -c 'id -u; id -g'" | tr -d '\r' || true)
@@ -114,7 +115,7 @@ if [ "$(printf '%s\n' "$MOONRAKER_IDS" | wc -l)" -ge 2 ]; then
     if ! command -v setfacl &> /dev/null; then
         sudo apt-get install -y acl
     fi
-    sudo setfacl -R -m "u:${USER}:rwX,d:u:${USER}:rwX" moonraker/logs moonraker/database
+    sudo setfacl -R -m "u:${SUDO_USER:-$USER}:rwX,d:u:${SUDO_USER:-$USER}:rwX" moonraker/logs moonraker/database
 else
     echo "WARNING: could not determine moonraker container UID/GID (see build/run output above); falling back to permissive chmod 777."
     chmod 777 moonraker/logs moonraker/database

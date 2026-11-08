@@ -17,6 +17,7 @@ Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Doc
 | `node-exporter` | `prom/node-exporter:v1.9.1` | `http://<host_ip>/nodeexporter` |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.52.0` | `http://<host_ip>/cadvisor` |
 | `klipper-connect` | Custom (`Dockerfile-klipper-connect`), behind the `prusa-connect` profile | internal (no ports, no Traefik) |
+| `mmu-fallback`, `mmu-virtual` | Custom (`Dockerfile-mmu-fallback`), behind the `mmu-fallback` profile | internal (no ports, no Traefik) |
 
 ## Routing Rules (Traefik)
 
@@ -42,6 +43,7 @@ These directories must exist at the project root for the stack to start:
 3. The `moonraker` container uses `pid: host` and mounts `/run/systemd` and `/run/dbus` for power management.
 4. Resource limits are defined per service — keep them when editing. `klipper` is intentionally uncapped (no CPU or memory limit); do not add limits back to it.
 5. Rate limiting is configured on all public-facing Traefik routes — do not remove it.
+6. Optional services are behind compose profiles (`prusa-connect`, `mmu-fallback`). A plain `docker compose up -d` skips them. Start one by name, for example `docker compose up -d klipper-connect`.
 
 ## Common Commands
 

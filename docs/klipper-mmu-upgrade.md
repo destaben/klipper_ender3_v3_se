@@ -10,8 +10,8 @@ deliberately left unfixed** (Z-offset via `PRTOUCH_PROBE_ZOFFSET`).
 | Klipper fork (`0xD34D/klipper_ender3_v3_se`) | `38604d84` (2025-07-18, upstream base 2025-07-11) | `7e61c1cc` (2026-08-17, upstream base 2026-08-13) |
 | LH Stinger `sp_mmu_code.cfg` | template 0.91 (April 2025 code) | template 0.94 (LH Stinger `main`, April 2026) |
 
-The commit is pinned in three places that must always match:
-`Dockerfile-klipper`, `sim/Dockerfile-sim`, `build_firmware.sh`.
+The commit is pinned in four places that must always match:
+`Dockerfile-klipper`, `Dockerfile-mmu-fallback`, `sim/Dockerfile-sim`, `build_firmware.sh`.
 
 ## What changed and why it matters
 
@@ -70,6 +70,19 @@ out before printing (see "Verifying the MMU" below).
 - Your tuned values (`dist_*`, cutter positions, `dist_filament_park`,
   `has_guest_lane`, ...) are preserved; only the four new options and the
   version number were added.
+
+### Resume when the print is still paused (`_SP_RESUME_FINISH`)
+
+`SP_FILAMENT_CHANGE` now ends its resume with `_SP_RESUME_FINISH`. If `_MAINSAIL_RESUME`
+did not resume (for example the runout sensor still shows no filament, or the hotend
+cannot extrude), Klipper's `is_paused` is still set; the macro then prints an error and
+leaves the pause state, `runout_event` and the runout sensor setting untouched, so you fix
+the cause and press Resume again. A normal resume is unchanged: `RESUME_BASE` clears
+`is_paused`, and the macro runs the previous steps. If you cancel instead of resuming after
+a runout pause, the runout sensor stays disabled until the next print start (this was already
+the case before) or `SET_FILAMENT_SENSOR SENSOR=sp_sensor_runout ENABLE=1`. An unattended infinite-spool change (`_SP_RUNOUT_END` calls `RESUME`) whose resume does not
+complete now stays paused with an error message, instead of being forced to continue; that
+needs the user. Not yet tested on the printer.
 
 ### 3. Klipper changes that do not need action (checked)
 
@@ -169,7 +182,7 @@ A full T0 -> T1 tool change with the new values is not yet tested.
 
 - Retag or keep the previous Docker image (see step 1 of the upgrade) and set
   the compose `image:` line for `klipper` back to it.
-- Set the three pins back to `38604d84318dd4af1ab2d0adc26b9bb303bf382c`.
+- Set the four pins back to `38604d84318dd4af1ab2d0adc26b9bb303bf382c`.
 - Only if you flashed in Phase 2: flash the previous firmware `.bin` back on
   the MCU(s) you updated. If you stayed in Phase 1, no firmware step is needed.
 - Restore `config/macros/sp_mmu.cfg` and `config/macros/sp_mmu/sp_mmu_code.cfg`

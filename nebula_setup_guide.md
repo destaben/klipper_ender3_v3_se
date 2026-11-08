@@ -330,7 +330,9 @@ touch /usr/data/printer_data/config/sp_mmu_data.cfg
 ls -la /usr/data/printer_data/config/sp_mmu_data.cfg
 ```
 
-Confirm `sp_mmu.cfg` references that exact path.
+Set `filename:` in `sp_mmu.cfg` to exactly this path. The tracked
+`config/macros/sp_mmu.cfg` uses `~/printer_data/sp_mmu_data.cfg`, so it must be
+changed on the Nebula.
 
 ---
 
