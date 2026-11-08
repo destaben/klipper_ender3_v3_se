@@ -169,6 +169,15 @@ def _printable(text: str) -> bool:
     return all(0x20 <= ord(ch) <= 0x7E for ch in text)
 
 
+def _comment_safe(text: str) -> bool:
+    """Text that can sit in a ';' comment line: any character except a control
+    character and the Unicode line separators (NEL, LS, PS), so it cannot start
+    a new line. Accents (a Spanish file name, a slicer comment) are fine; the
+    file is written as UTF-8."""
+    return all(ord(ch) >= 0x20 and ord(ch) != 0x7F and ch not in "\x85\u2028\u2029"
+               for ch in text)
+
+
 def _violation(line: str) -> Optional[str]:
     """Why a generated line is not allowed, or None."""
     tokens = _code_tokens(line)
@@ -205,7 +214,10 @@ def check_generated(lines: Iterable[str]) -> List[str]:
     gated = False
     text = "\n".join(lines)
     for n, line in enumerate(text.split("\n"), 1):
-        if not _printable(line):
+        # A pure comment line may hold accented text; every line that can hold a
+        # command stays printable ASCII.
+        ok = _comment_safe(line) if line.startswith(";") else _printable(line)
+        if not ok:
             problems.append("line %d: control or non-ASCII character in generated "
                             "output: %r" % (n, line))
             continue
@@ -255,8 +267,9 @@ def build(state: State, source_name: str, resume_line: int,
     the generated part is not allowed."""
     if "R17" in set(refusal_codes):
         raise ResumeRefused("R17: the tail contains a forbidden command")
-    if not _printable(source_name):
-        raise ResumeRefused("source file name is not printable ASCII: %r" % source_name)
+    if not _comment_safe(source_name):
+        raise ResumeRefused("source file name holds a control character or line "
+                            "separator: %r" % source_name)
     x, y, z = state.pos[0], state.pos[1], state.pos[2]
     px, py = park_xy
     label = "NOT VERIFIED, do not print without review"
@@ -267,8 +280,9 @@ def build(state: State, source_name: str, resume_line: int,
     for ln in header:
         if ln.strip() and not ln.startswith(";"):
             raise ResumeRefused("the copied header holds a command, not only comments")
-        if not _printable(ln):
-            raise ResumeRefused("the copied header holds a control or non-ASCII character")
+        if not _comment_safe(ln):
+            raise ResumeRefused("the copied header holds a control character or "
+                                "line separator")
     if total_layers is None:
         total_layers = total_layers_from(header)
     if remaining_fraction is not None and not (0.0 < remaining_fraction <= 1.0):

@@ -280,10 +280,23 @@ class Injection(unittest.TestCase):
 
     def test_hostile_source_name_refuses_the_build(self):
         for name in ["ps2.gcode\nG28 ; injected", "ps2.gcode\nG1 Z-50", "ps2.gcode\rG28",
-                     "ps2\nG28.gcode", "café.gcode", "tab\tname.gcode"]:
+                     "ps2\nG28.gcode", "tab\tname.gcode", "a\u2028G28.gcode",
+                     "a\x85G28.gcode"]:
             with self.subTest(name=repr(name)):
                 with self.assertRaises(rfile.ResumeRefused):
                     self.build(name)
+
+    def test_accented_source_name_and_header_build(self):
+        # A Spanish file name or slicer comment is not an injection risk: only
+        # control characters and Unicode line separators are.
+        text = self.build("Jarr\u00f3n+caf\u00e9.gcode",
+                          header_lines=[";model: Caf\u00e9 vase", ";FLAVOR:Marlin"])
+        self.assertIn("; source file: Jarr\u00f3n+caf\u00e9.gcode", text.split("\n"))
+        self.assertIn(";model: Caf\u00e9 vase", text.split("\n"))
+
+    def test_non_ascii_is_still_refused_outside_comment_lines(self):
+        self.assertTrue(rfile.check_generated(["G1 X1 ; ok", "M117 caf\u00e9"]))
+        self.assertEqual(rfile.check_generated(["; caf\u00e9"]), [])
 
     def test_normal_source_name_still_builds(self):
         text = self.build("ps2-slim-wall-mount_PLA_3h15m.gcode")

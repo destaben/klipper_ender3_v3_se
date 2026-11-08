@@ -284,8 +284,10 @@ def _check_ranges(p: dict) -> List[str]:
             continue
         v = val(v)
         if k == "minimum_cruise_ratio":
-            if not 0 <= v <= 1:
-                errs.append("motion.minimum_cruise_ratio must be within 0..1")
+            # Klipper itself requires 0 <= ratio < 1; 1.0 leaves no deceleration
+            # headroom and breaks the look-ahead model.
+            if not 0 <= v < 1:
+                errs.append("motion.minimum_cruise_ratio must be >= 0 and < 1")
         elif _is_num(v) and v <= 0:
             errs.append("motion.%s must be > 0" % k)
     for k in CLEARANCE_KEYS:

@@ -255,8 +255,8 @@ against an **allow-list** of exact command names and parameters
 listed, such as `G28`, `G29`, `G30`, `G32`, `HOME`, `START_PRINT`,
 `FORCE_MOVE`, `SET_KINEMATIC_POSITION` or `PROBE`, is refused.
 The check runs over the generated text split into lines, so a newline inside a
-value (such as a source name) cannot hide a command. Any control or non-ASCII
-character in the generated part is refused as well. Before the gate, the only Z
+value (such as a source name) cannot hide a command. Any control character, and any non-ASCII
+character outside a `;` comment line, in the generated part is refused as well. Before the gate, the only Z
 motion allowed is a relative lift up. A refused generated part is a hard
 refusal (R17) with exit 2 and no preview. The original file's lines after the
 resume point are copied as they are; R17 refuses the plan if they contain a
@@ -552,7 +552,9 @@ Open:
   tail only, and the gate is the runner's state machine.
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
-- **KI-16**: a non-ASCII source file name is refused through the R17 path.
+- **KI-16**: a source file name or copied header line with a control character or a
+  Unicode line separator is refused through the R17 path; accented text is kept
+  (comment lines only; every other generated line stays printable ASCII).
 - **KI-17**: see KI-08 (the deny-list also covers print-ending and pausing
   commands; `END_PRINT` is accepted only as the end of the file).
 - **KI-18**: `--preview --force-preview` may replace any regular file the user
@@ -564,8 +566,9 @@ Open:
   a state-and-tail file and runner-controlled motion.
 - **KI-20**: smaller gaps, all warnings or P2 items: `M84`/`M18`,
   `M290` is not on the tail deny-list (`BLTOUCH_DEBUG` and `SET_GCODE_OFFSET ... MOVE=1` are);
-  `--line` is not checked against the cut layer; a missing `size` or
-  `modified` in the history skips that comparison. `SDCARD_RESET_FILE`,
+  `--line` is not checked against the cut layer; a history job with
+  neither `size` nor `modified` is reported `NOT CHECKED` (exit 3); with only
+  one of them, that one is compared. `SDCARD_RESET_FILE`,
   `SDCARD_PRINT_FILE`, `M24` and `M32` are not on the tail deny-list either
   (a slicer does not emit them; see "Design notes").
 - **KI-21**: when the log has no Stats line after the shutdown, `P_end` is a
@@ -681,17 +684,15 @@ Choices behind items that the automated reviews raised repeatedly.
   make an unverified assumption block every rescue; the text tells the
   operator what to do and that exit 0 does not clear it. Raising it to a
   refusal is a design choice for the owner.
-- **Why the review workflow accepts the `Copilot` bot (`allowed_bots`).** It
-  only lets the action run when the Copilot cloud agent is the *actor* of an
-  event the job already admits: a `pull_request` event with a same-repo head
-  (the Copilot cloud agent pushes to same-repo branches) or an `@claude
-  review` comment by an OWNER, MEMBER or COLLABORATOR on a same-repo PR. There
-  is no `pull_request_review` trigger, so a Copilot review does not start it.
-  The job has `contents: read`, and the agent may only run `gh pr diff`,
-  `gh pr view` and `Read` (secret paths denied). The residual risk is that
-  Copilot-authored same-repo heads are now reviewed with the head's
-  `.claude/` settings in the checkout, exactly like any collaborator's branch;
-  anyone who can make Copilot push there already has write access.
+- **Why the review workflow does not accept the `Copilot` bot.** The Copilot
+  cloud agent once added `allowed_bots: Copilot` to
+  `.github/workflows/claude-pr-review.yml` so its own pushes would be reviewed.
+  The job holds `CLAUDE_CODE_OAUTH_TOKEN` and the checkout of a same-repo head
+  supplies `.claude/` settings (hooks), so a head pushed by an agent whose
+  work can be steered by text (an issue, a comment) could run a hook with the
+  token. The line was removed. Pull requests opened by Copilot are reviewed on
+  request: an OWNER, MEMBER or COLLABORATOR comments `@claude review`, and that
+  path never checks out the PR head.
 - **Why zero-padded command numbers (`M0112`, `G028`) are refused.** Klipper
   looks the command up as the literal text (`klippy/gcode.py`), so `M0112` is
   an unknown command there and would not stop anything. The scanner
@@ -703,6 +704,26 @@ Choices behind items that the automated reviews raised repeatedly.
   has no hard links (a FAT card) it falls back to the pre-run check alone.
   The temp file is created with mode 0666, so the kernel applies the umask and
   the process-wide umask is never changed.
+- **Why `MINIMUM_CRUISE_RATIO=1` and `ACCEL_TO_DECEL=0` are not modelled.**
+  Klipper requires `0 <= MINIMUM_CRUISE_RATIO < 1` and `ACCEL_TO_DECEL > 0`
+  (`klippy/extras/gcode_move.py` and `klippy/toolhead.py`), so such a line
+  errors there and changes nothing. The scanner ignores them and profile
+  validation rejects `motion.minimum_cruise_ratio >= 1`; with no deceleration
+  headroom the look-ahead port would have no junction to time.
+- **Which built-in commands the deny-list names.** Config macros are derived
+  from `config/`; the Klipper built-ins that probe, home or sweep the head are
+  listed by hand (`G28`, `G29`, `G30`, `G32`, `PROBE*`, `BED_MESH_CALIBRATE`,
+  `BED_TILT_CALIBRATE`, `Z_ENDSTOP_CALIBRATE`, `AXIS_TWIST_COMPENSATION_CALIBRATE`,
+  `DELTA_CALIBRATE`, `DELTA_ANALYZE`, `TEST_RESONANCES`, `SHAPER_CALIBRATE`,
+  `SCREWS_TILT_CALCULATE`, `BED_SCREWS_ADJUST`, `MANUAL_PROBE`, `TESTZ`,
+  `MANUAL_STEPPER`, `STEPPER_BUZZ`, `FORCE_MOVE`, `SET_KINEMATIC_POSITION`).
+  A built-in added by a future Klipper is not caught until it is listed (KI-08).
+- **Why `CLAUDE.md` has the print-rescue test section it has.** Its
+  "Print-rescue unit tests" entry (line 78) mirrors the other test sections: the
+  command `python3 -m unittest discover -s print-rescue -v`, the workflow that
+  runs it, and the standard-library-only note. The refusal codes, procedure and
+  design notes live in `docs/print-rescue.md` and are deliberately not
+  repeated there.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

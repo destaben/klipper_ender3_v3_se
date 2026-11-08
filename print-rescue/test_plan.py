@@ -297,6 +297,32 @@ class MeasuredProfile(unittest.TestCase):
             code, out, _ = run("--history", h, profile=fx.measured_profile())
         self.assertIn("R07", codes(out))
 
+    def test_history_job_without_size_and_modified_is_not_checked(self):
+        # Matching the name alone is not an identity check: say so, exit 3.
+        with tempfile.TemporaryDirectory() as d:
+            h = os.path.join(d, "h.json")
+            with open(fx.HISTORY) as fh:
+                job = json.load(fh)
+            for key in ("size", "modified"):
+                job["job"]["metadata"].pop(key, None)
+            with open(h, "w") as fh:
+                json.dump(job, fh)
+            r = run_full("--history", h, profile=resumable_profile())
+        self.assertIn("NOT CHECKED: R07 history identity (the job has no size or modified)", r.out)
+        self.assertEqual(r.code, 3)
+
+    def test_history_job_with_only_a_size_is_still_checked(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = os.path.join(d, "h.json")
+            with open(fx.HISTORY) as fh:
+                job = json.load(fh)
+            job["job"]["metadata"].pop("modified", None)
+            with open(h, "w") as fh:
+                json.dump(job, fh)
+            r = run_full("--history", h, profile=resumable_profile())
+        self.assertNotIn("NOT CHECKED: R07 history identity", r.out)
+        self.assertEqual(r.code, 0, r.out)
+
     def test_r09_non_comm_shutdown(self):
         log = klippy_log().replace(
             "Transition to shutdown state: Lost communication with MCU 'mcu'",
@@ -406,6 +432,12 @@ class Preview(unittest.TestCase):
         self.assertEqual(r.code, 1)
         self.assertIn("--force-preview", r.err)
         self.assertEqual(r.preview, "OLD")
+
+    def test_accented_file_name_gives_a_preview(self):
+        r = run_full("--preview", "{tmp}/preview.gcode", gmap_source="Jarr\u00f3n.gcode",
+                     profile=resumable_profile())
+        self.assertEqual(r.code, 0, r.out)
+        self.assertIn("; source file: Jarr\u00f3n.gcode", r.preview)
 
     def test_force_preview_overwrites(self):
         r = run_full("--preview", "{tmp}/preview.gcode", "--force-preview",

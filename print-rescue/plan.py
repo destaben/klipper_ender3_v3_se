@@ -378,6 +378,10 @@ def _run(args, out) -> int:
             if meta.get("modified") is not None and mtime is not None and \
                     (not _is_number(meta["modified"]) or abs(meta["modified"] - mtime) > 1.0):
                 mtime_differs = True
+            if meta.get("size") is None and meta.get("modified") is None:
+                # The name alone is not an identity check; do not pass silently.
+                item = "R07 history identity (the job has no size or modified)"
+                not_checked.append(item)
     if not args.history:
         not_checked.append("R07 history identity (no --history)")
     if not args.queue:

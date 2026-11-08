@@ -95,6 +95,14 @@ FORBIDDEN_TAIL = {
     "SET_KINEMATIC_POSITION": "declares a position without a measurement",
     "BLTOUCH_DEBUG": "deploys or stows the probe pin",
     "TESTZ": "moves Z for manual probing",
+    # Klipper built-ins that probe, home or sweep the head (not config macros).
+    "BED_TILT_CALIBRATE": "probes (bed tilt)",
+    "Z_ENDSTOP_CALIBRATE": "manual probing of the Z endstop",
+    "TEST_RESONANCES": "sweeps the head (resonance test)",
+    "SHAPER_CALIBRATE": "sweeps the head (resonance test)",
+    "AXIS_TWIST_COMPENSATION_CALIBRATE": "probes (axis twist)",
+    "DELTA_CALIBRATE": "probes (delta calibration)",
+    "DELTA_ANALYZE": "probes (delta analysis)",
     "BED_SCREWS_ADJUST": "probes and moves to the bed screws",
     # Not a command name: SET_GCODE_OFFSET with MOVE=1 is reported under this key.
     "SET_GCODE_OFFSET_MOVE": "SET_GCODE_OFFSET with MOVE=1 moves the toolhead",
@@ -555,12 +563,17 @@ class Scanner:
             scv = _fparam(params, "SQUARE_CORNER_VELOCITY")
             if scv is not None and scv >= 0:
                 st.square_corner_velocity = scv
+            # Klipper rejects MINIMUM_CRUISE_RATIO outside 0 <= r < 1 and
+            # ACCEL_TO_DECEL <= 0 (the line errors and changes nothing), so such a
+            # value must not reach the timing model: 1.0 would leave no
+            # deceleration headroom and break the look-ahead.
             mcr = _fparam(params, "MINIMUM_CRUISE_RATIO")
             a2d = _fparam(params, "ACCEL_TO_DECEL")
             if mcr is not None:
-                st.minimum_cruise_ratio = min(max(mcr, 0.0), 1.0)
-                st.mcr_set = True
-            elif a2d is not None and a2d >= 0:
+                if 0.0 <= mcr < 1.0:
+                    st.minimum_cruise_ratio = mcr
+                    st.mcr_set = True
+            elif a2d is not None and a2d > 0:
                 # Recent Klipper maps the deprecated ACCEL_TO_DECEL to a
                 # minimum_cruise_ratio relative to the current accel.
                 st.minimum_cruise_ratio = min(max(1.0 - min(1.0, a2d / st.accel), 0.0), 1.0)

@@ -205,6 +205,7 @@ class Validation(unittest.TestCase):
     CASES = {
         "version as string": lambda p: p.__setitem__("version", "1"),
         "version as bool": lambda p: p.__setitem__("version", True),
+        "cruise ratio one": lambda p: p["motion"].__setitem__("minimum_cruise_ratio", 1.0),
         "margin_s zero": lambda p: p["stop_estimation"].__setitem__("margin_s", 0),
         "margin_s negative": lambda p: p["stop_estimation"].__setitem__("margin_s", -0.5),
         "margin_s nan": lambda p: p["stop_estimation"].__setitem__("margin_s", float("nan")),
