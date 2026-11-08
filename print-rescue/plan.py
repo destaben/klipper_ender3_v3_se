@@ -771,12 +771,21 @@ def _run(args, out) -> int:
     return _finish(findings, say, choice, not_checked)
 
 
+def _note_stale(args, say):
+    """A refused run leaves an existing --force-preview target alone (it may be
+    the operator's file), but says it is from an earlier run."""
+    if args.preview and os.path.lexists(args.preview):
+        say("stale preview: %s already existed and was NOT updated by this run; "
+            "it belongs to an earlier plan, do not use it" % os.path.basename(args.preview))
+
+
 def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings, say):
     """Write the preview only when nothing is refused (N4). Never overwrites
     an existing file unless --force-preview was given (checked up front)."""
     if rf.refused(findings) or state is None or choice is None or \
             choice.line is None or choice.refusal:
         say("preview not written: the plan is refused, so there is no resume to preview")
+        _note_stale(args, say)
         return
     gstate = ev.gcode_state
     offset = gstate.get("homing_position")
@@ -806,6 +815,7 @@ def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings
         # R17 is the existing forbidden-command code; the detail says what failed.
         findings.append(rf.Finding("R17", "resume preview refused: %s" % e))
         say("preview not written: %s" % e)
+        _note_stale(args, say)
         return
     try:
         _write_preview(args.preview, text, replace=bool(args.force_preview))

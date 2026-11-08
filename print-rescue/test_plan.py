@@ -581,6 +581,24 @@ class CfgMacros(unittest.TestCase):
         self.assertEqual(missing, [])
 
 
+class StalePreview(unittest.TestCase):
+    def test_a_refused_run_flags_the_preview_left_by_an_earlier_run(self):
+        p = fx.measured_profile()
+        p["envelope"]["z_max"]["value"] = 30            # R01: refused
+        r = run_full("--preview", "{tmp}/preview.gcode", "--force-preview",
+                     profile=p, preexisting_preview="OLD")
+        self.assertEqual(r.code, 2)
+        self.assertEqual(r.preview, "OLD")              # not deleted
+        self.assertIn("stale preview", r.out)
+        self.assertIn("preview.gcode", r.out)
+
+    def test_no_stale_note_when_there_was_no_earlier_preview(self):
+        p = fx.measured_profile()
+        p["envelope"]["z_max"]["value"] = 30
+        r = run_full("--preview", "{tmp}/preview.gcode", profile=p)
+        self.assertNotIn("stale preview", r.out)
+
+
 class WritePreview(unittest.TestCase):
     def test_without_force_a_file_created_after_the_check_is_not_replaced(self):
         # The pre-run check saw no file; another process creates one before the

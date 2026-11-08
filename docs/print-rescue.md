@@ -52,8 +52,13 @@ Rules that apply to every step:
 - **Abort = emergency stop through Moonraker**:
   `curl -s -X POST http://localhost/printer/emergency_stop` (M112). Never a
   macro abort: `CANCEL_PRINT` and friends run end-of-print G-code that moves.
-  **TO VERIFY:** what state Klipper is left in after M112, and whether
-  `FIRMWARE_RESTART` is then the only way out.
+  Treat the printer as shut down afterwards: in the live run it needed the
+  Moonraker power-device cycle (off at least 15-20 s, then on) and
+  `FIRMWARE_RESTART` alone did not recover it (see the closed list under "To
+  verify"). Save the evidence (step 1) before any restart. **TO VERIFY:** the
+  exact MCU state after M112, and whether a restart without the power cycle
+  can ever be enough. An emergency stop is still the right abort: the
+  alternative moves the head.
 - **Confirm before every move.** One command at a time, read the result.
 - **Short moves near the part**: at most 5 mm per command, each followed by
   `M400`, then look.
@@ -776,6 +781,17 @@ Choices behind items that the automated reviews raised repeatedly.
   offsets therefore use the next line's exact offset as the end of a line. A
   logged offset that falls inside a line holding invalid bytes may compare
   imprecisely, which can only cause a false refusal (R07), never a false pass.
+- **A refused run and an existing preview.** With `--force-preview` a refused
+  run leaves the existing file alone (it may be the operator's) and prints
+  `stale preview: ... NOT updated by this run`. Without the flag, an existing
+  file stops the run before anything else (exit 1).
+- **Why the `--force-preview` replace and the FAT fallback are not made
+  race-proof.** `--force-preview` means "replace whatever is there", so a file
+  created between the check and the write cannot be overwritten against the
+  operator's intent. The no-flag path is hard-linked and cannot replace. Only a
+  file system without hard links (a FAT card) falls back to check-then-replace;
+  exploiting that needs a local actor who can already write to the output
+  directory.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.
