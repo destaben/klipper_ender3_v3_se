@@ -58,6 +58,23 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
+      # The @claude review comment path also fires for fork PRs, and the agent
+      # then reads attacker-controlled diff text while the job holds the OAuth
+      # token. Fork heads are therefore refused on that path (review them by
+      # pushing a same-repo branch). The pull_request path is already limited to
+      # same-repo heads by the job `if:`.
+      - name: Refuse fork PRs on the comment path
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          head_repo=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name // "deleted-fork"')
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            echo "Refusing to review a PR whose head is ${head_repo}: fork code never runs with this job's secrets."
+            exit 1
+          fi
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           # Never check out PR code on the issue_comment path: that path also
@@ -82,7 +99,7 @@ jobs:
           claude_args: >-
             --model claude-haiku-5-5 --effort low
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"
-            --disallowedTools "Read(.git/**)"
+            --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**)"
           prompt: |
             Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
             of this repository (HEAD is detached, so use this number with
@@ -106,9 +123,9 @@ jobs:
       # The agent has no write tools and no `gh pr comment`: its final message
       # is the review and this step posts it. That removes the "run gh with
       # arbitrary content" path, but not influence: an injected diff can still
-      # make the review say anything (including "no findings"), and the
-      # `@claude review` comment path also runs on fork PRs when a trusted user
-      # asks for it. Treat the review as advisory. A workflow_dispatch run has
+      # make the review say anything (including "no findings"). Fork PRs are
+      # refused on the comment path (first step), and the posted text is scrubbed of
+      # this job's tokens. Treat the review as advisory. A workflow_dispatch run has
       # no PR number, so there is nothing to post to and it is skipped.
       - name: Post the review
         if: ${{ !cancelled() && (github.event.pull_request.number || github.event.issue.number) }}
@@ -116,6 +133,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+          # Only used to scrub the posted text, never printed.
+          REDACT_1: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REDACT_2: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -f "$EXECUTION_FILE" ]; then
             jq -r '
@@ -124,6 +144,17 @@ jobs:
             ' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
           fi
           if [ -s "$RUNNER_TEMP/review.md" ]; then
+            # Defence in depth: a prompt-injected review must not publish the job's tokens.
+            python3 - "$RUNNER_TEMP/review.md" <<'PY'
+          import os, sys
+          p = sys.argv[1]
+          t = open(p, encoding="utf-8").read()
+          for k in ("REDACT_1", "REDACT_2"):
+              v = os.environ.get(k, "")
+              if len(v) >= 8:
+                  t = t.replace(v, "[redacted]")
+          open(p, "w", encoding="utf-8").write(t)
+          PY
             gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
           else
             echo "no final review message found; nothing to post"

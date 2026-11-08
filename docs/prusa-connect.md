@@ -100,10 +100,10 @@ the resend showed ERROR in Connect briefly, then the state recovered. Whether a
 resend can queue the same job a second time has not been tested.
 
 `START_PRINT` is not sent by Connect itself: the sliced file's own start G-code
-calls it with `BED` and `HEATER`. The macro refuses an empty or missing `BED` or
-`HEATER` before heating anything, so a file whose start G-code leaves either one
-out (for example an unexpanded slicer placeholder) aborts the print with an error
-instead of heating to 0 °C.
+calls it with `BED` and `HEATER`. The macro refuses a missing, empty or non-numeric
+`BED` or `HEATER` (for example an unexpanded slicer placeholder such as
+`{first_layer_bed_temperature}`) before heating anything, so the print aborts with
+an error instead of heating to 0 °C. A negative value is refused too; `0` is accepted.
 
 ## Limitations
 
