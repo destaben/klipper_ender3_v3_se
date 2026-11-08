@@ -199,7 +199,7 @@ Two anchors tie `print_time` to the file:
 
 | Anchor | Window in planned time | Notes |
 |--------|------------------------|-------|
-| `sd` (used when present) | `[t(S) - L(S) - B_good, t(S) + d(S) + 1 s]`, S = line at `sd_good` | `L` = lookahead bound: moves dispatched before S but still in Klipper's lookahead queue (up to `LOOKAHEAD_FLUSH_TIME` = 0.25 s of minimum move time, plus the move a lazy flush keeps back). `d(S)`: `print_time` may already include S itself. |
+| `sd` (used when present) | `[t(S) - L(S) - B_good, t(S) + d(S) + 1 s]`, S = line at `sd_good` | `L` = lookahead bound: moves dispatched before S but still in Klipper's lookahead queue (up to 0.25 s of minimum move time, the larger bound; the fork's own `LOOKAHEAD_FLUSH_TIME` is 0.15 s, plus the move a lazy flush keeps back). `d(S)`: `print_time` may already include S itself. |
 | `end` (the plan's formula; fallback and cross-check) | walk back from the end of the last dispatched line by `[P_end - min(P_end, P_good + 1), P_end - (P_good - B_good)]`, plus the lookahead bound at the end on the early side | Moves still in the lookahead queue at shutdown were never counted in `P_end`. When the last line is a long move this bound is large. |
 
 With both anchors the **stop window is their conservative union**: the
@@ -233,7 +233,9 @@ Resume policy (council):
 
 ### Planner fidelity
 
-`planner.py` reproduces Klipper's `Move`/`LookAheadQueue.flush` arithmetic:
+`planner.py` reproduces the `Move`/`LookAheadQueue.flush` arithmetic of the pinned fork
+(`7e61c1cc`, `Dockerfile-klipper`; an uncapped peak cruise speed in a backward pass,
+then a forward pass; a regression test fixes a mixed-speed chain against it):
 cruise speed from F x M220 and `max_velocity`, Z and extrude-only limits,
 junction speed from `square_corner_velocity` (junction deviation, centripetal
 half-move limit, extruder `instant_corner_velocity`), `minimum_cruise_ratio`
@@ -330,7 +332,7 @@ Each finding prints as one ASCII line, safe inside
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
-| R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
+| R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z in the tail or anywhere before the resume line; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
 | R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
 | R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
@@ -790,6 +792,11 @@ Choices behind items that the automated reviews raised repeatedly.
   file system without hard links (a FAT card) falls back to check-then-replace;
   exploiting that needs a local actor who can already write to the output
   directory.
+- **Pre-resume XYZ `G92` and log sessions.** A `G92` on X, Y or Z before the
+  resume line shifts the coordinate origin and the preview does not restore it:
+  R17 refuses. Stats before a Klippy restart never supply the link-freeze sample
+  of a later shutdown, and only the first `Exiting SD card print` after a
+  shutdown (before the next restart) is its exit position.
 - **Flow factor in the preview (M221).** Klipper scales every E value, `G92 E`
   included, by M221. The generated retract and prime therefore run at
   `M221 S100`, and the job's factor is restored right before the copied tail,

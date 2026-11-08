@@ -169,6 +169,14 @@ class TemplateProfile(unittest.TestCase):
         self.assertIn("preview not written", self.out)
 
 
+class OriginShift(unittest.TestCase):
+    def test_xyz_g92_before_the_resume_line_is_found(self):
+        r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, "G92 X0"), (3, 21, "G1 X10 E1")],
+                       fx.limits())
+        self.assertEqual(plan.origin_shift_before(r.events, 3), (2, "G92 X"))
+        self.assertIsNone(plan.origin_shift_before(r.events, 2))
+
+
 class MeasuredProfile(unittest.TestCase):
     def test_resumable(self):
         code, out, _ = run(profile=resumable_profile())

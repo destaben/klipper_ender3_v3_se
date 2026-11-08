@@ -623,6 +623,10 @@ def _run(args, out) -> int:
                     "retracted length is not modelled, so the prime amount is unreliable"
                     % (ev_.detail, ev_.line))
                 break
+        shift = origin_shift_before(res.events, choice.line)
+        if shift:
+            add("R17", "line %d: %s before the resume line shifts the coordinate "
+                "origin, which the preview does not restore" % shift)
         tail = gs.tail_findings(res, choice.line, state.tool)
         for ln, cmd in tail["forbidden"]:
             add("R17", "line %d: %s (%s)" % (ln, cmd, gs.FORBIDDEN_TAIL.get(cmd)
@@ -769,6 +773,14 @@ def _run(args, out) -> int:
         _preview(args, p, th, lim, ev, state, choice, records, source_name,
                  findings, say)
     return _finish(findings, say, choice, not_checked)
+
+
+def origin_shift_before(events, resume_line):
+    """(line, what) of the first G92 on X/Y/Z before the resume line, or None."""
+    for ev_ in events:
+        if ev_.kind == "g92_xyz" and ev_.line < resume_line:
+            return ev_.line, ev_.detail
+    return None
 
 
 def _note_stale(args, say):

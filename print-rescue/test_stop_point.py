@@ -261,6 +261,22 @@ class SyntheticEvidence(unittest.TestCase):
         self.assertEqual(ev.gcode_state, {})
         self.assertEqual(ev.exit_position, 100)
 
+    def test_stats_before_a_restart_do_not_supply_the_good_sample(self):
+        old = synthetic_log(self.ROWS)[:-2]          # session 1: freeze, no shutdown
+        rows2 = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 10, 10, 100, 0)]
+        ev = sp.analyze(old + ["INFO:root:Starting Klippy..."] + synthetic_log(rows2))
+        self.assertIsNone(ev.good)
+        self.assertTrue(any("never advanced" in n for n in ev.notes))
+
+    def test_a_later_normal_exit_does_not_replace_the_shutdown_exit(self):
+        log = synthetic_log(self.ROWS) + ["INFO:root:Exiting SD card print (position 999)"]
+        self.assertEqual(sp.analyze(log).exit_position, 100)
+
+    def test_dump_after_a_restart_is_ignored(self):
+        log = synthetic_log(self.ROWS)[:-1] + ["INFO:root:Starting Klippy...",
+                                               "INFO:root:Exiting SD card print (position 999)"]
+        self.assertIsNone(sp.analyze(log).exit_position)
+
     def test_no_freeze_visible(self):
         rows = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0)]
         ev = sp.analyze(synthetic_log(rows))

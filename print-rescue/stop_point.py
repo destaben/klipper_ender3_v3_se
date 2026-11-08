@@ -57,7 +57,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 FILAMENT_DIAMETER = 1.75       # mm, for the extra-material estimate
-LOOKAHEAD_FLUSH_TIME = 0.250   # klippy/toolhead.py LOOKAHEAD_FLUSH_TIME
+# The pinned fork's toolhead.py uses 0.150 s; 0.250 s (upstream's older value)
+# is kept as the larger, more conservative bound on what the lookahead holds.
+LOOKAHEAD_FLUSH_TIME = 0.250
 ANCHOR_AGREEMENT_S = 1.0       # anchors further apart than this -> R10
 
 _TS = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z?)\s")
@@ -68,6 +70,9 @@ _SDCARD = re.compile(r"Virtual sdcard \((\d+)\)")
 _SDCARD_TEXT = re.compile(r"(?:Virtual sdcard|Upcoming) \((\d+)\): ('.*'|\".*\")\s*$")
 _UPCOMING = re.compile(r"Upcoming \((\d+)\)")
 _GSTATE = re.compile(r"gcode state: (.*)$")
+# A new Klippy session starts here: its Stats counters are not comparable with
+# the previous session's.
+_START = re.compile(r"Starting Klippy\.\.\.|Start printer at ")
 _BUSY = re.compile(r"Reactor \d+(?:\.\d+)? busy for")
 COMM_LOSS = "Lost communication with MCU"
 
@@ -91,6 +96,7 @@ class Evidence:
     shutdown_timestamp: Optional[str] = None
     exit_position: Optional[int] = None
     sdcard_position: Optional[int] = None    # "Upcoming (N)": file position
+    session_start: int = 0                   # first log line of the shutdown's session
     # (byte offset, text) pairs the log printed for "Virtual sdcard (N)" and
     # "Upcoming (N)": the file's own text at those offsets (content check).
     sdcard_texts: List[tuple] = field(default_factory=list)
@@ -174,14 +180,25 @@ def _parse_gcode_state(text: str) -> Dict[str, object]:
 def analyze(lines: List[str]) -> Evidence:
     """Parse a Klippy log (docker stdout with timestamps or plain klippy.log)."""
     ev = Evidence()
+    session_start = 0      # first line of the session holding the shutdown
+    session_end = None     # first line of the next session, once there is one
+    last_start = 0
+    closed = False         # the selected shutdown's dump ended (exit or restart)
     for i, line in enumerate(lines):
         if "Stats " in line:
             s = parse_stats(line, i)
             if s is not None:
                 ev.samples.append(s)
                 continue
+        if _START.search(line):
+            last_start = i
+            if ev.shutdown_index is not None and session_end is None:
+                session_end = i
+                closed = True
+            continue
         m = _SHUTDOWN.search(line)
         if m:
+            session_start, session_end, closed = last_start, None, False
             ev.shutdown_reason = m.group(1).strip()
             ev.shutdown_index = i
             ts = _TS.match(line)
@@ -193,9 +210,14 @@ def analyze(lines: List[str]) -> Evidence:
             ev.sdcard_texts = []
             ev.gcode_state = {}
             continue
+        if closed:
+            continue
         m = _EXIT.search(line)
         if m:
             ev.exit_position = int(m.group(1))
+            # Only the first exit after the shutdown belongs to it; a later
+            # normal end of a print must not replace it.
+            closed = ev.shutdown_index is not None
             continue
         m = _UPCOMING.search(line)
         if m:
@@ -215,8 +237,10 @@ def analyze(lines: List[str]) -> Evidence:
         ev.notes.append("no shutdown transition in the log")
         return ev
     sd_idx = ev.shutdown_index
-    before = [s for s in ev.samples if s.index < sd_idx]
-    after = [s for s in ev.samples if s.index > sd_idx]
+    ev.session_start = session_start
+    before = [s for s in ev.samples if session_start <= s.index < sd_idx]
+    after = [s for s in ev.samples if s.index > sd_idx and
+             (session_end is None or s.index < session_end)]
     lo = max(0, sd_idx - 400)
     ev.reactor_busy_before = sum(1 for ln in lines[lo:sd_idx] if _BUSY.search(ln))
     if after and after[0].print_time is not None:
@@ -519,7 +543,8 @@ def planner_agreement(ev: Evidence, timed, line_of_byte, samples: int = 5):
     timing there; returns (spread_s, [(sd_line, c), ...]) or None."""
     if ev.good is None:
         return None
-    goods = [s for s in ev.samples if s.index <= ev.good.index and
+    goods = [s for s in ev.samples
+             if ev.session_start <= s.index <= ev.good.index and
              s.sd_pos is not None and s.print_time is not None]
     pts = []
     for s in goods[-samples:]:
