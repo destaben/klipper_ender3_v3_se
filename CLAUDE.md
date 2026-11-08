@@ -57,12 +57,12 @@ rules:
     allowed-values: ['true', 'false', 'on', 'off']" $(git ls-files '*.yml' '*.yaml')
 ```
 
-### Virtual printer boot check (if you touched `config/`, `sim/` or `mmu-fallback/`)
+### Virtual printer boot check (if you touched `config/`, `sim/`, `mmu-fallback/` or the sim-boot workflow)
 `.github/workflows/sim-boot.yml` boots `config/` in a virtual printer and
 fails if Klippy does not reach `ready`. Run the same check locally:
 ```bash
 docker build -f sim/Dockerfile-sim -t klipper-sim . && \
-docker run --rm -v "$PWD/config:/printer-config:ro" klipper-sim
+docker run --rm -v "$PWD/config:/printer-config:ro" -e SIM_READY_TIMEOUT=180 klipper-sim
 ```
 It does not cover what the sim skips, which the run prints as `sim: not
 loaded, ...` (currently two MCU temperature sensors). Heating and motion are
@@ -70,7 +70,7 @@ not simulated. The run also executes `sim/smoke.py`, which checks that the
 virtual-MMU guards refuse lane changes.
 
 ### Watcher unit tests (if you touched `mmu-fallback/`)
-Standard library only, no Docker needed:
+Runs `mmu-fallback/test_mmu_link.py` (also run by sim-boot in CI). Standard library only, no Docker needed:
 ```bash
 python3 -m unittest discover -s mmu-fallback -v
 ```
@@ -80,6 +80,11 @@ Runs `print-rescue/test_*.py` (also run by `.github/workflows/print-rescue-test.
 ```bash
 python3 -m unittest discover -s print-rescue -v
 ```
+
+### Klipper Connect patch tests (if you touched `patches/klipper-connect/` or `Dockerfile-klipper-connect`)
+`patches/klipper-connect/test_queue_start.py` covers the local patch and runs in
+`.github/workflows/klipper-connect-test.yml`. The build and run commands are in `docs/prusa-connect.md`, "Upgrading the
+pinned commit", step 4.
 
 If any of these fail, fix the issue — even in a file your change didn't
 touch — before pushing.

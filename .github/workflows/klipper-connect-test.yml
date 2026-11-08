@@ -1,0 +1,33 @@
+name: Klipper Connect patch tests
+
+"on":
+  push:
+    branches: [main]
+    paths: ['patches/klipper-connect/**', 'Dockerfile-klipper-connect', '.github/workflows/klipper-connect-test.yml']
+  pull_request:
+    branches: [main]
+    paths: ['patches/klipper-connect/**', 'Dockerfile-klipper-connect', '.github/workflows/klipper-connect-test.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  patch-tests:
+    name: Local patch applies and its tests pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      # The build applies the patch with `patch -F0`, so it also fails if the
+      # pinned upstream commit no longer matches the patch context.
+      - name: Build the klipper-connect image
+        run: docker build -f Dockerfile-klipper-connect -t klipper-connect-test .
+
+      - name: Run the patch tests in the image
+        run: |
+          docker run --rm --entrypoint python -v "$PWD/patches/klipper-connect:/t:ro" \
+            -e PYTHONPATH=/t -w /t klipper-connect-test -m unittest test_queue_start -v

@@ -15,18 +15,17 @@ Help with all tasks related to Klipper and Moonraker configuration files in `con
 ## Key Rules
 
 1. **Never edit the `#*# <--- SAVE_CONFIG --->` block** in `printer.cfg`. Klipper manages it automatically.
-2. When adding a new macro file, add `[include macros/<filename>.cfg]` in `printer.cfg`.
-3. When adding a new helper file, add `[include helpers/<filename>.cfg]` in `printer.cfg`.
-4. G-code macro parameters use `params.<PARAM>|default(...)|type` Jinja2 filters.
-5. `RESPOND MSG="..."` is used for user-visible messages in macros (the `[respond]` section is already enabled).
-6. There is no on-printer display support in the current Klipper fork (`0xD34D/klipper_ender3_v3_se`) — do not add an `[e3v3se_display]` section or similar; that extra does not exist in this fork and will fail with "Unknown config section" at startup.
-7. The accelerometer (`lis2dw.cfg`) is disabled by default — only enable it if the user explicitly asks.
+2. `printer.cfg` globs `macros/*.cfg` and `helpers/*.cfg`, so a new top-level file there loads without an include. Files in a subdirectory (such as `macros/sp_mmu/`) are included explicitly by their parent.
+3. G-code macro parameters use `params.<PARAM>|default(...)|type` Jinja2 filters.
+4. `RESPOND MSG="..."` is used for user-visible messages in macros (the `[respond]` section is already enabled).
+5. There is no on-printer display support in the current Klipper fork (`0xD34D/klipper_ender3_v3_se`) — do not add an `[e3v3se_display]` section or similar; that extra does not exist in this fork and will fail with "Unknown config section" at startup.
+6. The accelerometer (`lis2dw.cfg`) is disabled by default — only enable it if the user explicitly asks.
 
 ## Calibration Values (do not change unless recalibrating)
 
 | Parameter | Value |
 |---|---|
-| BLTouch Z offset | 3.305 |
+| BLTouch Z offset | 3.035 |
 | Input shaper X | MZV @ 49.6 Hz |
 | Input shaper Y | MZV @ 38.4 Hz |
 | Extruder PID | kp=20.070 ki=2.193 kd=45.909 |

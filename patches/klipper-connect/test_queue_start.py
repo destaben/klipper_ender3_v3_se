@@ -87,6 +87,13 @@ class OffStateTest(unittest.TestCase):
         self.assertEqual(self.make("shutdown", "on")._off_state(State.ERROR),
                          State.ERROR)
 
+    def test_error_stays_error_when_plug_is_on_even_if_connect_marked_ready(self):
+        # The power check comes before the READY rule: a faulty printer that is
+        # on must not be reported READY, or Easy Print would send it a file.
+        self.assertEqual(
+            self.make("shutdown", "on", ready=True)._off_state(State.ERROR),
+            State.ERROR)
+
     def test_other_states_are_untouched(self):
         br = self.make("error", "off")
         for state in (State.BUSY, State.READY, State.PRINTING, State.IDLE):

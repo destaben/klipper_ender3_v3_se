@@ -29,8 +29,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends git patch build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/amd989/klipper-connect.git /src/klipper-connect && \
-    git -C /src/klipper-connect checkout "$KLIPPER_CONNECT_COMMIT" && \
+RUN git init -q /src/klipper-connect && \
+    git -C /src/klipper-connect fetch -q --depth 1 https://github.com/amd989/klipper-connect.git "$KLIPPER_CONNECT_COMMIT" && \
+    git -C /src/klipper-connect checkout -q FETCH_HEAD && \
     rm -rf /src/klipper-connect/.git
 
 # Local patch on top of the pinned upstream commit: with the printer powered off,

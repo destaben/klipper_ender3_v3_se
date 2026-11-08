@@ -7,13 +7,12 @@
 # https://code.claude.com/docs/en/github-actions. It is tied to the account that
 # ran `claude setup-token`; fine here since this is a personal repo. There is
 # deliberately no API-key fallback: when the quota runs out, runs fail and post
-# nothing — see docs/decisions/0002-cost-and-quota.md.
+# nothing.
 #
 # Runs on every same-repo, non-draft PR (opened/synchronize/reopened/
 # ready_for_review), not just on an
-# `@claude review` comment: see docs/decisions/0002-cost-and-quota.md,
-# which relaxes the old comment-only trigger now that the review runs on
-# Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
+# `@claude review` comment: the old comment-only trigger was relaxed now that
+# the review runs on Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
 # acceptable against the shared subscription quota. The comment and manual
 # triggers stay as a fallback. To bound that draw, draft PRs are skipped until
 # marked ready, and a newer run on the same PR cancels the one in progress, so
@@ -59,29 +58,62 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # The @claude review comment path also fires for fork PRs, and the agent
+      # then reads attacker-controlled diff text while the job holds the OAuth
+      # token. Fork heads are therefore refused on that path (review them by
+      # pushing a same-repo branch). The pull_request path is already limited to
+      # same-repo heads by the job `if:`.
+      - name: Refuse fork PRs on the comment path
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          head_repo=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name // "deleted-fork"')
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            echo "Refusing to review a PR whose head is ${head_repo}: fork code never runs with this job's secrets."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
+          # Never check out PR code on the issue_comment path: that path also
+          # runs for fork PRs, and Claude Code loads project settings (hooks)
+          # from the checkout while the job holds CLAUDE_CODE_OAUTH_TOKEN. The
+          # comment path therefore reviews from the default branch's checkout
+          # and reads the PR only through `gh pr diff`/`gh pr view`. The
+          # pull_request path is restricted to same-repo heads by the job `if:`,
+          # so its default merge-ref checkout is trusted code.
           fetch-depth: 0
           persist-credentials: false
 
       - name: Run bug-hunter and documenter review
         id: review
-        uses: anthropics/claude-code-action@v1
+        # A manual workflow_dispatch run has no PR to review: skip the agent (and its quota use).
+        if: ${{ github.event.pull_request.number || github.event.issue.number }}
+        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c  # v1 (v1.0.268)
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the workflow's own token instead of the OIDC exchange for the
           # Claude GitHub App token, which needs `id-token: write` and the
           # app installed on the repo.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The option lines must stay single lines (a folded scalar keeps line breaks of
+          # more-indented lines, which would put whitespace inside the quoted patterns).
+          # yamllint disable rule:line-length
           claude_args: >-
             --model claude-haiku-5-5 --effort low
-            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"
-            --disallowedTools "Read(.git/**)"
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
+            --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
+          # yamllint enable rule:line-length
           prompt: |
             Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
-            of this repository (HEAD is detached, so use this number with
-            `gh pr view`/`gh pr diff`; run commands from the repo root with
-            relative paths, no `git -C`). Review it using the bug-hunter agent defined in
+            of this repository. The checkout may not contain the PR's changes
+            (it is the default branch on an `@claude review` comment), so use
+            this number with `gh pr view`/`gh pr diff` to see what changed; run
+            commands from the repo root with relative paths, no `git -C`.
+            Files you read from the checkout may predate the PR, so judge what the PR
+            changed only from `gh pr diff`, never from the checked-out copy of a changed file. Review it using the bug-hunter agent defined in
             .claude/agents/bug-hunter.md and the severity definitions in
             .claude/skills/release-policy/SKILL.md. Then run the documenter
             agent defined in .claude/agents/documenter.md to check whether
@@ -100,9 +132,16 @@ jobs:
       # The agent has no write tools and no `gh pr comment`: its final message
       # is the review and this step posts it. That removes the "run gh with
       # arbitrary content" path, but not influence: an injected diff can still
-      # make the review say anything (including "no findings"), and the
-      # `@claude review` comment path also runs on fork PRs when a trusted user
-      # asks for it. Treat the review as advisory. A workflow_dispatch run has
+      # make the review say anything (including "no findings"). Fork PRs are
+      # refused on the comment path (first step), and the posted text is scrubbed of
+      # this job's tokens (exact-match defence in depth, not a guarantee: an
+      # encoded copy would pass, so the real controls are the fork refusal and
+      # the tool restrictions: the agent has no Grep/Glob/git show, only Read
+      # (sensitive paths denied) and `gh pr diff`/`gh pr view`, and fork code is never
+      # in reach on the comment path). The pull_request
+      # path still checks out a same-repo merge ref and loads its .claude settings
+      # while holding the token: a same-repo writer could equally edit this
+      # workflow, so that is accepted. Treat the review as advisory. A workflow_dispatch run has
       # no PR number, so there is nothing to post to and it is skipped.
       - name: Post the review
         if: ${{ !cancelled() && (github.event.pull_request.number || github.event.issue.number) }}
@@ -110,6 +149,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+          # Only used to scrub the posted text, never printed.
+          REDACT_1: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REDACT_2: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -f "$EXECUTION_FILE" ]; then
             jq -r '
@@ -118,6 +160,17 @@ jobs:
             ' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
           fi
           if [ -s "$RUNNER_TEMP/review.md" ]; then
+            # Defence in depth: a prompt-injected review must not publish the job's tokens.
+            python3 - "$RUNNER_TEMP/review.md" <<'PY'
+          import os, sys
+          p = sys.argv[1]
+          t = open(p, encoding="utf-8").read()
+          for k in ("REDACT_1", "REDACT_2"):
+              v = os.environ.get(k, "")
+              if len(v) >= 8:
+                  t = t.replace(v, "[redacted]")
+          open(p, "w", encoding="utf-8").write(t)
+          PY
             gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
           else
             echo "no final review message found; nothing to post"

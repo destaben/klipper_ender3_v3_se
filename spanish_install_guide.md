@@ -30,14 +30,15 @@ Para instalar Klipper y el entorno en nuestra impresora usando este repositorio,
     ```sh
     sudo bash setup_services.sh
     ```
+    El script añade tu usuario al grupo `docker`. Cierra sesión y vuelve a entrar (o ejecuta `newgrp docker`) antes de usar `docker` sin `sudo` en tu propia terminal.
 
 3. Para compilar el firmware, ejecuta el script:
     ```sh
     sudo bash build_firmware.sh
     ```
-   Esto generará el archivo `klipper.bin` en la carpeta indicada al finalizar el script.
+   Esto generará un archivo `klipper_<fecha>.bin` en la carpeta indicada al finalizar el script.
 
-4. Copia el archivo `klipper.bin` a una tarjeta SD y flashea la impresora (con la impresora apagada, inserta la SD y enciende). El nombre del archivo debe terminar en `.bin` y no puede ser el mismo que el último firmware flasheado.
+4. Copia ese archivo `.bin` a una tarjeta SD y flashea la impresora (con la impresora apagada, inserta la SD y enciende). El nombre del archivo debe terminar en `.bin` y no puede ser el mismo que el último firmware flasheado.
 
 5. Accede a la interfaz web en `http://<IP_DEL_MINI_PC>` para controlar la impresora.
 
