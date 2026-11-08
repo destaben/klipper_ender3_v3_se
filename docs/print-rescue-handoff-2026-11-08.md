@@ -6,6 +6,13 @@ Purpose: everything needed to pick this work up from the repository alone, with 
 and [print-rescue-live-validation-2026-11-07.md](print-rescue-live-validation-2026-11-07.md) (what the first live run showed).
 Raw evidence (logs, G-code, printer config) contains host data and is NOT in the repo; it lived on the maintainer's machine and in a private notes repo.
 
+> **Branch `feat/print-rescue-p2`: moved out of PR #114 (read-only phase 1). Do not run `rescue_run.py` against a printer until these review findings (PR #114, review of 5e5a296) are closed:**
+> 1. `rescue_run.py` moves a real printer and is not reviewed as safety-critical; `--dry-run` is opt-in.
+> 2. `probe_z`, "no trigger" branch: it redeclares `Z=z_offset` with `SET_KINEMATIC_POSITION` although the head stopped at the end of the probe stroke (below `z_offset`), so the next move lands low.
+> 3. `rescue_job.py --resume-name` is joined into the output path with no traversal or overwrite check.
+> 4. `rescue_job.py build_job` is a second job builder that skips the planner's R07/R09/R14/R15 refusals and uses a byte-based overlap.
+> 5. `power_cycle_and_rebuild` swallows a failed `device_power` call and poll errors.
+
 ## 1. Where things stand
 
 | Area | State |
