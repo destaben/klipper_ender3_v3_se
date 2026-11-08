@@ -117,6 +117,8 @@ The [Build and Publish Docker Images](.github/workflows/docker-publish.yml) work
 
 BuildKit layer cache is stored in the registry (`<service>:buildcache-<arch>` tags), not in the GitHub Actions cache, which is capped at 10 GB and evicts entries. `Dockerfile-klipper` installs the Python dependencies in a layer keyed only on the requirements files, so bumping the Klipper or Shake&Tune commit does not reinstall them. On `arm/v7` it pulls prebuilt wheels from [piwheels](https://www.piwheels.org/) (this is why the image is based on Debian bookworm, Python 3.11) instead of compiling numpy and matplotlib under emulation.
 
+The [Klipper Connect patch tests](.github/workflows/klipper-connect-test.yml) workflow runs on pull requests and on pushes to `main` that touch `patches/klipper-connect/`, `Dockerfile-klipper-connect`, or the workflow file. It builds the `klipper-connect` image (which fails if the local patch no longer applies to the pinned upstream commit) and runs the patch's unit tests in it. The commands are in [Upgrading the pinned commit](docs/prusa-connect.md#upgrading-the-pinned-commit).
+
 The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, `mmu-fallback/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
 
 ## Services

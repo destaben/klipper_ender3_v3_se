@@ -114,7 +114,7 @@ if [ "$(printf '%s\n' "$MOONRAKER_IDS" | wc -l)" -ge 2 ]; then
     if ! command -v setfacl &> /dev/null; then
         sudo apt-get install -y acl
     fi
-    sudo setfacl -R -m "u:${USER}:rwX,d:u:${USER}:rwX" moonraker/logs moonraker/database
+    sudo setfacl -R -m "u:${SUDO_USER:-$USER}:rwX,d:u:${SUDO_USER:-$USER}:rwX" moonraker/logs moonraker/database
 else
     echo "WARNING: could not determine moonraker container UID/GID (see build/run output above); falling back to permissive chmod 777."
     chmod 777 moonraker/logs moonraker/database

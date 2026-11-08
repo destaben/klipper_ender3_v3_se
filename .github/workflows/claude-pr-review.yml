@@ -60,10 +60,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
-          # An @claude review comment runs on the default branch's context, so
-          # check out the PR's merge ref explicitly; the pull_request event
-          # already checks out the merge ref by default.
-          ref: ${{ github.event.issue.pull_request && format('refs/pull/{0}/merge', github.event.issue.number) || '' }}
+          # Never check out PR code on the issue_comment path: that path also
+          # runs for fork PRs, and Claude Code loads project settings (hooks)
+          # from the checkout while the job holds CLAUDE_CODE_OAUTH_TOKEN. The
+          # comment path therefore reviews from the default branch's checkout
+          # and reads the PR only through `gh pr diff`/`gh pr view`. The
+          # pull_request path is restricted to same-repo heads by the job `if:`,
+          # so its default merge-ref checkout is trusted code.
           fetch-depth: 0
           persist-credentials: false
 
