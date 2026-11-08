@@ -124,6 +124,46 @@ FORBIDDEN_TAIL.update({name: "macro that reaches homing, probing or a stepper mo
     "_SP_UNLOAD_EXTRUDER_B", "_SP_UNLOAD_EXTRUDER_C", "_SP_UNLOAD_HOTEND",
     "MANUAL_PROBE", "TESTZ")})
 
+# Entries of FORBIDDEN_TAIL that make a macro dangerous only when the macro is
+# meant to run inside a print: firmware retraction (a timelapse macro retracts
+# with G10 and is fine in a tail) and the pseudo-names the scanner raises itself.
+_NOT_SEEDS = frozenset(("G10", "G11", "ARC_NO_IJ", "CR_IN_LINE", "CTRL_IN_LINE",
+                        "SET_GCODE_OFFSET_MOVE"))
+_MACRO_CALL = re.compile(r"^\s*([A-Za-z_]\w*)\b")
+
+
+def dangerous_macros(sections: Dict[str, Dict[str, str]]) -> Dict[str, str]:
+    """Macros of a parsed printer.cfg (plus includes) that reach a forbidden
+    command, directly or through other macros: {NAME: reason}. A call is the
+    first word of a gcode line; Jinja lines and comments never match, and every
+    branch of an {% if %} counts (over-approximation, so it fails closed).
+    END_MACROS and tool changes are not seeds: they are accepted or refused by
+    their own checks."""
+    body: Dict[str, List[str]] = {}
+    for name, opts in sections.items():
+        if name.lower().startswith("gcode_macro "):
+            body[name.split(None, 1)[1].strip().upper()] = (
+                opts.get("gcode", "").split("\n"))
+    seeds = {n for n in FORBIDDEN_TAIL if n not in END_MACROS and n not in _NOT_SEEDS}
+    calls = {n: {m.group(1).upper() for ln in lines
+                 for m in [_MACRO_CALL.match(ln)] if m}
+             for n, lines in body.items()}
+    danger: Dict[str, str] = {}
+    grew = True
+    while grew:
+        grew = False
+        for n, called in calls.items():
+            if (n in danger or n in FORBIDDEN_TAIL or n in END_MACROS
+                    or re.fullmatch(r"T\d+", n)):
+                continue
+            hit = next((c for c in sorted(called)
+                        if c in seeds or c in danger), None)
+            if hit:
+                danger[n] = "your macro reaches %s" % hit
+                grew = True
+    return danger
+
+
 # Extrusion moves that change Z by more than this count as vase-style.
 VASE_MIN_MOVES = 10
 EPS = 1e-9
@@ -329,10 +369,14 @@ class Scanner:
 
     def __init__(self, limits: Limits = None, bbox_until: Optional[int] = None,
                  keep_layers: int = 2, collect_moves_until: Optional[int] = None,
-                 until_byte: Optional[int] = None):
+                 until_byte: Optional[int] = None,
+                 extra_forbidden: Optional[Dict[str, str]] = None):
         """until_byte: lines starting at or after this byte offset (Klipper's
-        exit position) count neither for the bounding box nor for the moves."""
+        exit position) count neither for the bounding box nor for the moves.
+        extra_forbidden: more command names refused in the tail (for example
+        the user's own macros from dangerous_macros)."""
         self.until_byte = until_byte
+        self.extra_forbidden = dict(extra_forbidden or {})
         self.limits = limits or Limits()
         lim = self.limits
         self.st = State(max_velocity=lim.max_velocity, accel=lim.max_accel,
@@ -628,7 +672,7 @@ class Scanner:
             if tool not in self.tools_used and not self.past_stop:
                 self.tools_used.append(tool)
             st.tool = tool
-        if cmd in FORBIDDEN_TAIL:
+        if cmd in FORBIDDEN_TAIL or cmd in self.extra_forbidden:
             self.events.append(Event(line, "forbidden", cmd))
         elif cmd == "SET_GCODE_OFFSET" and _fparam(params, "MOVE", 0.0) != 0.0:
             # A plain offset only shifts later moves; with MOVE=1 it moves now.
@@ -680,10 +724,12 @@ class Scanner:
 def scan(records: Iterable[Record], limits: Limits = None,
          until_line: Optional[int] = None, bbox_until: Optional[int] = None,
          collect_moves_until: Optional[int] = None,
-         keep_layers: int = 2, until_byte: Optional[int] = None) -> ScanResult:
+         keep_layers: int = 2, until_byte: Optional[int] = None,
+         extra_forbidden: Optional[Dict[str, str]] = None) -> ScanResult:
     """Scan records. Stops after until_line (inclusive) if given."""
     sc = Scanner(limits, bbox_until=bbox_until, keep_layers=keep_layers,
-                 collect_moves_until=collect_moves_until, until_byte=until_byte)
+                 collect_moves_until=collect_moves_until, until_byte=until_byte,
+                 extra_forbidden=extra_forbidden)
     for line, offset, text in records:
         if until_line is not None and line > until_line:
             break
@@ -814,6 +860,9 @@ def iter_excerpt(gz_path: str, map_path: str) -> Iterator[Record]:
     idx = 0
     for first, count, offset in runs:
         for k in range(count):
+            if idx >= len(lines):
+                raise ValueError("excerpt map covers more lines than the file has (%d)"
+                                 % len(lines))
             text = lines[idx]
             idx += 1
             yield first + k, offset, text

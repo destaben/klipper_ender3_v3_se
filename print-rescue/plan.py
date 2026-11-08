@@ -34,6 +34,7 @@ import argparse
 import bisect
 import datetime
 import errno
+import glob
 import json
 import math
 import os
@@ -132,6 +133,47 @@ def tail_warnings(tail):
         out.append(("R23", "line %d: G91 in the resumed tail; the preview restores the "
                     "mode at the resume line, check that the tail returns to G90" % ln))
     return out
+
+
+MAX_CFG_FILES = 200
+_INCLUDE = "include "
+
+
+def _cfg_with_includes(path):
+    """Sections of printer.cfg with its [include] files merged in (Klipper
+    follows them), as (sections, missing, external). A relative include must
+    stay inside the directory of printer.cfg: one that escapes it, does not
+    exist, or comes after MAX_CFG_FILES files is reported as missing, never
+    read. An absolute include (for example a file generated at runtime) is
+    listed as external and not read. Glob patterns work like Klipper's. Later
+    files override earlier options of the same section."""
+    root = os.path.realpath(os.path.dirname(os.path.abspath(path)))
+    sections, missing, external, seen = {}, [], [], set()
+    queue = [os.path.realpath(path)]
+    while queue and len(seen) < MAX_CFG_FILES:
+        cur = queue.pop(0)
+        if cur in seen:
+            continue
+        seen.add(cur)
+        parsed = prof.parse_printer_cfg(_read_text(cur, "printer.cfg"))
+        base = os.path.dirname(cur)
+        for name, opts in parsed.items():
+            if name.lower().startswith(_INCLUDE):
+                pattern = name[len(_INCLUDE):].strip()
+                if os.path.isabs(pattern):
+                    external.append(pattern)
+                    continue
+                hits = sorted(glob.glob(os.path.join(base, pattern)))
+                ok = [h for h in hits if os.path.isfile(h) and
+                      os.path.realpath(h).startswith(root + os.sep)]
+                if not ok:
+                    missing.append(pattern)
+                queue.extend(os.path.realpath(h) for h in ok)
+            else:
+                sections.setdefault(name, {}).update(opts)
+    if queue:
+        missing.append("(more than %d files)" % MAX_CFG_FILES)
+    return sections, missing, external
 
 
 def _is_number(v):
@@ -393,9 +435,22 @@ def _run(args, out) -> int:
         if q:
             add("R15", "%d queued job(s) would start on the next Klippy ready" % len(q))
     live_notes = []
+    user_macros = {}
     if args.printer_cfg:
         cfg = prof.parse_printer_cfg(_read_text(args.printer_cfg, "printer.cfg"))
-        live_notes = prof.apply_live_config(p, cfg)
+        cfg_all, missing_inc, external_inc = _cfg_with_includes(args.printer_cfg)
+        user_macros = gs.dangerous_macros(cfg_all)
+        if missing_inc:
+            # A saved printer.cfg without its config directory is the usual
+            # evidence, so this is a note, not NOT CHECKED: the macro check just
+            # covers fewer macros. Save the whole config directory to get it all.
+            live_notes.append("user-macro check is partial, includes not found: %s "
+                              "(save the config directory next to printer.cfg)"
+                              % ", ".join(sorted(set(missing_inc))[:5]))
+        if external_inc:
+            live_notes.append("include outside the config directory not read for the "
+                              "user-macro check: %s" % ", ".join(sorted(set(external_inc))[:5]))
+        live_notes = live_notes + prof.apply_live_config(p, cfg)
         for mm in prof.fingerprint_mismatches(p, cfg):
             add("R14", mm)
 
@@ -425,7 +480,8 @@ def _run(args, out) -> int:
     records = _records_factory(args)
     res = timed = part = last_line = None
     if gcode_ok and ev.exit_position is not None:
-        res = gs.scan(records(), lim, until_byte=ev.exit_position, keep_layers=2)
+        res = gs.scan(records(), lim, until_byte=ev.exit_position, keep_layers=2,
+                      extra_forbidden=user_macros)
         timed = planner.plan(res.moves, lim)
         last_line = gs.last_processed_line(res, ev.exit_position)
         if res.total.empty:
@@ -560,7 +616,8 @@ def _run(args, out) -> int:
                 break
         tail = gs.tail_findings(res, choice.line, state.tool)
         for ln, cmd in tail["forbidden"]:
-            add("R17", "line %d: %s (%s)" % (ln, cmd, gs.FORBIDDEN_TAIL.get(cmd, "")))
+            add("R17", "line %d: %s (%s)" % (ln, cmd, gs.FORBIDDEN_TAIL.get(cmd)
+                                               or user_macros.get(cmd, "")))
         for ln, what in tail["g92_xyz"]:
             add("R17", "line %d: %s redefines the coordinate system" % (ln, what))
         for ln, cmd in tail["tool_change"]:

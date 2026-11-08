@@ -424,6 +424,46 @@ class Denylist(unittest.TestCase):
         st = gs.scan(recs("SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=0.25")).state
         self.assertEqual(st.minimum_cruise_ratio, 0.25)
 
+    SECTIONS = {
+        "gcode_macro MY_HOME_ALL": {"gcode": "M117 homing\nG28\nG1 X1"},
+        "gcode_macro outer": {"gcode": "{% if True %}\n  MY_HOME_ALL\n{% endif %}"},
+        "gcode_macro OUTER2": {"gcode": "OUTER"},
+        "gcode_macro SAFE": {"gcode": "M117 x\nG1 X1 Y1\nSET_LED LED=a"},
+        "gcode_macro COMMENTED": {"gcode": "# G28\n; MY_HOME_ALL\nM117 y"},
+        "gcode_macro ENDS": {"gcode": "END_PRINT\nM84"},
+        "gcode_macro RETRACTING": {"gcode": "G10\nG1 X1\nG11"},
+        "gcode_macro T0": {"gcode": "MY_HOME_ALL"},
+        "stepper_x": {"position_max": "230"},
+    }
+
+    def test_user_macros_that_reach_a_forbidden_command_are_found(self):
+        got = gs.dangerous_macros(self.SECTIONS)
+        # firmware retraction (G10/G11) alone is not dangerous, and a T<n> tool
+        # change is refused by the tool-change check instead
+        self.assertEqual(sorted(got), ["MY_HOME_ALL", "OUTER", "OUTER2"])
+
+    def test_scanner_refuses_the_extra_forbidden_names(self):
+        extra = gs.dangerous_macros(self.SECTIONS)
+        r = gs.scan(recs("G1 X1 Y1 E1\nMY_HOME_ALL\nG1 X2 E1\nSAFE"), extra_forbidden=extra)
+        f = gs.tail_findings(r, 1, None)
+        self.assertEqual([c for _, c in f["forbidden"]], ["MY_HOME_ALL"])
+        plain = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\nMY_HOME_ALL")), 1, None)
+        self.assertEqual(plain["forbidden"], [])      # not on the built-in list
+
+    def test_excerpt_map_longer_than_the_excerpt_is_a_value_error(self):
+        import gzip, json, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            gz = os.path.join(d, "x.gcode.gz")
+            with gzip.open(gz, "wt", encoding="utf-8") as fh:
+                fh.write("G1 X1\nG1 X2\n")
+            for runs in ([[1, 5, 0]], [[1, 1, 0], [10, 3, 100]], [[1, 1, 0]]):
+                with self.subTest(runs=runs):
+                    mp = os.path.join(d, "x.map.json")
+                    with open(mp, "w") as fh:
+                        json.dump({"runs": runs}, fh)
+                    with self.assertRaises(ValueError):
+                        list(gs.iter_excerpt(gz, mp))
+
     def test_stepper_commands_are_forbidden(self):
         for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

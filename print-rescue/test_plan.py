@@ -446,6 +446,52 @@ class Preview(unittest.TestCase):
         self.assertTrue(r.preview.startswith("; print-rescue resume PREVIEW"))
 
 
+class CfgMacros(unittest.TestCase):
+    def write(self, d, name, text):
+        path = os.path.join(d, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def test_includes_are_followed_with_globs(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = self.write(d, "printer.cfg", "[include macros/*.cfg]\n[include extra.cfg]\n"
+                              "[stepper_x]\nposition_max: 230\n")
+            self.write(d, "macros/a.cfg", "[gcode_macro A]\ngcode:\n  G28\n")
+            self.write(d, "macros/b.cfg", "[gcode_macro B]\ngcode:\n  A\n")
+            self.write(d, "extra.cfg", "[gcode_macro C]\ngcode:\n  M117 hi\n")
+            sections, missing, external = plan._cfg_with_includes(main)
+        self.assertEqual(missing, [])
+        self.assertEqual(external, [])
+        self.assertEqual(sorted(k for k in sections if k.startswith("gcode_macro")),
+                         ["gcode_macro A", "gcode_macro B", "gcode_macro C"])
+
+    def test_a_missing_or_escaping_include_is_reported_not_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            outer = self.write(d, "secret.cfg", "[gcode_macro SECRET]\ngcode:\n  G28\n")
+            sub = os.path.join(d, "conf")
+            main = self.write(sub, "printer.cfg",
+                              "[include gone.cfg]\n[include ../secret.cfg]\n")
+            sections, missing, _ = plan._cfg_with_includes(main)
+        self.assertNotIn("gcode_macro SECRET", sections)
+        self.assertEqual(sorted(missing), ["../secret.cfg", "gone.cfg"])
+
+    def test_an_absolute_include_is_listed_as_external_and_not_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = self.write(d, "printer.cfg", "[include /run/klipper/mmu_temp.cfg]\n")
+            sections, missing, external = plan._cfg_with_includes(main)
+        self.assertEqual((missing, external), ([], ["/run/klipper/mmu_temp.cfg"]))
+
+    def test_an_include_loop_terminates(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = self.write(d, "printer.cfg", "[include a.cfg]\n")
+            self.write(d, "a.cfg", "[include printer.cfg]\n[gcode_macro A]\ngcode:\n  M117\n")
+            sections, missing, _ = plan._cfg_with_includes(main)
+        self.assertIn("gcode_macro A", sections)
+        self.assertEqual(missing, [])
+
+
 class WritePreview(unittest.TestCase):
     def test_without_force_a_file_created_after_the_check_is_not_replaced(self):
         # The pre-run check saw no file; another process creates one before the

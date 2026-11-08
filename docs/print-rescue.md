@@ -520,8 +520,13 @@ Open:
   force-move or stepper command, directly or through other macros (a test
   derives the transitive set from the files, so a macro added to `config/`
   fails that test until it is listed), plus the MMU load, unload and lane
-  macros. Anything outside `config/`'s macro set, or a macro that moves the
-  head without calling one of those commands, can still pass; the allow-list
+  macros. With `--printer-cfg` the planner also reads the user's own
+  `[gcode_macro]` sections (following `[include]` files inside the config
+  directory) and refuses any macro that reaches a listed command, so a macro
+  that exists only in the user's config is covered when its file is supplied.
+  A macro that moves the head without calling a listed command, a macro in an
+  include that was not supplied, or an absolute-path include can still pass
+  (the run prints a note naming the includes it could not read); the allow-list
   against the live macro set is the P2 answer (design decision for the owner). Job-end
   commands (`END_PRINT`, `M84`, `M18`, `TURN_OFF_HEATERS`) are accepted only
   as the end of the file; `MANUAL_STEPPER` and `STEPPER_BUZZ` are refused; see `FORBIDDEN_TAIL` in
@@ -724,6 +729,16 @@ Choices behind items that the automated reviews raised repeatedly.
   runs it, and the standard-library-only note. The refusal codes, procedure and
   design notes live in `docs/print-rescue.md` and are deliberately not
   repeated there.
+- **How user macros reach the deny-list.** `dangerous_macros()` in
+  `gcode_scan.py` takes the parsed `printer.cfg` (plus includes) and marks every
+  `[gcode_macro]` whose gcode calls, as the first word of a line and at any
+  depth, a deny-listed command. Firmware retraction (`G10`/`G11`) does not make a
+  macro dangerous (a timelapse macro retracts and is fine in a tail), tool
+  changes `T<n>` are left to the tool-change check, and the end macros keep
+  their own rule. Every branch of an `{% if %}` counts, so it fails closed. A
+  saved `printer.cfg` without its config directory is the usual evidence, so
+  missing includes give a note, not exit 3; save the directory to get the full
+  check.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.
