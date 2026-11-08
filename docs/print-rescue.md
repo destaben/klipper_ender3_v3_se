@@ -9,10 +9,6 @@ The procedure was written after the [2026-11-07 incident](print-rescue-incident-
 where a hand-built resume worked but several steps were riskier than they had
 to be.
 
-**To run a rescue yourself, without AI, follow [print-rescue-runbook.md](print-rescue-runbook.md):** capture, bring the machine back,
-`rescue_job.py` (builds the resume file), `rescue_run.py` (one pass, finger on the emergency stop), `rescue_watch.py`. It was validated live
-on 2026-11-08. Where the work stands and what to do next: [print-rescue-handoff-2026-11-08.md](print-rescue-handoff-2026-11-08.md). The sections below are the design and the planner reference.
-
 Items marked **TO VERIFY** are claims that have not been checked on the
 hardware or in the Klipper fork source. They are listed again in
 [To verify](#to-verify-against-the-klipper-fork).
@@ -516,8 +512,10 @@ Numbers are stable references (KI-05 to KI-07 are intentionally unused). A
 Open:
 
 - **KI-01**: phase 1 is a read-only planner. Phases 2+ (motion, upload/start)
-  are not implemented. No motion code of this repository has ever run on
-  hardware; the live rescue of 2026-11-07 was done by hand through Moonraker
+  are not implemented in this branch: it contains no code that heats, moves,
+  restarts or starts anything. A prototype one-pass runner exists only on the
+  separate branch `feat/print-rescue-p2` (not reviewed, not part of this PR).
+  The live rescue of 2026-11-07 was done by hand through Moonraker
   ([live validation](print-rescue-live-validation-2026-11-07.md)).
 - **KI-02**: `--gcode-map` exists only for the test fixture excerpts (hidden
   from `--help`, refused without `PRINT_RESCUE_ALLOW_GCODE_MAP=1`; its
