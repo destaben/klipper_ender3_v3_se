@@ -71,6 +71,18 @@ out before printing (see "Verifying the MMU" below).
   `has_guest_lane`, ...) are preserved; only the four new options and the
   version number were added.
 
+### Resume when the print is still paused (`_SP_RESUME_FINISH`)
+
+`SP_FILAMENT_CHANGE` now ends its resume with `_SP_RESUME_FINISH`. If `_MAINSAIL_RESUME`
+did not resume (for example the runout sensor still shows no filament, or the hotend
+cannot extrude), Klipper's `is_paused` is still set; the macro then prints an error and
+leaves the pause state, `runout_event` and the runout sensor setting untouched, so you fix
+the cause and press Resume again. A normal resume is unchanged: `RESUME_BASE` clears
+`is_paused`, and the macro runs the previous steps. If you cancel instead of resuming after
+a runout pause, the runout sensor stays disabled until the next print start (this was already
+the case before) or `SET_FILAMENT_SENSOR SENSOR=sp_sensor_runout ENABLE=1`. Not yet tested on
+the printer (see the PR test plan).
+
 ### 3. Klipper changes that do not need action (checked)
 
 - `MANUAL_STEPPER STOP_ON_ENDSTOP=1/2/-2` map to identical semantics.
