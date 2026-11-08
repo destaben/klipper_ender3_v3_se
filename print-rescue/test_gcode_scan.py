@@ -66,6 +66,16 @@ G1 X2 E21
         self.assertAlmostEqual(r.state.pos[3], 18.9)
         self.assertAlmostEqual(r.state.pos[3] * 100.0 / r.state.extrude_factor, 21.0)
 
+    def test_m221_keeps_the_logical_e_coordinate(self):
+        r = gs.scan(recs("""
+M82
+G92 E0
+G1 X1 E10
+M221 S90
+"""))
+        self.assertAlmostEqual(r.state.pos[3], 9.0)
+        self.assertAlmostEqual(r.state.pos[3] * 100.0 / r.state.extrude_factor, 10.0)
+
     def test_limits_temps_fan_pa_objects(self):
         r = gs.scan(recs("""
 SET_VELOCITY_LIMIT ACCEL=2500 ACCEL_TO_DECEL=1750

@@ -282,6 +282,9 @@ def _check_structure(p: dict) -> List[str]:
             if not (isinstance(rng, list) and len(rng) == 2 and
                     all(b is None or _is_num(b) for b in rng)):
                 errs.append("no_go_zone %r: %s must be null or [low, high]" % (name, axis))
+            elif rng[0] is not None and rng[1] is not None and rng[0] > rng[1]:
+                errs.append("no_go_zone %r: %s is reversed (low %s > high %s)"
+                            % (name, axis, rng[0], rng[1]))
         m = v.get("margin")
         if m is not None and not (_is_num(m) and m >= 0):
             errs.append("no_go_zone %r: margin must be a number >= 0" % name)
@@ -441,11 +444,11 @@ def _cfg_value(cfg, section, option, kind):
     if raw is None:
         return None
     try:
-        if kind == "list":
-            return [float(x) for x in raw.split(",")]
-        return float(raw)
+        out = [float(x) for x in raw.split(",")] if kind == "list" else float(raw)
     except ValueError:
         return raw
+    # inf and nan parse as floats but are not usable values: keep the text.
+    return out if _finite_tree(out) else raw
 
 
 def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
@@ -462,6 +465,11 @@ def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
             continue
         have = _cfg_value(cfg, csec, copt, kind)
         if have is None:
+            continue
+        if isinstance(have, str):
+            notes.append("%s.%s: live printer.cfg value %r is not a finite number; "
+                         "the profile copy %s is kept (R14)"
+                         % (sec, opt, have, leaf.get("value")))
             continue
         if leaf.get("value") != have:
             notes.append("%s.%s: live printer.cfg %s replaces the profile copy %s"
@@ -489,8 +497,12 @@ def fingerprint_mismatches(p: dict, cfg: Dict[str, Dict[str, str]],
         if isinstance(fp[sec][opt], dict) and fp[sec][opt].get("live") is True:
             # Taken from the live printer.cfg (apply_live_config), so there is
             # nothing to compare; only a missing value is a problem.
-            if _cfg_value(cfg, csec, copt, kind) is None:
+            live = _cfg_value(cfg, csec, copt, kind)
+            if live is None:
                 out.append("%s.%s: missing in printer.cfg (live value needed)" % (sec, opt))
+            elif isinstance(live, str):
+                out.append("%s.%s: printer.cfg value %r is not a finite number"
+                           % (sec, opt, live))
             continue
         want = val(fp[sec][opt])
         have = _cfg_value(cfg, csec, copt, kind)

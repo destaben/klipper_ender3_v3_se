@@ -241,6 +241,9 @@ class Validation(unittest.TestCase):
         "printer is a list": lambda p: p.__setitem__("printer", []),
         "clearances is a list": lambda p: p.__setitem__("clearances", []),
         "stop_estimation is null": lambda p: p.__setitem__("stop_estimation", None),
+        "no-go x reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("x", [230, 205]),
+        "no-go y reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("y", [10, 0]),
+        "no-go z reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("z", [5, 1]),
         "fingerprint bltouch null": lambda p: p["config_fingerprint"].__setitem__("bltouch", None),
         "fingerprint section a list": lambda p: p["config_fingerprint"].__setitem__(
             "stepper_x", []),
@@ -309,6 +312,17 @@ class LiveConfig(unittest.TestCase):
                     live=True, value=3.035)
         self.assertEqual(prof.apply_live_config(p, prof.parse_printer_cfg(CFG)), [])
         self.assertEqual(leaf["source"], "measured")
+
+
+class LiveNonFinite(unittest.TestCase):
+    def test_infinite_live_z_offset_is_not_applied_and_is_r14(self):
+        p = fx.profile()
+        cfg = prof.parse_printer_cfg(CFG.replace("#*# z_offset = 3.035", "#*# z_offset = inf"))
+        notes = prof.apply_live_config(p, cfg)
+        self.assertEqual(prof.val(p["config_fingerprint"]["bltouch"]["z_offset"]), 2.96)
+        self.assertTrue(any("not a finite number" in n for n in notes))
+        self.assertTrue(any("z_offset" in m and "not a finite" in m
+                            for m in prof.fingerprint_mismatches(p, cfg)))
 
 
 class FingerprintCoverage(unittest.TestCase):

@@ -675,6 +675,9 @@ class Scanner:
         elif cmd == "M221":
             s = _fparam(params, "S")
             if s and s > 0:
+                # Klipper keeps the logical E coordinate across M221 (it moves
+                # its base), so the scaled coordinate follows the new factor.
+                st.pos[3] *= s / st.extrude_factor
                 st.extrude_factor = s
         elif cmd in ("M104", "M109"):
             s = _fparam(params, "S")
