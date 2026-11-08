@@ -99,7 +99,8 @@ mkdir -p moonraker/logs moonraker/database
 # `docker compose run`'s volumes) so this works even before config/moonraker.secrets
 # exists, since that bind mount has create_host_path: false and would otherwise
 # make this whole detection fail on a fresh install. Uses sg so the just-added
-# docker group membership above applies without requiring a new login session.
+# docker group membership above applies to the commands in this script without requiring
+# a new login session (your own shell still needs a re-login or `newgrp docker`).
 sg docker -c "docker compose build moonraker"
 MOONRAKER_IMAGE=$(sg docker -c "docker compose config --images moonraker")
 MOONRAKER_IDS=$(sg docker -c "docker run --rm --entrypoint sh '$MOONRAKER_IMAGE' -c 'id -u; id -g'" | tr -d '\r' || true)

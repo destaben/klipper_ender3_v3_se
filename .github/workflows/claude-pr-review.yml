@@ -111,7 +111,9 @@ jobs:
             of this repository. The checkout may not contain the PR's changes
             (it is the default branch on an `@claude review` comment), so use
             this number with `gh pr view`/`gh pr diff` to see what changed; run
-            commands from the repo root with relative paths, no `git -C`. Review it using the bug-hunter agent defined in
+            commands from the repo root with relative paths, no `git -C`.
+            Files you read from the checkout may predate the PR, so judge what the PR
+            changed only from `gh pr diff`, never from the checked-out copy of a changed file. Review it using the bug-hunter agent defined in
             .claude/agents/bug-hunter.md and the severity definitions in
             .claude/skills/release-policy/SKILL.md. Then run the documenter
             agent defined in .claude/agents/documenter.md to check whether
