@@ -248,6 +248,19 @@ class SyntheticEvidence(unittest.TestCase):
         ev = sp.analyze(synthetic_log(self.ROWS, reason="MCU 'mcu' shutdown: Timer too close"))
         self.assertFalse(ev.comm_loss)
 
+    def test_second_shutdown_drops_the_first_dump(self):
+        first = synthetic_log(self.ROWS)
+        first[-1:-1] = ["INFO:root:Virtual sdcard (50): 'G1 X1\\n'",
+                        "Upcoming (60): 'G1 X2\\n'",
+                        "gcode state: absolute_coord=True"]
+        second = synthetic_log(self.ROWS)
+        second.insert(len(second) - 1, "INFO:root:Virtual sdcard (150): 'G1 X9\\n'")
+        ev = sp.analyze(first + second)
+        self.assertEqual(ev.sdcard_texts, [(150, "G1 X9\n")])
+        self.assertIsNone(ev.sdcard_position)
+        self.assertEqual(ev.gcode_state, {})
+        self.assertEqual(ev.exit_position, 100)
+
     def test_no_freeze_visible(self):
         rows = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0)]
         ev = sp.analyze(synthetic_log(rows))

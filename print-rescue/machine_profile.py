@@ -164,6 +164,38 @@ def _check_leaves(p: dict) -> List[str]:
     return errs
 
 
+def _check_fingerprint(fp: dict) -> List[str]:
+    """Every present fingerprint section is an object and every known option
+    holds a number (or a list of numbers); the probe offsets are required
+    because the planner reads them unconditionally."""
+    errs = []
+    for sec, body in fp.items():
+        if not isinstance(body, dict):
+            errs.append("config_fingerprint.%s must be an object" % sec)
+    for (sec, opt), (_csec, _copt, kind) in FINGERPRINT_KEYS.items():
+        body = fp.get(sec)
+        if not isinstance(body, dict):
+            continue
+        if opt not in body:
+            if sec == "bltouch":
+                errs.append("config_fingerprint.bltouch.%s missing" % opt)
+            continue
+        v = val(body[opt])
+        if kind == "list":
+            ok = isinstance(v, list) and len(v) > 0 and all(_is_num(x) for x in v)
+        else:
+            ok = _is_num(v)
+        if not ok:
+            errs.append("config_fingerprint.%s.%s must be a finite %s"
+                        % (sec, opt, "list of numbers" if kind == "list" else "number"))
+        live = body[opt].get("live") if isinstance(body[opt], dict) else None
+        if live is not None and not isinstance(live, bool):
+            errs.append("config_fingerprint.%s.%s: live must be a boolean" % (sec, opt))
+    if not isinstance(fp.get("bltouch"), dict):
+        errs.append("config_fingerprint.bltouch must be an object")
+    return errs
+
+
 def _check_structure(p: dict) -> List[str]:
     errs = []
     if p.get("schema") != SCHEMA:
@@ -184,6 +216,7 @@ def _check_structure(p: dict) -> List[str]:
         return errs + section_errs
     if not isinstance(p["head_footprint"].get("tiers"), list):
         return errs + ["head_footprint.tiers must be a list"]
+    errs += _check_fingerprint(p["config_fingerprint"])
     if val(p["printer"].get("kinematics")) != "cartesian":
         errs.append("printer.kinematics must be cartesian")
     for k in MOTION_KEYS:
@@ -419,6 +452,7 @@ def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
     """Replace every fingerprint leaf marked "live" by the value in the live
     printer.cfg (in memory only; the profile file is never written). Used for
     values that drift, such as the CR Touch z_offset after a PROBE_CALIBRATE.
+    A measured leaf whose value changes loses its measured provenance.
     Returns one note per replaced value; a value missing from the cfg keeps
     the profile copy and is reported as an R14 mismatch by the caller."""
     notes = []
@@ -432,6 +466,13 @@ def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
         if leaf.get("value") != have:
             notes.append("%s.%s: live printer.cfg %s replaces the profile copy %s"
                          % (sec, opt, have, leaf.get("value")))
+            # The old measurement does not describe the new number.
+            if leaf.get("source") == VERIFIED_SOURCE:
+                leaf["source"] = "config"
+                leaf.pop("measured_on", None)
+                leaf.pop("method", None)
+                notes.append("%s.%s: the measured provenance no longer applies, "
+                             "the value now counts as unverified" % (sec, opt))
         leaf["value"] = have
     return notes
 

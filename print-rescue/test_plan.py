@@ -185,6 +185,14 @@ class MeasuredProfile(unittest.TestCase):
         self.assertIn("mm3", r.out)
         self.assertIsNotNone(r.preview)
 
+    def test_changed_live_z_offset_blocks_motion_r13(self):
+        # The measured z_offset no longer matches printer.cfg: the live number
+        # is used but it is not the one that was measured.
+        r = run_full(profile=fx.measured_profile(live_z_offset=2.5))
+        self.assertEqual(r.code, 3, r.out)
+        self.assertIn("R13", codes(r.out))
+        self.assertIn("measured provenance no longer applies", r.out)
+
     def test_missing_evidence_exits_3_not_0(self):
         r = run_full(profile=fx.measured_profile(), evidence=False)
         self.assertEqual(r.code, 3, r.out)

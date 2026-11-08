@@ -112,10 +112,12 @@ def pass1_height(part: Part, profile: dict) -> float:
 
 
 def too_tall(part: Part, profile: dict) -> Optional[str]:
-    """R01: the head cannot lift min_lift above the part under the top limit."""
+    """R01: the head cannot lift min_lift above the part, nor reach the
+    footprint-aware pass-1 travel height, under the top limit."""
     env = profile["envelope"]
     z_max, margin = val(env["z_max"]), val(env["z_top_margin"])
-    lift = val(profile["clearances"]["min_lift"])
+    lift = max(val(profile["clearances"]["min_lift"]),
+               pass1_height(part, profile) - part.top)
     if part.top + lift > z_max - margin:
         return ("top %.1f + lift %.0f > z_max %.0f - margin %.0f"
                 % (part.top, lift, z_max, margin))

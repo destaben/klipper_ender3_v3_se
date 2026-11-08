@@ -282,6 +282,8 @@ class Bbox:
 class State:
     """Machine state after the last processed line."""
     line: int = 0
+    # pos[3] is the E coordinate scaled by M221 (what Klipper keeps); divide by
+    # extrude_factor / 100 to get the number the source's G-code would write.
     pos: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     absolute: bool = True
     e_absolute: bool = True
@@ -624,7 +626,9 @@ class Scanner:
             for i, ax in enumerate("XYZE"):
                 v = _fparam(params, ax)
                 if v is not None:
-                    st.pos[i] = v
+                    # Klipper scales G92 E by M221 like any E value, so pos[3]
+                    # stays in the same (scaled) units as the move targets.
+                    st.pos[i] = v * st.extrude_factor / 100.0 if ax == "E" else v
                     if ax != "E":
                         self.events.append(Event(line, "g92_xyz", "G92 " + ax))
             if not params:

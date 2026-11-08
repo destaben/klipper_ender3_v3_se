@@ -1,14 +1,15 @@
 name: Print Rescue Tests
 
-# config/printer.cfg is included because test_machine_profile.py checks that the
-# profile's config_fingerprint still matches it.
+# config/** is included because test_machine_profile.py checks that the
+# profile's config_fingerprint still matches printer.cfg, and test_gcode_scan.py
+# derives the dangerous-macro lists from every .cfg under config/.
 "on":
   push:
     branches: [main]
-    paths: ['print-rescue/**', 'config/printer.cfg', '.github/workflows/print-rescue-test.yml']
+    paths: ['print-rescue/**', 'config/**', '.github/workflows/print-rescue-test.yml']
   pull_request:
     branches: [main]
-    paths: ['print-rescue/**', 'config/printer.cfg', '.github/workflows/print-rescue-test.yml']
+    paths: ['print-rescue/**', 'config/**', '.github/workflows/print-rescue-test.yml']
 
 permissions:
   contents: read

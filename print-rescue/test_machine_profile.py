@@ -241,6 +241,19 @@ class Validation(unittest.TestCase):
         "printer is a list": lambda p: p.__setitem__("printer", []),
         "clearances is a list": lambda p: p.__setitem__("clearances", []),
         "stop_estimation is null": lambda p: p.__setitem__("stop_estimation", None),
+        "fingerprint bltouch null": lambda p: p["config_fingerprint"].__setitem__("bltouch", None),
+        "fingerprint section a list": lambda p: p["config_fingerprint"].__setitem__(
+            "stepper_x", []),
+        "fingerprint bltouch z_offset missing": lambda p: p["config_fingerprint"]["bltouch"].pop(
+            "z_offset"),
+        "fingerprint option null": lambda p: p["config_fingerprint"]["stepper_x"].__setitem__(
+            "position_min", None),
+        "fingerprint option a string": lambda p: p["config_fingerprint"]["stepper_x"][
+            "position_max"].__setitem__("value", "230"),
+        "fingerprint list option a number": lambda p: p["config_fingerprint"]["bed_mesh"
+            ].__setitem__("mesh_min", 30),
+        "fingerprint live a string": lambda p: p["config_fingerprint"]["bltouch"][
+            "z_offset"].__setitem__("live", "yes"),
     }
 
     def test_each_malformed_profile_is_refused(self):
@@ -274,6 +287,28 @@ class Validation(unittest.TestCase):
                 json.dump(p, fh)
             with self.assertRaises(prof.ProfileError):
                 prof.load_profile(path)
+
+
+class LiveConfig(unittest.TestCase):
+    def test_changed_live_value_loses_measured_provenance(self):
+        p = fx.measured_profile()
+        leaf = p["config_fingerprint"]["bltouch"]["z_offset"]
+        leaf.update(source="measured", measured_on="2026-11-01", method="feeler gauge",
+                    live=True, value=2.96)
+        self.assertEqual([m for m in prof.motion_ready(p) if "z_offset" in m], [])
+        notes = prof.apply_live_config(p, prof.parse_printer_cfg(CFG))
+        self.assertEqual(leaf["value"], 3.035)
+        self.assertEqual(leaf["source"], "config")
+        self.assertTrue(any("z_offset" in m for m in prof.motion_ready(p)))
+        self.assertTrue(any("no longer applies" in n for n in notes))
+
+    def test_unchanged_live_value_keeps_measured_provenance(self):
+        p = fx.measured_profile()
+        leaf = p["config_fingerprint"]["bltouch"]["z_offset"]
+        leaf.update(source="measured", measured_on="2026-11-01", method="feeler gauge",
+                    live=True, value=3.035)
+        self.assertEqual(prof.apply_live_config(p, prof.parse_printer_cfg(CFG)), [])
+        self.assertEqual(leaf["source"], "measured")
 
 
 class FingerprintCoverage(unittest.TestCase):

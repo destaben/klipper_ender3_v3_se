@@ -53,6 +53,19 @@ G1 E2
         self.assertIn("g91", kinds)
         self.assertIn("m82", kinds)
 
+    def test_m221_scales_absolute_e_and_g92_e_alike(self):
+        r = gs.scan(recs("""
+M82
+M221 S90
+G92 E0
+G1 X1 E10
+G92 E20
+G1 X2 E21
+"""))
+        # Klipper keeps E scaled by M221: G92 E20 is 18, then E21 adds 0.9.
+        self.assertAlmostEqual(r.state.pos[3], 18.9)
+        self.assertAlmostEqual(r.state.pos[3] * 100.0 / r.state.extrude_factor, 21.0)
+
     def test_limits_temps_fan_pa_objects(self):
         r = gs.scan(recs("""
 SET_VELOCITY_LIMIT ACCEL=2500 ACCEL_TO_DECEL=1750

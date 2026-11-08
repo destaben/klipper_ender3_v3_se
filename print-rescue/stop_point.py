@@ -186,7 +186,12 @@ def analyze(lines: List[str]) -> Evidence:
             ev.shutdown_index = i
             ts = _TS.match(line)
             ev.shutdown_timestamp = ts.group(1) if ts else None
+            # The dump after a shutdown belongs to that shutdown: nothing from
+            # an earlier interruption in the same log may survive.
             ev.exit_position = None
+            ev.sdcard_position = None
+            ev.sdcard_texts = []
+            ev.gcode_state = {}
             continue
         m = _EXIT.search(line)
         if m:

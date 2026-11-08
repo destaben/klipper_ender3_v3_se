@@ -338,8 +338,9 @@ def build(state: State, source_name: str, resume_line: int,
     gen.append(svl)
     gen.append("M220 S%s" % _num(speed_factor if speed_factor is not None
                                  else state.speed_factor))
-    gen.append("M221 S%s" % _num(extrude_factor if extrude_factor is not None
-                                 else state.extrude_factor))
+    # The generated retract and prime below must not be scaled by the job's
+    # flow factor; it is restored just before the copied tail.
+    gen.append("M221 S100 ; flow back to 100% for the generated retract and prime")
     if state.fan is not None:
         gen.append("M106 S%d" % state.fan if state.fan > 0 else "M107")
     if gcode_offset_z is not None and not math.isfinite(gcode_offset_z):
@@ -396,10 +397,15 @@ def build(state: State, source_name: str, resume_line: int,
     # was in at the resume line, or its first moves would be misread: absolute
     # E values run as relative extrusion (M82 source), relative XYZ moves run
     # as absolute (G91 source).
+    gen.append("M221 S%s ; the job's flow factor, restored for the copied tail"
+               % _num(extrude_factor if extrude_factor is not None
+                      else state.extrude_factor))
     if state.e_absolute:
         gen.append("M82")
+        # state.pos[3] is scaled by M221; G92 E is scaled by it again.
+        src_e = state.pos[3] * 100.0 / state.extrude_factor
         gen.append("G92 E%s ; the source's own E value at the resume line"
-                   % _num(state.pos[3]))
+                   % _num(src_e))
     if not state.absolute:
         gen.append("G91")
     problems = check_generated(gen)

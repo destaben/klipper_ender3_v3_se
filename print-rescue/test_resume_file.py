@@ -59,6 +59,26 @@ class Build(unittest.TestCase):
         self.assertLess(out.index("M82"), at(out, "G92 E1234.5"))
         self.assertGreater(out.index("M82"), at(out, "G1 E"))
 
+    def test_m221_scales_neither_generated_filament_nor_the_source_e(self):
+        # Source: M82 with M221 S90. Scanner pos[3] is scaled (9 after E10).
+        st = copy.deepcopy(self.state)
+        st.e_absolute = True
+        st.extrude_factor = 90.0
+        st.pos[3] = 9.0
+        out = rfile.build(st, "part.gcode", LINE, self.tail, overlap_s=2.98,
+                          overlap_mm=216.3, park_xy=(15, 205),
+                          bed_mesh_profile="default").split("\n")
+        mark = at(out, "; ---- original file")
+        retract = at(out, "G1 E-")
+        prime = next(i for i, ln in enumerate(out)
+                     if ln.startswith("G1 E") and not ln.startswith("G1 E-") and i > retract)
+        self.assertTrue(out[at(out, "M221")].startswith("M221 S100"))
+        self.assertLess(at(out, "M221"), retract)
+        restore = at(out, "M221 S90")
+        self.assertGreater(restore, prime)
+        self.assertLess(restore, at(out, "G92 E10"))
+        self.assertLess(at(out, "G92 E10"), mark)
+
     def test_relative_xyz_at_the_resume_line_is_restored(self):
         out = self.build_with(absolute=False)
         mark = at(out, "; ---- original file")

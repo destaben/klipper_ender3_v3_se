@@ -17,7 +17,7 @@ import rescue_fixtures as fx
 def profile3(**kw):
     """Every safety leaf measured (test only), the owner's head estimate, the
     real bed and mesh areas, and NO stored probe spots."""
-    p = fx.measured_profile(owner_footprint=True, **kw)
+    p = fx.measured_profile(owner_footprint=True, live_z_offset=2.96, **kw)
     p["probe_spots"] = []
     p["envelope"]["bed"]["value"] = {"x_min": 0, "x_max": 220, "y_min": 0, "y_max": 220}
     p["envelope"]["probe_area"]["value"] = {"x_min": 30, "x_max": 190,

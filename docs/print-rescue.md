@@ -314,7 +314,7 @@ Each finding prints as one ASCII line, safe inside
 
 | Code | Kind | Meaning |
 |------|------|---------|
-| R01 | refused | Part too tall: part top + `min_lift` > `z_max` - `z_top_margin`. |
+| R01 | refused | Part too tall: part top + the larger of `min_lift` and the pass-1 travel lift (`travel_clearance` plus whatever hangs below the nozzle tip) > `z_max` - `z_top_margin`. |
 | R02 | refused | No valid probe spot: none of the profile's spots (which must be verified) and none proposed with `--probe-spot` passes the geometry check for this part, or there is no part geometry. With `--suggest-spots` the report lists candidates. |
 | R03 | warning | Resume point within `travel_clearance` of a no-go zone. The park spot and the approach moves are not checked yet (KI-11). |
 | R04 | warning | Multi-tool print (or lane mismatch) and `multi_tool_resume` is false. |
@@ -790,6 +790,14 @@ Choices behind items that the automated reviews raised repeatedly.
   file system without hard links (a FAT card) falls back to check-then-replace;
   exploiting that needs a local actor who can already write to the output
   directory.
+- **Flow factor in the preview (M221).** Klipper scales every E value, `G92 E`
+  included, by M221. The generated retract and prime therefore run at
+  `M221 S100`, and the job's factor is restored right before the copied tail,
+  followed by `G92 E` with the source's own (unscaled) number.
+- **Live values and provenance.** A fingerprint leaf marked `live` takes the
+  value of the live `printer.cfg`; if that differs from the profile and the leaf
+  was `measured`, it becomes unverified (R13), because the measurement described
+  the old number.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

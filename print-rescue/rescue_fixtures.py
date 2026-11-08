@@ -76,7 +76,7 @@ OLD_TIERS = [
 ]
 
 
-def measured_profile(owner_footprint=False, **changes):
+def measured_profile(owner_footprint=False, live_z_offset=3.035, **changes):
     """The real profile with every safety leaf marked measured, plus a wide
     probe area and one measured rear probe spot. For tests only. The head
     footprint is the old placeholder set unless owner_footprint is True."""
@@ -88,6 +88,10 @@ def measured_profile(owner_footprint=False, **changes):
             leaf["source"] = "measured"
             leaf["measured_on"] = "2026-11-07"
             leaf["method"] = "test fixture"
+    # The live z_offset of the test printer.cfg (3.035 for incident 1, 2.96 for
+    # incident 3): a measured value that differs from the live one stops
+    # counting as measured (apply_live_config).
+    p["config_fingerprint"]["bltouch"]["z_offset"]["value"] = live_z_offset
     p["envelope"]["probe_area"]["value"] = {"x_min": 0, "x_max": 230,
                                             "y_min": 0, "y_max": 230}
     p["envelope"]["bed"]["value"] = {"x_min": 0, "x_max": 230, "y_min": 0, "y_max": 230}
