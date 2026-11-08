@@ -103,7 +103,7 @@ jobs:
           # yamllint disable rule:line-length
           claude_args: >-
             --model claude-haiku-5-5 --effort low
-            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*)${{ github.event_name != 'issue_comment' && ',Bash(git show:*),Read' || '' }}"
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
             --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
           # yamllint enable rule:line-length
           prompt: |
@@ -134,9 +134,9 @@ jobs:
       # refused on the comment path (first step), and the posted text is scrubbed of
       # this job's tokens (exact-match defence in depth, not a guarantee: an
       # encoded copy would pass, so the real controls are the fork refusal and
-      # the tool restrictions). On the comment path the agent gets no Read/Grep/
-      # Glob or `git show` at all, only `gh pr diff`/`gh pr view`, so it is a reduced review of
-      # the diff (the agent definitions are loaded by the runtime, not read through a tool). The pull_request
+      # the tool restrictions: the agent has no Grep/Glob/git show, only Read
+      # (sensitive paths denied) and `gh pr diff`/`gh pr view`, and fork code is never
+      # in reach on the comment path). The pull_request
       # path still checks out a same-repo merge ref and loads its .claude settings
       # while holding the token: a same-repo writer could equally edit this
       # workflow, so that is accepted. Treat the review as advisory. A workflow_dispatch run has
