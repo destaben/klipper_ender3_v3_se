@@ -89,6 +89,8 @@ jobs:
 
       - name: Run bug-hunter and documenter review
         id: review
+        # A manual workflow_dispatch run has no PR to review: skip the agent (and its quota use).
+        if: ${{ github.event.pull_request.number || github.event.issue.number }}
         uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c  # v1 (v1.0.268)
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -98,13 +100,14 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: >-
             --model claude-haiku-5-5 --effort low
-            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"
-            --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**)"
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*)${{ github.event_name != 'issue_comment' && ',Read,Grep,Glob' || '' }}"
+            --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
           prompt: |
             Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
-            of this repository (HEAD is detached, so use this number with
-            `gh pr view`/`gh pr diff`; run commands from the repo root with
-            relative paths, no `git -C`). Review it using the bug-hunter agent defined in
+            of this repository. The checkout may not contain the PR's changes
+            (it is the default branch on an `@claude review` comment), so use
+            this number with `gh pr view`/`gh pr diff` to see what changed; run
+            commands from the repo root with relative paths, no `git -C`. Review it using the bug-hunter agent defined in
             .claude/agents/bug-hunter.md and the severity definitions in
             .claude/skills/release-policy/SKILL.md. Then run the documenter
             agent defined in .claude/agents/documenter.md to check whether
@@ -125,7 +128,13 @@ jobs:
       # arbitrary content" path, but not influence: an injected diff can still
       # make the review say anything (including "no findings"). Fork PRs are
       # refused on the comment path (first step), and the posted text is scrubbed of
-      # this job's tokens. Treat the review as advisory. A workflow_dispatch run has
+      # this job's tokens (exact-match defence in depth, not a guarantee: an
+      # encoded copy would pass, so the real controls are the fork refusal and
+      # the tool restrictions). On the comment path the agent gets no Read/Grep/
+      # Glob at all, only `gh pr diff`/`gh pr view`/`git show`. The pull_request
+      # path still checks out a same-repo merge ref and loads its .claude settings
+      # while holding the token: a same-repo writer could equally edit this
+      # workflow, so that is accepted. Treat the review as advisory. A workflow_dispatch run has
       # no PR number, so there is nothing to post to and it is skipped.
       - name: Post the review
         if: ${{ !cancelled() && (github.event.pull_request.number || github.event.issue.number) }}

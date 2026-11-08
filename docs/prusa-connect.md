@@ -103,7 +103,7 @@ resend can queue the same job a second time has not been tested.
 calls it with `BED` and `HEATER`. The macro refuses a missing, empty or non-numeric
 `BED` or `HEATER` (for example an unexpanded slicer placeholder such as
 `{first_layer_bed_temperature}`) before heating anything, so the print aborts with
-an error instead of heating to 0 °C. A negative value is refused too; `0` is accepted.
+an error instead of heating to 0 °C. Values outside 0–400 (and `nan`) are refused too; `0` is accepted.
 
 ## Limitations
 

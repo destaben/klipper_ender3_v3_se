@@ -80,8 +80,9 @@ leaves the pause state, `runout_event` and the runout sensor setting untouched, 
 the cause and press Resume again. A normal resume is unchanged: `RESUME_BASE` clears
 `is_paused`, and the macro runs the previous steps. If you cancel instead of resuming after
 a runout pause, the runout sensor stays disabled until the next print start (this was already
-the case before) or `SET_FILAMENT_SENSOR SENSOR=sp_sensor_runout ENABLE=1`. Not yet tested on
-the printer (see the PR test plan).
+the case before) or `SET_FILAMENT_SENSOR SENSOR=sp_sensor_runout ENABLE=1`. An unattended infinite-spool change (`_SP_RUNOUT_END` calls `RESUME`) whose resume does not
+complete now stays paused with an error message, instead of being forced to continue; that
+needs the user. Not yet tested on the printer.
 
 ### 3. Klipper changes that do not need action (checked)
 

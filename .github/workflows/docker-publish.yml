@@ -85,9 +85,11 @@ jobs:
           cache-to: type=registry,ref=${{ env.CACHE_REF }},mode=max,image-manifest=true,oci-mediatypes=true
 
       - name: Export digest
+        env:
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           mkdir -p "${RUNNER_TEMP}/digests"
-          digest="${{ steps.build.outputs.digest }}"
+          digest="${BUILD_DIGEST}"
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
 
       - name: Upload digest
