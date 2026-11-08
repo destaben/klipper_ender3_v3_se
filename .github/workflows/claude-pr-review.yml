@@ -98,10 +98,14 @@ jobs:
           # Claude GitHub App token, which needs `id-token: write` and the
           # app installed on the repo.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # The option lines must stay single lines (a folded scalar keeps line breaks of
+          # more-indented lines, which would put whitespace inside the quoted patterns).
+          # yamllint disable rule:line-length
           claude_args: >-
             --model claude-haiku-5-5 --effort low
             --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*)${{ github.event_name != 'issue_comment' && ',Read,Grep,Glob' || '' }}"
             --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
+          # yamllint enable rule:line-length
           prompt: |
             Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
             of this repository. The checkout may not contain the PR's changes
