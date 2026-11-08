@@ -336,6 +336,57 @@ class Denylist(unittest.TestCase):
         missing = sorted(n for n in found if n not in gs.FORBIDDEN_TAIL)
         self.assertEqual(missing, [])
 
+    def test_every_repo_macro_that_reaches_a_moving_command_is_on_the_deny_list(self):
+        """Transitive version of the test above, derived from config/: a macro
+        that calls (at the start of a line, through any depth of macros) a
+        homing, probing, force-moving or stepper command is on the list. Tool
+        changes T<n> are refused by the tool-change check instead, and the end
+        macros (END_MACROS) are accepted only as the end of the file."""
+        import glob, re
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config")
+        bad = re.compile(r"^\s*(G28|G29|G30|G32|PROBE\w*|BED_MESH_CALIBRATE|FORCE_MOVE|"
+                         r"SET_KINEMATIC_POSITION|Z_TILT_ADJUST|MANUAL_STEPPER|MANUAL_PROBE|"
+                         r"STEPPER_BUZZ|BLTOUCH_DEBUG|TESTZ|BED_SCREWS_ADJUST|"
+                         r"SCREWS_TILT_CALCULATE|QUAD_GANTRY_LEVEL)\b", re.I)
+        body, cur = {}, None
+        for path in glob.glob(os.path.join(root, "**", "*.cfg"), recursive=True):
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for ln in fh:
+                    m = re.match(r"\[gcode_macro\s+([^\]]+)\]", ln)
+                    if m:
+                        cur = m.group(1).strip().upper()
+                        body.setdefault(cur, [])
+                    elif ln.startswith("["):
+                        cur = None
+                    elif cur and not ln.lstrip().startswith(("#", ";")):
+                        body[cur].append(re.sub(r"[;#].*", "", ln))
+        calls = lambda lines: {m.group(1).upper() for ln in lines
+                               for m in [re.match(r"^\s*([A-Za-z_]\w*)\b", ln)] if m}
+        danger = {n for n, b in body.items() if any(bad.match(ln) for ln in b)}
+        grew = True
+        while grew:
+            grew = False
+            for n, b in body.items():
+                if n not in danger and calls(b) & danger:
+                    danger.add(n)
+                    grew = True
+        self.assertTrue(danger)
+        missing = sorted(n for n in danger
+                         if n not in gs.FORBIDDEN_TAIL and n not in gs.END_MACROS
+                         and not re.fullmatch(r"T\d+", n))
+        self.assertEqual(missing, [])
+
+    def test_other_control_characters_inside_a_line_are_refused(self):
+        for ch in ("\x0b", "\x0c", "\x00", "\x1b"):
+            with self.subTest(ch=repr(ch)):
+                r = gs.scan(recs("G1 X1 Y1 E1\nG1 X10%sG28\nG1 X2 E1" % ch))
+                f = gs.tail_findings(r, 1, None)
+                self.assertTrue(f["forbidden"])
+
+    def test_tab_inside_a_line_is_fine(self):
+        r = gs.scan(recs("G1 X1 Y1 E1\nG1\tX10\nG1 X2 E1"))
+        self.assertEqual(gs.tail_findings(r, 1, None)["forbidden"], [])
+
     def test_stepper_commands_are_forbidden(self):
         for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

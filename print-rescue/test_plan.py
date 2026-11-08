@@ -268,6 +268,15 @@ class MeasuredProfile(unittest.TestCase):
                     self.assertEqual(r.code, 1)
                     self.assertIn("queued_jobs", r.err)
 
+    def test_log_without_file_text_leaves_the_content_check_not_checked(self):
+        # With no 'Virtual sdcard (N)' / 'Upcoming (N)' text the text half of the
+        # R07 content check has nothing to compare; that must not pass silently.
+        log = "\n".join(ln for ln in klippy_log().split("\n")
+                        if "Virtual sdcard (" not in ln and "Upcoming (" not in ln)
+        r = run_full(log=log, profile=fx.measured_profile())
+        self.assertIn("NOT CHECKED: R07 file text", r.out)
+        self.assertEqual(r.code, 3)
+
     def test_r19_text_does_not_overclaim(self):
         self.assertIn("same-length edit", plan.R19_REUPLOAD_NOTE)
         self.assertNotIn("contents match the print", plan.R19_REUPLOAD_NOTE)

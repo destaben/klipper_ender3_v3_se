@@ -451,7 +451,7 @@ Exit codes:
 | Exit | Meaning |
 |------|---------|
 | 0 | Resumable: no refusal, every safety-critical profile field verified, and all evidence inputs supplied. Confirm every warning before any motion. |
-| 3 | Resumable on paper only: the only refusals are R13 (a profile field is not verified, motion is blocked) or `--history`, `--queue` or `--printer-cfg` was not given (printed as `NOT CHECKED:`). The report and the preview are still produced. |
+| 3 | Resumable on paper only: the only refusals are R13 (a profile field is not verified, motion is blocked) or `--history`, `--queue` or `--printer-cfg` was not given, or the log holds no `Virtual sdcard`/`Upcoming` text for the content check (printed as `NOT CHECKED:`). The report and the preview are still produced. |
 | 2 | Refused: at least one refused finding (a hard code in the catalogue; R13 alone is exit 3, warnings never refuse). Never 0 without a chosen resume line. |
 | 1 | Usage or input error (bad arguments, unreadable or malformed input, an invalid `margin_s`, an input larger than the size cap). Nothing was planned. |
 
@@ -516,10 +516,13 @@ Open:
 - **KI-03**: a preview that is not written does not change the exit code.
 - **KI-08**: the R17 tail check is a deny-list of exact command names (after
   normalising spaces and `N` line numbers, with or without digits). The list
-  includes every macro in `config/` whose own body homes, probes or
-  force-moves (a test derives them from the files), plus the MMU load, unload
-  and lane macros; callers of those that are not listed (timelapse, pause
-  helpers) can still pass. Job-end
+  includes every macro in `config/` that reaches a homing, probing,
+  force-move or stepper command, directly or through other macros (a test
+  derives the transitive set from the files, so a macro added to `config/`
+  fails that test until it is listed), plus the MMU load, unload and lane
+  macros. Anything outside `config/`'s macro set, or a macro that moves the
+  head without calling one of those commands, can still pass; the allow-list
+  against the live macro set is the P2 answer (design decision for the owner). Job-end
   commands (`END_PRINT`, `M84`, `M18`, `TURN_OFF_HEATERS`) are accepted only
   as the end of the file; `MANUAL_STEPPER` and `STEPPER_BUZZ` are refused; see `FORBIDDEN_TAIL` in
   `print-rescue/gcode_scan.py`. A macro that homes or stops but is not listed
@@ -573,7 +576,8 @@ Open:
   characters). It cannot see an edit elsewhere in the file that keeps the size
   and those lines; the history `size` comparison (when `--history` is given)
   catches size changes only. The R19 text says so: a pass does not mean the
-  file is identical.
+  file is identical. A log without those text lines leaves the text half
+  unchecked, which is reported as `NOT CHECKED` (exit 3), not as a pass.
 - **KI-23**: the remaining-time and remaining-filament rewrite of the resume
   file's header is proportional to filament, and how Moonraker/Mainsail use the
   header is TO VERIFY.
@@ -619,6 +623,11 @@ Choices behind items that the automated reviews raised repeatedly.
   The check also compares the text the log printed at `Virtual sdcard (N)` and
   `Upcoming (N)` with the file, which catches same-length edits. The mtime is
   kept as the R19 warning. KI-22 states what the check cannot do.
+- **Why a late or missing end anchor only warns (KI-21).** When both anchors exist, the earliest stop
+  is the earlier of the two (`sd_pos` and the end anchor), so a late
+  end anchor alone cannot move the earliest stop later; the window start only
+  moves late when the `sd_pos` anchor is late as well, and R10 then asks for a
+  manual line. A gap needs both anchors wrong in the same direction.
 - **Why a manual `--line` skips the cut-layer and margin checks (KI-12).** It
   is the operator's explicit override for a log that gives no usable evidence.
   The automatic policy cannot run without that evidence, and refusing the

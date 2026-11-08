@@ -444,6 +444,12 @@ def _run(args, out) -> int:
             say("content check: %s" % why)
             if not same:
                 add("R07", why)
+            elif not ev.sdcard_texts:
+                # Nothing to compare is not a pass: the check then rests on the
+                # exit-offset boundary alone, so the run cannot exit 0.
+                item = "R07 file text (the log has no 'Virtual sdcard' or 'Upcoming' text)"
+                not_checked.append(item)
+                say("NOT CHECKED: %s" % item)
         if same and mtime_differs:
             add("R19", R19_REUPLOAD_NOTE)
         if part is not None:
@@ -785,7 +791,8 @@ def _finish(findings, say, choice, not_checked=()) -> int:
         return EXIT_MOTION_BLOCKED
     if not_checked:
         say("RESULT: resumable on paper; evidence not supplied (%d NOT CHECKED line(s)), "
-            "so exit 3: supply --history, --queue and --printer-cfg" % len(not_checked))
+            "so exit 3: supply --history, --queue and --printer-cfg, and a log that "
+            "holds the 'Virtual sdcard' text" % len(not_checked))
         return EXIT_MOTION_BLOCKED
     say("RESULT: resumable (confirm every warning before any motion)")
     return EXIT_RESUMABLE

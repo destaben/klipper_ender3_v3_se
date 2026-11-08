@@ -33,7 +33,8 @@ Record = Tuple[int, int, str]
 # start a fresh print (which homes) with a part on the bed.
 # Ends of a job: only legitimate as the end of the file (refused when
 # extrusion follows them).
-END_MACROS = ("END_PRINT", "M84", "M18", "TURN_OFF_HEATERS")
+# _SP_PRINT_END is the MMU end-of-print macro the slicer end code calls.
+END_MACROS = ("END_PRINT", "_SP_PRINT_END", "M84", "M18", "TURN_OFF_HEATERS")
 FORBIDDEN_TAIL = {
     "G28": "homing (any form)",
     "G29": "bed probing",
@@ -64,6 +65,7 @@ FORBIDDEN_TAIL = {
     "G11": "firmware unretraction (its length is not modelled)",
     "ARC_NO_IJ": "arc without I/J (Klipper rejects it; not modelled)",
     "CR_IN_LINE": "carriage return inside a line (hidden command)",
+    "CTRL_IN_LINE": "control character inside a line (hidden command)",
     "PROBE_ZOFFSET": "probes (calls PRTOUCH_PROBE_ZOFFSET)",
     "PRTOUCH_PROBE_ZOFFSET": "probes",
     "PID_TUNE_BED": "heater tuning (homes)",
@@ -97,6 +99,22 @@ FORBIDDEN_TAIL = {
     # Not a command name: SET_GCODE_OFFSET with MOVE=1 is reported under this key.
     "SET_GCODE_OFFSET_MOVE": "SET_GCODE_OFFSET with MOVE=1 moves the toolhead",
 }
+
+# Macros that reach a homing, probing, force-move or stepper command through
+# other macros (transitive callers, derived from config/ by
+# test_every_repo_macro_that_reaches_a_moving_command_is_on_the_deny_list: a
+# macro added to config/ that reaches one fails that test until it is listed).
+FORBIDDEN_TAIL.update({name: "macro that reaches homing, probing or a stepper move"
+                       for name in (
+    "CHANGE0", "CHANGE1", "CHANGE2", "CHANGE3", "RESUME", "SP_FILAMENT_CHANGE",
+    "SP_INIT", "SP_TEST_LOAD_UNLOAD_EXTRUDER", "SP_TEST_MMU", "SP_TEST_SYNC",
+    "_SP_FILAMENT_CHANGE", "_SP_LANE_SELECT", "_SP_LOAD_EXTRUDER",
+    "_SP_LOAD_EXTRUDER_B", "_SP_LOAD_HOTEND", "_SP_MOTOR", "_SP_OFF",
+    "_SP_PURGE", "_SP_RESUME", "_SP_RESUME_FINISH", "_SP_RUNOUT",
+    "_SP_RUNOUT_CHECK", "_SP_RUNOUT_CHECK_B", "_SP_RUNOUT_END",
+    "_SP_RUNOUT_INITIAL_PURGE", "_SP_SENSOR_OUT", "_SP_TEST", "_SP_TOOL_CHANGE",
+    "_SP_UNLOAD_EXTRUDER_B", "_SP_UNLOAD_EXTRUDER_C", "_SP_UNLOAD_HOTEND",
+    "MANUAL_PROBE", "TESTZ")})
 
 # Extrusion moves that change Z by more than this count as vase-style.
 VASE_MIN_MOVES = 10
@@ -467,6 +485,12 @@ class Scanner:
         st = self.st
         st.line = line
         stripped = text.strip()
+        if any((ord(ch) < 0x20 and ch not in "\t\r") or ord(ch) == 0x7F
+               for ch in stripped):
+            # VT, FF, NUL, ESC...: same reasoning as a bare CR, and the preview
+            # builder refuses them too, so the verdict does not depend on
+            # whether --preview was given.
+            self.events.append(Event(line, "forbidden", "CTRL_IN_LINE"))
         if "\r" in stripped:
             # A bare CR may start a second command that this scanner cannot see.
             # Comment lines are included: whether Klipper splits at a bare CR is
