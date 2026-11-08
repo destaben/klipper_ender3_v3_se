@@ -220,7 +220,7 @@ Resume policy (council):
   quietly reduced;
 - warn (R12) if the overlap from the resume point to the latest possible
   stop exceeds the budget (`max_overlap_s`, 3 s, or `--max-overlap-s`), with
-  the extra material; refuse (R21) only above `absurd_overlap_s` (30 s; the budget is capped at 30 s and never moves it);
+  the extra material; refuse (R21) only above `absurd_overlap_s` (30 s; `--max-overlap-s` above 30 s is a usage error, exit 1, and never moves it);
 - a manual `--line` needs the window (refused with R18 without one). It is
   refused (R22) if it starts after the earliest possible stop (a gap), and
   warned (R12) if it overlaps above the budget. The margin is not applied to a
@@ -329,7 +329,7 @@ Each finding prints as one ASCII line, safe inside
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
 | R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
 | R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
-| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` is capped at 30 s and never moves this limit): the evidence and the plan do not fit together. |
+| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` above 30 s is rejected with exit 1 and never moves this limit): the evidence and the plan do not fit together. |
 | R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
 | PIN_AT_BOOT | warning | The probe pin self-test at Klippy start could land on the part: the pin path (nozzle path plus probe offset) of every move that overlaps the stop window is tested against the part box plus the probe-spot margin, whole segments, not only their ends (**TO VERIFY**: when the pin deploys). |
 
@@ -423,7 +423,8 @@ at an invalid command on purpose, and its motion is not safe to run.
   the report says so.
 - `--max-overlap-s S`: the overlap budget in seconds (default: the profile's
   `max_overlap_s`). An overlap above it is the R12 warning with the extra
-  material; the operator sets the budget knowingly.
+  material; the operator sets the budget knowingly. Above 30 s it is rejected
+  with exit 1 (it never moves the R21 limit).
 - `--probe-spot X,Y` (repeatable): a nozzle position to check for this part.
   A typed spot is checked by geometry only and has no `measured` provenance of
   its own: the trust sits in the head footprint it is checked against, which R13
@@ -639,6 +640,12 @@ Choices behind items that the automated reviews raised repeatedly.
   only shifts Z relative to a reference the gate has already re-established.
   They are accepted gaps, not claims of safety: a deny-list cannot be complete
   (KI-08), and the P2 allow-list against the live macro set replaces it.
+- **Why `KEY=VALUE` words such as `G1 X=10` are not parsed.** Klipper splits
+  a line at the letters and keeps `=10` as the value; `float("=10")` raises,
+  so the line aborts the print ("Unable to parse move") instead of moving
+  (read from `klippy/gcode.py` and `klippy/extras/gcode_move.py`). The scanner
+  models what a move does, and that one does nothing; a file with such lines
+  does not print on the real machine in the first place.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

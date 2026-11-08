@@ -230,6 +230,11 @@ def split_code(text: str) -> str:
 
 
 _CLASSIC = re.compile(r"^([GMT])(\d+(?:\.\d+)?)(.*)$", re.IGNORECASE)
+# Words are letter + number only. A KEY=VALUE word such as "G1 X=10 E=5" is not
+# parsed on purpose: Klipper keeps "=10" as the value and float("=10") raises,
+# so such a line aborts the print with "Unable to parse move" instead of moving
+# (checked against klippy/gcode.py and klippy/extras/gcode_move.py; docs
+# "Design notes"). The scanner models what a move does, and this one does nothing.
 _PARAM = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)?")
 
 

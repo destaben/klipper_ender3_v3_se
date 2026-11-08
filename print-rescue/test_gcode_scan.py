@@ -182,6 +182,12 @@ class Bytes(unittest.TestCase):
         got = gs.file_text_at(records, [(7, 4)])      # two bytes into line 2
         self.assertEqual(got[7], " X1 ")
 
+    def test_key_equals_value_words_are_not_moves(self):
+        # Klipper aborts such a line ("Unable to parse move"); it never moves.
+        r = gs.scan(recs("G1 X1 Y1 E1\nG1 X=10 Y=20 E=5"))
+        self.assertEqual({m.line for m in r.moves}, {1})
+        self.assertEqual(r.total.x_max, 1.0)
+
 
 class Tail(unittest.TestCase):
     def test_forbidden_tool_m82_vase_nonmonotonic(self):
