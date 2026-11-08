@@ -48,6 +48,7 @@ Includes:
    - Install Docker and the Docker Compose plugin if not already present.
    - Clone additional dependencies ([Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner), [KlipperMaintenance](https://github.com/3DCoded/KlipperMaintenance), [Moonraker Timelapse](https://github.com/mainsail-crew/moonraker-timelapse)).
    - Start all Docker containers.
+   - Add your login user to the `docker` group; log out and back in (or run `newgrp docker`) before using `docker` without `sudo` in your own shell.
 
 2. **Build and flash the Klipper firmware:**
 

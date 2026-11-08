@@ -30,6 +30,7 @@ Para instalar Klipper y el entorno en nuestra impresora usando este repositorio,
     ```sh
     sudo bash setup_services.sh
     ```
+    El script añade tu usuario al grupo `docker`. Cierra sesión y vuelve a entrar (o ejecuta `newgrp docker`) antes de usar `docker` sin `sudo` en tu propia terminal.
 
 3. Para compilar el firmware, ejecuta el script:
     ```sh
