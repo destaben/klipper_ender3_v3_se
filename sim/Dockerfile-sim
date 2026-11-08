@@ -65,6 +65,9 @@ RUN printf 'CONFIG_MACH_LINUX=y\nCONFIG_LINUX_VIRTUAL_GPIO=y\n' > /opt/klipper/.
     make -C /opt/klipper olddefconfig && \
     make -C /opt/klipper -j"$(nproc)"
 
-COPY --chmod=755 sim /opt/sim
+# Only run.sh needs the executable bit; a plain COPY plus RUN works on the legacy
+# builder too (COPY --chmod needs BuildKit).
+COPY sim /opt/sim
+RUN chmod +x /opt/sim/run.sh
 
 ENTRYPOINT ["/opt/sim/run.sh"]
