@@ -771,6 +771,19 @@ class PreviewTarget(unittest.TestCase):
                                     + ["preview.gcode"]))
 
 
+class NoTraceback(unittest.TestCase):
+    def test_unexpected_attribute_or_memory_error_is_a_message_not_a_traceback(self):
+        from unittest import mock
+        for exc in (AttributeError("x"), MemoryError()):
+            with self.subTest(exc=type(exc).__name__):
+                with mock.patch.object(plan, "_run", side_effect=exc):
+                    err = io.StringIO()
+                    with contextlib.redirect_stderr(err):
+                        code = plan.run(None, out=io.StringIO())
+                self.assertEqual(code, plan.EXIT_USAGE)
+                self.assertIn("error:", err.getvalue())
+
+
 class Cli(unittest.TestCase):
     def test_usage_error_exit_1(self):
         with contextlib.redirect_stderr(io.StringIO()):

@@ -164,6 +164,24 @@ class Bytes(unittest.TestCase):
         self.assertEqual(r.total.x_max, 1.0)
         self.assertEqual({m.line for m in r.moves}, {2})
 
+    def test_tools_and_objects_after_the_stop_are_not_counted(self):
+        # "T0\n" + "G1 X1 Y1 E1\n" = 3 + 12 bytes: line 3 starts at byte 15.
+        text = ("T0\nG1 X1 Y1 E1\nT1\n"
+                "EXCLUDE_OBJECT_DEFINE NAME=late CENTER=1,1\nG1 X2 E1")
+        r = gs.scan(recs(text), until_byte=15)
+        self.assertEqual(r.tools_used, [0])
+        self.assertNotIn("LATE", r.state.objects)
+        whole = gs.scan(recs(text))
+        self.assertEqual(whole.tools_used, [0, 1])
+
+    def test_file_text_at_uses_byte_offsets_with_multibyte_text(self):
+        # "; é\n" is 5 bytes (é is 2): line 2 starts at byte 5.
+        records = [(1, 0, "; \u00e9"), (2, 5, "G1 X1 Y1 E1")]
+        got = gs.file_text_at(records, [(5, 6)])
+        self.assertEqual(got[5], "G1 X1 ")
+        got = gs.file_text_at(records, [(7, 4)])      # two bytes into line 2
+        self.assertEqual(got[7], " X1 ")
+
 
 class Tail(unittest.TestCase):
     def test_forbidden_tool_m82_vase_nonmonotonic(self):

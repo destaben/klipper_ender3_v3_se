@@ -304,7 +304,7 @@ def run(args, out=sys.stdout) -> int:
         print("error: %s" % e, file=sys.stderr)
         return EXIT_USAGE
     except (ValueError, ArithmeticError, OSError, LookupError, RecursionError,
-            EOFError, zlib.error, TypeError) as e:
+            EOFError, zlib.error, TypeError, AttributeError, MemoryError) as e:
         print("error: input could not be analysed: %s" % e, file=sys.stderr)
         return EXIT_USAGE
 

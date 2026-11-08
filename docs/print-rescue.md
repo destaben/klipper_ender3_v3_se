@@ -321,16 +321,16 @@ Each finding prints as one ASCII line, safe inside
 | R10 | warning | Insufficient log evidence, manual line needed (anchor endpoints more than 1 s apart, planner timing off by more than 0.5 s, no clean freeze). |
 | R11 | warning | Long time since the shutdown (part may have cooled loose). |
 | R12 | warning | The overlap from the resume line to the latest possible stop is above the budget (`stop_estimation.max_overlap_s`, or `--max-overlap-s`). The line states the path (mm), the filament (mm) and an estimate of the material printed twice (mm3). Refusing would favour a gap in the part, so it only warns. |
-| R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
-| R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
-| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` is capped at 30 s and never moves this limit): the evidence and the plan do not fit together. |
-| R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
 | R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. The owner's head estimate has source `user`, so it keeps this block on. |
 | R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
 | R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
+| R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
+| R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
+| R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` is capped at 30 s and never moves this limit): the evidence and the plan do not fit together. |
+| R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
 | PIN_AT_BOOT | warning | The probe pin self-test at Klippy start could land on the part: the pin path (nozzle path plus probe offset) of every move that overlaps the stop window is tested against the part box plus the probe-spot margin, whole segments, not only their ends (**TO VERIFY**: when the pin deploys). |
 
 ## Profile

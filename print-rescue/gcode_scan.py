@@ -315,6 +315,9 @@ class Scanner:
         self.layer_starts: List[Tuple[int, int, Optional[float]]] = []
         self.vase_lines: List[int] = []
         self.tools_used: List[int] = []
+        # True once the scan has passed until_byte: what the file does after the
+        # stop (tools, object definitions) is not part of the printed state.
+        self.past_stop = False
         self.last_line = 0
 
     # -- helpers -----------------------------------------------------------
@@ -442,6 +445,7 @@ class Scanner:
     # -- main entry --------------------------------------------------------
     def feed(self, line: int, offset: int, text: str):
         if self.until_byte is not None and offset >= self.until_byte:
+            self.past_stop = True
             if self.bbox_until is None:
                 self.bbox_until = line - 1
             if self.collect_until is None:
@@ -561,7 +565,7 @@ class Scanner:
                 st.pa_smooth_time = sm
         elif cmd == "EXCLUDE_OBJECT_DEFINE":
             name = params.get("NAME")
-            if name:
+            if name and not self.past_stop:
                 st.objects[name.upper()] = split_code(text)
         elif cmd == "EXCLUDE_OBJECT_START":
             st.current_object = params.get("NAME") or None
@@ -574,7 +578,7 @@ class Scanner:
         elif re.match(r"^T\d+$", cmd):
             tool = int(cmd[1:])
             self.events.append(Event(line, "tool", cmd, float(tool)))
-            if tool not in self.tools_used:
+            if tool not in self.tools_used and not self.past_stop:
                 self.tools_used.append(tool)
             st.tool = tool
         if cmd in FORBIDDEN_TAIL:
@@ -700,6 +704,15 @@ def iter_file(path: str, start_line: int = 1) -> Iterator[Record]:
             offset += len(raw)
 
 
+def _tail_from_byte(text: str, skip: int) -> str:
+    """`text` from byte `skip` of its UTF-8 encoding (a cut inside a
+    multi-byte character gives a replacement character, which then fails
+    the comparison closed)."""
+    if skip <= 0:
+        return text
+    return text.encode("utf-8", "replace")[skip:].decode("utf-8", "replace")
+
+
 def file_text_at(records: Iterable[Record], wanted: List[Tuple[int, int]]) -> Dict[int, str]:
     """For each (byte offset, length) in `wanted`, the file's text from that
     offset (up to `length` characters), rebuilt from the records. Lines are
@@ -717,7 +730,8 @@ def file_text_at(records: Iterable[Record], wanted: List[Tuple[int, int]]) -> Di
             if pos < end and pos + todo[pos] > offset:
                 piece = pending.get(pos)
                 if piece is None:
-                    pending[pos] = text[max(pos - offset, 0):] + "\n"
+                    # pos and offset are byte offsets: slice the encoded line.
+                    pending[pos] = _tail_from_byte(text, pos - offset) + "\n"
                 else:
                     pending[pos] = piece + text + "\n"
                 if len(pending[pos]) >= todo[pos]:
