@@ -33,13 +33,14 @@ Standard library only.
 import argparse
 import bisect
 import datetime
+import errno
 import json
 import math
 import os
+import secrets
 import stat
 import sys
 import zlib
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -737,30 +738,46 @@ def _preview(args, p, th, lim, ev, state, choice, records, source_name, findings
         say("preview not written: %s" % e)
         return
     try:
-        _write_preview(args.preview, text)
+        _write_preview(args.preview, text, replace=bool(args.force_preview))
     except OSError as e:
         say("preview not written: %s" % (e.strerror or e))
         return
     say("preview written (NOT VERIFIED, do not print): %s" % os.path.basename(args.preview))
 
 
-def _write_preview(path, text):
-    """Replace path with text atomically: write a temp file in the same
-    directory, then os.replace it over path. A rename never writes through a
-    symlink, and a failed write leaves the old file intact and no temp file."""
+def _write_preview(path, text, replace=True):
+    """Write path atomically: write a temp file in the same directory, then
+    publish it. With replace=True it is os.replace'd over path (a rename never
+    writes through a symlink, and a failed write leaves the old file intact and
+    no temp file). With replace=False it is hard-linked to path instead, which
+    fails with FileExistsError if anything exists there by then, so a file
+    created after the pre-run check is never replaced. The temp file is created
+    with mode 0666 so the kernel applies the umask (no process-wide umask
+    change)."""
     directory = os.path.dirname(os.path.abspath(path))
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".print-rescue-", suffix=".tmp")
+    tmp = os.path.join(directory, ".print-rescue-%s.tmp" % secrets.token_hex(8))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                 0o666)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
-        if os.path.exists(path):
-            mode = stat.S_IMODE(os.stat(path).st_mode)
+        if replace:
+            if os.path.exists(path):
+                os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
+            os.replace(tmp, path)
         else:
-            umask = os.umask(0)
-            os.umask(umask)
-            mode = 0o666 & ~umask
-        os.chmod(tmp, mode)
-        os.replace(tmp, path)
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                raise
+            except OSError:
+                # No hard links here (for example a FAT card): fall back to the
+                # pre-run check alone.
+                if os.path.lexists(path):
+                    raise FileExistsError(errno.EEXIST, "file exists", path)
+                os.replace(tmp, path)
+                return
+            os.unlink(tmp)
     except BaseException:
         try:
             os.unlink(tmp)

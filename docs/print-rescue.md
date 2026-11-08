@@ -692,6 +692,17 @@ Choices behind items that the automated reviews raised repeatedly.
   Copilot-authored same-repo heads are now reviewed with the head's
   `.claude/` settings in the checkout, exactly like any collaborator's branch;
   anyone who can make Copilot push there already has write access.
+- **Why zero-padded command numbers (`M0112`, `G028`) are refused.** Klipper
+  looks the command up as the literal text (`klippy/gcode.py`), so `M0112` is
+  an unknown command there and would not stop anything. The scanner
+  normalises the number and refuses it anyway: stricter than Klipper, never
+  looser, and covered by a test.
+- **How the preview is published.** Without `--force-preview` the temp file is
+  hard-linked to the target, which fails if anything exists there by then, so
+  a file created after the pre-run check is not replaced. If the file system
+  has no hard links (a FAT card) it falls back to the pre-run check alone.
+  The temp file is created with mode 0666, so the kernel applies the umask and
+  the process-wide umask is never changed.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

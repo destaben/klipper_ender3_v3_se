@@ -387,6 +387,15 @@ class Denylist(unittest.TestCase):
         r = gs.scan(recs("G1 X1 Y1 E1\nG1\tX10\nG1 X2 E1"))
         self.assertEqual(gs.tail_findings(r, 1, None)["forbidden"], [])
 
+    def test_zero_padded_command_numbers_cannot_hide_a_command(self):
+        # Klipper looks the command up as the literal text, so "M0112" is an
+        # unknown command there; the scanner normalises the number and refuses
+        # it anyway (stricter, never looser).
+        for form in ("M0112", "G028", "G0028 X0", "m00112"):
+            with self.subTest(form=form):
+                f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+
     def test_stepper_commands_are_forbidden(self):
         for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

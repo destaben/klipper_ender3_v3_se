@@ -414,6 +414,43 @@ class Preview(unittest.TestCase):
         self.assertTrue(r.preview.startswith("; print-rescue resume PREVIEW"))
 
 
+class WritePreview(unittest.TestCase):
+    def test_without_force_a_file_created_after_the_check_is_not_replaced(self):
+        # The pre-run check saw no file; another process creates one before the
+        # write. The write itself must not replace it.
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "preview.gcode")
+            with open(target, "w") as fh:
+                fh.write("OTHER")
+            with self.assertRaises(FileExistsError):
+                plan._write_preview(target, "NEW", replace=False)
+            with open(target) as fh:
+                self.assertEqual(fh.read(), "OTHER")
+            self.assertEqual(os.listdir(d), ["preview.gcode"])   # no temp file left
+
+    def test_with_force_the_file_is_replaced_and_keeps_its_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "preview.gcode")
+            with open(target, "w") as fh:
+                fh.write("OLD")
+            os.chmod(target, 0o640)
+            plan._write_preview(target, "NEW", replace=True)
+            with open(target) as fh:
+                self.assertEqual(fh.read(), "NEW")
+            self.assertEqual(os.stat(target).st_mode & 0o777, 0o640)
+
+    def test_a_new_file_gets_the_umask_mode_without_touching_the_umask(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = os.path.join(d, "preview.gcode")
+            old = os.umask(0o027)
+            try:
+                plan._write_preview(target, "NEW", replace=False)
+                self.assertEqual(os.umask(0o027), 0o027)
+            finally:
+                os.umask(old)
+            self.assertEqual(os.stat(target).st_mode & 0o777, 0o640)
+
+
 class Refusals(unittest.TestCase):
     """S2 and N3: no evidence, no resume line, never exit 0."""
 
