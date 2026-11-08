@@ -331,6 +331,7 @@ Each finding prints as one ASCII line, safe inside
 | R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
 | R21 | refused | The overlap is clearly absurd (above `stop_estimation.absurd_overlap_s`, default 30 s; `--max-overlap-s` above 30 s is rejected with exit 1 and never moves this limit): the evidence and the plan do not fit together. |
 | R22 | refused | No resume line without a gap: the stop window starts before the cut layer, no line of the cut layer meets the margin, or a manual line starts after the earliest possible stop. |
+| R23 | warning | The resumed tail contains `G91` (relative XYZ). The preview restores the mode of the resume line itself; the warning names the first `G91` line so the tail's return to `G90` can be checked. |
 | PIN_AT_BOOT | warning | The probe pin self-test at Klippy start could land on the part: the pin path (nozzle path plus probe offset) of every move that overlaps the stop window is tested against the part box plus the probe-spot margin, whole segments, not only their ends (**TO VERIFY**: when the pin deploys). |
 
 ## Profile
@@ -417,7 +418,10 @@ at an invalid command on purpose, and its motion is not safe to run.
 - `--log`: Klippy log, either `docker logs --timestamps klipper` output or a
   plain `klippy.log`.
 - `--history`, `--queue`: saved JSON of `/server/history/list` and
-  `/server/job_queue/status`.
+  `/server/job_queue/status`. In a history list the job used is the first one
+  whose status is `klippy_shutdown`, `klippy_disconnect`, `error`, `cancelled`
+  or `interrupted`; none of those is an R07 refusal (never the first job of
+  any status).
 - `--line N`: manual resume line. It is checked against the window and refused
   without one. A line without motion resolves to the next line with motion and
   the report says so.
@@ -556,7 +560,7 @@ Open:
   re-referencing. The preview must not be run; the P2 design replaces it with
   a state-and-tail file and runner-controlled motion.
 - **KI-20**: smaller gaps, all warnings or P2 items: `M84`/`M18`,
-  `BLTOUCH_DEBUG`, `M290`, `SET_GCODE_OFFSET` are not on the tail deny-list;
+  `M290` is not on the tail deny-list (`BLTOUCH_DEBUG` and `SET_GCODE_OFFSET ... MOVE=1` are);
   `--line` is not checked against the cut layer; a missing `size` or
   `modified` in the history skips that comparison. `SDCARD_RESET_FILE`,
   `SDCARD_PRINT_FILE`, `M24` and `M32` are not on the tail deny-list either
@@ -634,11 +638,12 @@ Choices behind items that the automated reviews raised repeatedly.
   R13 blocks motion until it is measured. So a typed spot can satisfy R02
   while R13 still refuses motion; one code each, no double counting. The test
   in `test_incident3.py` depends on this.
-- **Why the tail deny-list leaves out `SDCARD_*`, `M24`, `M32` and
-  `SET_GCODE_OFFSET` (KI-08, KI-20).** A slicer does not emit
-  the SD-card and file-control commands in a part file, and `SET_GCODE_OFFSET`
-  only shifts Z relative to a reference the gate has already re-established.
-  They are accepted gaps, not claims of safety: a deny-list cannot be complete
+- **Why the tail deny-list leaves out `SDCARD_*`, `M24` and `M32` (KI-08,
+  KI-20).** A slicer does not emit the SD-card and file-control commands in a
+  part file. A plain `SET_GCODE_OFFSET` (a baby-step) only shifts later moves
+  and is allowed; `SET_GCODE_OFFSET ... MOVE=1`, which moves at once, and
+  `BLTOUCH_DEBUG`, which deploys the pin, are refused (R17). The rest are
+  accepted gaps, not claims of safety: a deny-list cannot be complete
   (KI-08), and the P2 allow-list against the live macro set replaces it.
 - **Why `KEY=VALUE` words such as `G1 X=10` are not parsed.** Klipper splits
   a line at the letters and keeps `=10` as the value; `float("=10")` raises,
@@ -652,7 +657,12 @@ Choices behind items that the automated reviews raised repeatedly.
 - **Why the G-code gate is not made real in phase 1.** The preview is a
   review artefact; the P2 design makes the resume file hold state and tail
   only and moves every motion and gate into the runner. Investing in the
-  invalid-command trick (KI-14, KI-19) would be wasted.
+  invalid-command trick (KI-14, KI-19) would be wasted. If Klipper kept
+  running past the unknown command, the next line would lower Z in absolute
+  mode at an unreferenced Z; that is why the file is labelled NOT VERIFIED, why
+  phase 1 never runs it, and why no run path exists until the runner enforces
+  the gate (P2). Verifying the firmware behaviour is on the "To verify" list
+  and is not needed to keep phase 1 safe.
 - **Why the deny-list stays a deny-list for now (KI-08).** An allow-list for
   the tail needs the macro set of the live configuration, which the planner
   does not read. The P2 pre-checks require it.

@@ -91,6 +91,9 @@ FORBIDDEN_TAIL = {
     "SAVE_CONFIG": "restarts the host",
     "FORCE_MOVE": "move without homing",
     "SET_KINEMATIC_POSITION": "declares a position without a measurement",
+    "BLTOUCH_DEBUG": "deploys or stows the probe pin",
+    # Not a command name: SET_GCODE_OFFSET with MOVE=1 is reported under this key.
+    "SET_GCODE_OFFSET_MOVE": "SET_GCODE_OFFSET with MOVE=1 moves the toolhead",
 }
 
 # Extrusion moves that change Z by more than this count as vase-style.
@@ -588,6 +591,9 @@ class Scanner:
             st.tool = tool
         if cmd in FORBIDDEN_TAIL:
             self.events.append(Event(line, "forbidden", cmd))
+        elif cmd == "SET_GCODE_OFFSET" and _fparam(params, "MOVE", 0.0) != 0.0:
+            # A plain offset only shifts later moves; with MOVE=1 it moves now.
+            self.events.append(Event(line, "forbidden", "SET_GCODE_OFFSET_MOVE"))
         if cmd in END_MACROS:
             self.end_seen = True
         elif self.end_seen and cmd in ("G0", "G1", "G2", "G3"):

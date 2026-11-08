@@ -66,6 +66,13 @@ class Build(unittest.TestCase):
         self.assertGreater(len(out[:mark]) - 1 - out[:mark][::-1].index("G91"),
                            at(out, "G1 Z20.6"))
 
+    def test_arc_plane_of_the_source_is_restored(self):
+        for plane in ("G17", "G18", "G19"):
+            with self.subTest(plane=plane):
+                out = self.build_with(plane=plane)
+                mark = at(out, "; ---- original file")
+                self.assertEqual(out[mark - 1], plane)
+
     def test_default_modes_add_nothing_after_the_gate(self):
         out = self.build()
         mark = at(out, "; ---- original file")

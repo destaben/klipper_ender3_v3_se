@@ -118,6 +118,21 @@ R19_REUPLOAD_NOTE = ("the exit offset and the logged text match, so a re-upload 
                      "be ruled out by this check")
 
 
+def tail_warnings(tail):
+    """Warnings (code, detail) for a gs.tail_findings result: absolute
+    extrusion (R05), vase or non-monotonic Z (R06), relative XYZ (R23). Only the
+    first line of each kind is named."""
+    out = []
+    for ln, _ in tail["m82"][:1]:
+        out.append(("R05", "line %d" % ln))
+    for ln, why in (tail["vase"] + tail["non_monotonic_z"])[:1]:
+        out.append(("R06", "line %d: %s" % (ln, why)))
+    for ln, _ in tail["g91"][:1]:
+        out.append(("R23", "line %d: G91 in the resumed tail; the preview restores the "
+                    "mode at the resume line, check that the tail returns to G90" % ln))
+    return out
+
+
 def _is_number(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
@@ -190,10 +205,14 @@ def _history_job(data):
     if not isinstance(jobs, list):
         raise InputError("history: 'jobs' is not a list")
     candidates = [j for j in jobs if isinstance(j, dict)]
+    # Only a job that ended abnormally can be the interrupted print. Taking the
+    # first job of any status would compare size and mtime against an unrelated
+    # earlier print; no match is an R07 refusal instead.
     for job in candidates:
-        if job.get("status") in ("klippy_shutdown", "error", "cancelled"):
+        if job.get("status") in ("klippy_shutdown", "klippy_disconnect", "error",
+                                 "cancelled", "interrupted"):
             return job
-    return candidates[0] if candidates else None
+    return None
 
 
 def _queued(data):
@@ -535,10 +554,8 @@ def _run(args, out) -> int:
             add("R17", "line %d: %s redefines the coordinate system" % (ln, what))
         for ln, cmd in tail["tool_change"]:
             add("R17", "line %d: tool change %s (printing T%s)" % (ln, cmd, state.tool))
-        for ln, _ in tail["m82"][:1]:
-            add("R05", "line %d" % ln)
-        for ln, why in (tail["vase"] + tail["non_monotonic_z"])[:1]:
-            add("R06", "line %d: %s" % (ln, why))
+        for code, detail in tail_warnings(tail):
+            add(code, detail)
         if state.e_absolute:
             add("R05", "extrusion mode at the resume line is absolute")
         if state.layer < se["min_resume_layer"]:

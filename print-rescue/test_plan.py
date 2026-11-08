@@ -771,6 +771,42 @@ class PreviewTarget(unittest.TestCase):
                                     + ["preview.gcode"]))
 
 
+class TailWarnings(unittest.TestCase):
+    def tail(self, text):
+        import gcode_scan as gs
+        r = gs.scan([(i + 1, 0, ln) for i, ln in enumerate(text.split("\n"))])
+        return gs.tail_findings(r, 1, None)
+
+    def test_relative_xyz_in_the_tail_is_reported(self):
+        got = plan.tail_warnings(self.tail("G1 X1 Y1 E1\nG91\nG1 Z1\nG90"))
+        self.assertEqual([c for c, _ in got], ["R23"])
+        self.assertIn("line 2", got[0][1])
+
+    def test_absolute_extrusion_in_the_tail_is_still_reported(self):
+        got = plan.tail_warnings(self.tail("G1 X1 Y1 E1\nM82"))
+        self.assertEqual([c for c, _ in got], ["R05"])
+
+    def test_clean_tail_has_no_warning(self):
+        self.assertEqual(plan.tail_warnings(self.tail("G1 X1 Y1 E1\nG1 X2 E1")), [])
+
+
+class HistoryJob(unittest.TestCase):
+    def job(self, status, name="a.gcode"):
+        return {"filename": name, "status": status, "metadata": {"size": 1}}
+
+    def test_no_shutdown_like_job_is_not_a_match(self):
+        data = {"result": {"jobs": [self.job("completed"), self.job("in_progress")]}}
+        self.assertIsNone(plan._history_job(data))
+
+    def test_shutdown_like_statuses_match(self):
+        for st in ("klippy_shutdown", "klippy_disconnect", "error", "cancelled",
+                   "interrupted"):
+            with self.subTest(status=st):
+                data = {"result": {"jobs": [self.job("completed", "old.gcode"),
+                                            self.job(st)]}}
+                self.assertEqual(plan._history_job(data)["filename"], "a.gcode")
+
+
 class NoTraceback(unittest.TestCase):
     def test_unexpected_attribute_or_memory_error_is_a_message_not_a_traceback(self):
         from unittest import mock

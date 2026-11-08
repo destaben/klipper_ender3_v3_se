@@ -38,6 +38,7 @@ WARN = {
     "R16": "unknown previously excluded objects",
     "R19": "G-code modified time differs from the history (content check decides)",
     "R20": "probe point outside the bed mesh (mesh extrapolated)",
+    "R23": "relative XYZ mode (G91) in the resumed tail",
     "PIN_AT_BOOT": "probe pin self-test at boot lands on the part",
 }
 MAX_LINE = 240

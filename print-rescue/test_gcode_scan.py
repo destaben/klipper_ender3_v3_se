@@ -188,6 +188,19 @@ class Bytes(unittest.TestCase):
         self.assertEqual({m.line for m in r.moves}, {1})
         self.assertEqual(r.total.x_max, 1.0)
 
+    def test_probe_pin_and_offset_move_commands_are_forbidden_in_the_tail(self):
+        for form in ("BLTOUCH_DEBUG COMMAND=pin_down", "SET_GCODE_OFFSET Z=5 MOVE=1",
+                     "SET_GCODE_OFFSET Z_ADJUST=0.1 MOVE=1"):
+            with self.subTest(form=form):
+                f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+
+    def test_gcode_offset_without_move_is_not_forbidden(self):
+        for form in ("SET_GCODE_OFFSET Z=0.05", "SET_GCODE_OFFSET Z=0.05 MOVE=0"):
+            with self.subTest(form=form):
+                f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
+                self.assertEqual(f["forbidden"], [], form)
+
 
 class Tail(unittest.TestCase):
     def test_forbidden_tool_m82_vase_nonmonotonic(self):

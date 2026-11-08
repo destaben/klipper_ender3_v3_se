@@ -38,7 +38,7 @@ class ConsoleLine(unittest.TestCase):
                                            "R15", "R17", "R18", "R21", "R22"])
         self.assertEqual(sorted(rf.WARN), ["PIN_AT_BOOT", "R03", "R04", "R05", "R06",
                                            "R08", "R10", "R11", "R12", "R16", "R19",
-                                           "R20"])
+                                           "R20", "R23"])
 
 
 class Refused(unittest.TestCase):

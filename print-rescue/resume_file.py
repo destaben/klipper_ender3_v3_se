@@ -64,7 +64,7 @@ ALLOWED = {
     # must be restated here: CANCEL_PRINTER_SHUTDOWN (an armed auto power-off
     # must not cut the power mid-print) and G17 (the slicer's arc plane).
     "CANCEL_PRINTER_SHUTDOWN": (),
-    "G17": (),
+    "G17": (), "G18": (), "G19": (),
     # M117 without text clears the stale display message that
     # CANCEL_PRINTER_SHUTDOWN leaves in the job panel.
     "M117": (),
@@ -387,7 +387,8 @@ def build(state: State, source_name: str, resume_line: int,
     problems = check_generated(gen)
     if problems:
         raise ResumeRefused("generated output not allowed: " + problems[0])
-    gen.append("G17")
+    # The source's arc plane at the resume line (G17 unless it set G18/G19).
+    gen.append(state.plane if state.plane in ("G17", "G18", "G19") else "G17")
     gen.append("; ---- original file from line %d ----" % resume_line)
     layer = max(state.layer, 0)
     for raw in tail:
