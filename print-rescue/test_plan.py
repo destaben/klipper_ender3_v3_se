@@ -254,6 +254,29 @@ class MeasuredProfile(unittest.TestCase):
         self.assertIn("R15", codes(out))
         self.assertEqual(code, 2)
 
+    def test_queue_file_without_queued_jobs_is_not_an_empty_queue(self):
+        # A history JSON (or any other file) passed to --queue must not read as
+        # "no jobs waiting": R15 would fail open.
+        with tempfile.TemporaryDirectory() as d:
+            q = os.path.join(d, "q.json")
+            for name, body in (("no key", {"result": {"queue_state": "ready"}}),
+                               ("history", {"result": {"job": {"filename": "x.gcode"}}})):
+                with self.subTest(body=name):
+                    with open(q, "w") as fh:
+                        json.dump(body, fh)
+                    r = run_full("--queue", q, profile=fx.measured_profile())
+                    self.assertEqual(r.code, 1)
+                    self.assertIn("queued_jobs", r.err)
+
+    def test_r19_text_does_not_overclaim(self):
+        self.assertIn("same-length edit", plan.R19_REUPLOAD_NOTE)
+        self.assertNotIn("contents match the print", plan.R19_REUPLOAD_NOTE)
+
+    def test_pin_unknown_note_says_what_to_do(self):
+        # PIN_AT_BOOT is a warning (exit 0 possible), so the text must act.
+        self.assertIn("FIRMWARE_RESTART", plan.PIN_UNKNOWN_NOTE)
+        self.assertIn("lift Z", plan.PIN_UNKNOWN_NOTE)
+
     def test_r07_history_mismatch(self):
         with tempfile.TemporaryDirectory() as d:
             h = os.path.join(d, "h.json")

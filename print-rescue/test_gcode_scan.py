@@ -238,6 +238,18 @@ class Denylist(unittest.TestCase):
         f = gs.tail_findings(r, 1, None)
         self.assertIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
 
+    def test_carriage_return_inside_a_comment_line_is_refused(self):
+        # Whether Klipper splits a line at a bare CR is unverified (KI-14), so a
+        # comment that hides a command behind one is refused as well.
+        r = gs.scan(recs("G1 X1 Y1 E1\n;note\rG28 X\nG1 X2 E1"))
+        f = gs.tail_findings(r, 1, None)
+        self.assertIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
+
+    def test_a_crlf_line_ending_is_not_a_carriage_return_inside_a_line(self):
+        r = gs.scan(recs("G1 X1 Y1 E1\r\n;note\r\nG1 X2 E1\r"))
+        f = gs.tail_findings(r, 1, None)
+        self.assertNotIn("CR_IN_LINE", [c for _, c in f["forbidden"]])
+
     def test_a_bare_n_prefix_cannot_hide_a_command(self):
         for form in ("N M112", "N G28", "n  FIRMWARE_RESTART", "N12 M112"):
             with self.subTest(form=form):

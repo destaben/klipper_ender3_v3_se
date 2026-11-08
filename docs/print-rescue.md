@@ -102,7 +102,10 @@ Steps:
    With Z declared at least `z_hop` they home only their own axis (observed:
    X -6, Y -14). `G28 Y` moves the **bed**, so the part sweeps under the head:
    lift first, and check on paper that the swept path clears the part box and
-   the probe pin.
+   the probe pin. One axis per command is from the live run (see the closed
+   list in [To verify](#to-verify-against-the-klipper-fork)): it keeps a
+   surprise small, and the check on paper does not depend on it. If a command
+   moves both axes, stop.
 9. **Re-reference Z with bounded `PROBE` strokes, at a spot chosen for this
    part.** Use `plan.py --suggest-spots` and check the chosen spot with
    `--probe-spot X,Y`. A spot is accepted when the nozzle is inside the
@@ -391,7 +394,8 @@ of problems. The spot check also refuses any spot when no bed area is
 given, so the check is never skipped.
 
 `test_machine_profile.py` checks that `config/printer.cfg` still matches the
-fingerprint, so a change to probe offsets, axis limits, `safe_z_home` or the
+fingerprint, so a change to probe offsets, axis limits, the Z velocity and
+acceleration limits, `safe_z_home` or the
 SAVE_CONFIG `z_offset` must come with a profile update.
 
 ## Running plan.py
@@ -530,8 +534,10 @@ Open:
 - **KI-12**: `--line` is accepted when it starts at or before the earliest
   possible stop, without the safety margin of the automatic choice. It is an
   explicit operator override; the overlap warning still applies.
-- **KI-13**: the preview preamble always sets `G90`; a tail that resumes in
-  relative mode (`G91`) or non-G17 arcs are not translated or refused.
+- **KI-13**: the preview runs its own prime in `G90`/`M83`, then restores the
+  modes the source was in at the resume line: `M82` plus `G92 E<source E>` for
+  absolute extrusion, `G91` for relative XYZ (tests `Build`). Non-G17 arcs are
+  not translated or refused.
 - **KI-14**: the preview stops at `GATE_STOP`, a deliberately invalid command.
   That Klipper stops the SD print on an unknown command is **TO VERIFY** on the
   printer. The P2 design removes the trick: the resume file holds state and
@@ -551,8 +557,9 @@ Open:
 - **KI-20**: smaller gaps, all warnings or P2 items: `M84`/`M18`,
   `BLTOUCH_DEBUG`, `M290`, `SET_GCODE_OFFSET` are not on the tail deny-list;
   `--line` is not checked against the cut layer; a missing `size` or
-  `modified` in the history skips that comparison; the pin-at-boot check
-  (the pin check covers whole move paths).
+  `modified` in the history skips that comparison. `SDCARD_RESET_FILE`,
+  `SDCARD_PRINT_FILE`, `M24` and `M32` are not on the tail deny-list either
+  (a slicer does not emit them; see "Design notes").
 - **KI-21**: when the log has no Stats line after the shutdown, `P_end` is a
   lower bound and the stop window can be biased late (reported as R10).
 - **KI-22**: the R07 content check has two parts: the exit position must be a
@@ -560,7 +567,8 @@ Open:
   `Upcoming (N)` must match the file at those offsets (a few hundred
   characters). It cannot see an edit elsewhere in the file that keeps the size
   and those lines; the history `size` comparison (when `--history` is given)
-  catches size changes only.
+  catches size changes only. The R19 text says so: a pass does not mean the
+  file is identical.
 - **KI-23**: the remaining-time and remaining-filament rewrite of the resume
   file's header is proportional to filament, and how Moonraker/Mainsail use the
   header is TO VERIFY.
@@ -580,7 +588,7 @@ Closed in this change:
   or `--printer-cfg` now exits 3, not 0.
 - Prime amount with a slicer retraction larger than `retract_before_travel`
   (test `PrimeAmount`); firmware retraction (`G10`/`G11`) and R-form arcs are
-  refused in the tail; the pin-at-boot sample covers the start and end of
+  refused in the tail; the pin-at-boot check tests the whole path, not only the ends, of
   every move in the stop window; oversized text input and excerpts are
   refused; a manual `--line` without motion is reported.
 - The `z_offset` drift (profile 3.035, live 2.96) is gone by taking the live
@@ -606,6 +614,31 @@ Choices behind items that the automated reviews raised repeatedly.
   The check also compares the text the log printed at `Virtual sdcard (N)` and
   `Upcoming (N)` with the file, which catches same-length edits. The mtime is
   kept as the R19 warning. KI-22 states what the check cannot do.
+- **Why a manual `--line` skips the cut-layer and margin checks (KI-12).** It
+  is the operator's explicit override for a log that gives no usable evidence.
+  The automatic policy cannot run without that evidence, and refusing the
+  override would leave no way to resume at all. What stays: R07, R15, R17, the
+  overlap warning and R13. The operator chose the line, so the cost of an
+  early or late choice is theirs and is printed.
+- **Why a missing Stats line only raises R10 (KI-21).** Without a Stats line
+  after the shutdown the end anchor is a lower bound, so the earliest stop is
+  biased late, the unsafe direction. R10 states it ("manual line needed"), and
+  the `sd_pos` anchor limits the exposure. It is a warning rather than a
+  refusal because the manual `--line` path exists for exactly this case; the
+  overlap shown for the chosen line is what the operator weighs.
+- **Why an unmeasured `--probe-spot` counts toward R02.** R02 asks whether a
+  spot passes the geometry check (inside the envelope, at least 5 mm from
+  the part, head footprint clear). Measuring is a different question and
+  belongs to R13: the head footprint the check relies on is unmeasured, and
+  R13 blocks motion until it is measured. So a typed spot can satisfy R02
+  while R13 still refuses motion; one code each, no double counting. The test
+  in `test_incident3.py` depends on this.
+- **Why the tail deny-list leaves out `SDCARD_*`, `M24`, `M32` and
+  `SET_GCODE_OFFSET` (KI-08, KI-20).** A slicer does not emit
+  the SD-card and file-control commands in a part file, and `SET_GCODE_OFFSET`
+  only shifts Z relative to a reference the gate has already re-established.
+  They are accepted gaps, not claims of safety: a deny-list cannot be complete
+  (KI-08), and the P2 allow-list against the live macro set replaces it.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

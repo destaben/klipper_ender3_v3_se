@@ -49,7 +49,7 @@ GATE_STOP = "PRINT_RESCUE_GATE_REMOVE_THIS_LINE_AFTER_STEP_9"
 ALLOWED = {
     "G1": ("X", "Y", "Z", "E", "F"),
     "G21": (), "G90": (), "G91": (), "G92": ("E",),
-    "M83": (), "M107": (), "M106": ("S",), "M220": ("S",), "M221": ("S",),
+    "M82": (), "M83": (), "M107": (), "M106": ("S",), "M220": ("S",), "M221": ("S",),
     "M104": ("S",), "M109": ("S",), "M140": ("S",), "M190": ("S",),
     "SET_IDLE_TIMEOUT": ("TIMEOUT",),
     "SET_PRESSURE_ADVANCE": ("ADVANCE", "SMOOTH_TIME"),
@@ -374,6 +374,16 @@ def build(state: State, source_name: str, resume_line: int,
         "G92 E0",
         "G1 F%s" % _num(state.feed),
     ]
+    # The prime above ran in M83/G90. Give the copied tail the modes the source
+    # was in at the resume line, or its first moves would be misread: absolute
+    # E values run as relative extrusion (M82 source), relative XYZ moves run
+    # as absolute (G91 source).
+    if state.e_absolute:
+        gen.append("M82")
+        gen.append("G92 E%s ; the source's own E value at the resume line"
+                   % _num(state.pos[3]))
+    if not state.absolute:
+        gen.append("G91")
     problems = check_generated(gen)
     if problems:
         raise ResumeRefused("generated output not allowed: " + problems[0])

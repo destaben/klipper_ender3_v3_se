@@ -51,6 +51,8 @@ FINGERPRINT_KEYS = {
     ("bed_mesh", "mesh_max"): ("bed_mesh", "mesh_max", "list"),
     ("printer", "max_velocity"): ("printer", "max_velocity", "float"),
     ("printer", "max_accel"): ("printer", "max_accel", "float"),
+    ("printer", "max_z_velocity"): ("printer", "max_z_velocity", "float"),
+    ("printer", "max_z_accel"): ("printer", "max_z_accel", "float"),
     ("printer", "square_corner_velocity"): ("printer", "square_corner_velocity", "float"),
 }
 

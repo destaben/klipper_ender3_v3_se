@@ -453,8 +453,11 @@ class Scanner:
         st = self.st
         st.line = line
         stripped = text.strip()
-        if "\r" in stripped and not stripped.startswith(";"):
+        if "\r" in stripped:
             # A bare CR may start a second command that this scanner cannot see.
+            # Comment lines are included: whether Klipper splits at a bare CR is
+            # unverified (KI-14), so ";note\rG28 X" is refused too. A CRLF line
+            # ending is stripped above and does not count.
             self.events.append(Event(line, "forbidden", "CR_IN_LINE"))
         if stripped.startswith(";"):
             self._comment(line, stripped)

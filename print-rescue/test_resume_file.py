@@ -37,6 +37,41 @@ class Build(unittest.TestCase):
         args.update(kw)
         return rfile.build(self.state, "part.gcode", LINE, self.tail, **args).split("\n")
 
+    def build_with(self, **state_changes):
+        st = copy.deepcopy(self.state)
+        for k, v in state_changes.items():
+            setattr(st, k, v)
+        args = dict(overlap_s=2.98, overlap_mm=216.3, park_xy=(15, 205),
+                    bed_mesh_profile="default")
+        return rfile.build(st, "part.gcode", LINE, self.tail, **args).split("\n")
+
+    def test_absolute_extrusion_at_the_resume_line_is_restored(self):
+        # The preview runs its own prime in M83; the copied tail must then run
+        # in the mode the source was in, with E continuing from the source value.
+        st = copy.deepcopy(self.state)
+        st.e_absolute = True
+        st.pos[3] = 1234.5
+        out = rfile.build(st, "part.gcode", LINE, self.tail, overlap_s=2.98,
+                          overlap_mm=216.3, park_xy=(15, 205),
+                          bed_mesh_profile="default").split("\n")
+        mark = at(out, "; ---- original file")
+        self.assertIn("M82", out[:mark])
+        self.assertLess(out.index("M82"), at(out, "G92 E1234.5"))
+        self.assertGreater(out.index("M82"), at(out, "G1 E"))
+
+    def test_relative_xyz_at_the_resume_line_is_restored(self):
+        out = self.build_with(absolute=False)
+        mark = at(out, "; ---- original file")
+        self.assertEqual(out[:mark].count("G91"), 2)   # the lift bracket + the restore
+        self.assertGreater(len(out[:mark]) - 1 - out[:mark][::-1].index("G91"),
+                           at(out, "G1 Z20.6"))
+
+    def test_default_modes_add_nothing_after_the_gate(self):
+        out = self.build()
+        mark = at(out, "; ---- original file")
+        self.assertNotIn("M82", out[:mark])
+        self.assertEqual(out[:mark].count("G91"), 1)
+
     def test_non_finite_gcode_offset_is_refused(self):
         for bad in (float("nan"), float("inf")):
             with self.subTest(bad=bad):

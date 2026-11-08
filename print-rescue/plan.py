@@ -101,6 +101,23 @@ def _read_text(path, what):
         raise InputError("%s %s: %s" % (what, os.path.basename(path), e.strerror or e))
 
 
+# PIN_AT_BOOT is a warning, so the run can still exit 0. The text must say
+# what to DO, not only what to assume.
+PIN_UNKNOWN_NOTE = ("the stop window holds no move, so the head position at the stop "
+                    "is unknown. Treat the pin as over the part: lift Z by hand and move "
+                    "the head off the part before FIRMWARE_RESTART (exit code 0 does not "
+                    "clear this warning)")
+
+# The content check compares the exit offset and the logged text at a few
+# offsets. It cannot see an edit that keeps the length and lies elsewhere in
+# the file (for example F1800 -> F2400 in the last layers); only a byte-exact
+# copy of the printed file (--history size plus the operator's own knowledge)
+# can. The message says so, so a pass is never read as "identical".
+R19_REUPLOAD_NOTE = ("the exit offset and the logged text match, so a re-upload is the "
+                     "likely cause; a same-length edit elsewhere in the file cannot "
+                     "be ruled out by this check")
+
+
 def _is_number(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
@@ -185,7 +202,12 @@ def _queued(data):
     result = data.get("result", data)
     if not isinstance(result, dict):
         raise InputError("queue: 'result' is not an object")
-    jobs = result.get("queued_jobs", [])
+    if "queued_jobs" not in result:
+        # An absent key must not read as an empty queue (R15 would fail open
+        # for a history or other JSON passed to --queue by mistake).
+        raise InputError("queue: no 'queued_jobs' key (is this a "
+                         "server.job_queue.status response?)")
+    jobs = result["queued_jobs"]
     if not isinstance(jobs, list):
         raise InputError("queue: 'queued_jobs' is not a list")
     return [j.get("filename", "?") if isinstance(j, dict) else "?" for j in jobs]
@@ -404,7 +426,7 @@ def _run(args, out) -> int:
             if not same:
                 add("R07", why)
         if same and mtime_differs:
-            add("R19", "contents match the print (byte offset and logged text), so a re-upload is the likely cause")
+            add("R19", R19_REUPLOAD_NOTE)
         if part is not None:
             say("part box X %.1f-%.1f Y %.1f-%.1f, top %.2f mm (extrusions through line %d)"
                 % (part.x_min, part.x_max, part.y_min, part.y_max, part.top, res.bbox_until))
@@ -573,6 +595,9 @@ def _run(args, out) -> int:
                 extrapolated.append((name, v.mesh_extrapolation_mm))
         else:
             reasons.append("%s: %s" % (name, v.reasons[0]))
+    # A typed spot is geometry-checked only. It counts toward R02 on that basis;
+    # that the head footprint behind the check is unmeasured is R13's job, and
+    # R13 blocks motion (docs "Design notes": unmeasured --probe-spot).
     for sp_xy in proposed:
         name = "proposed (%g,%g)" % (sp_xy["x"], sp_xy["y"])
         if part is None:
@@ -623,8 +648,7 @@ def _run(args, out) -> int:
                 if tm.kind == "move" and tm.t_end >= window.earliest_t and
                 tm.t_start <= window.latest_t]
         if not segs:
-            add("PIN_AT_BOOT", "the stop window holds no move, so the head position at "
-                "the stop is unknown; assume the pin is over the part")
+            add("PIN_AT_BOOT", PIN_UNKNOWN_NOTE)
             say("probe pin at boot: unknown (no move in the stop window)")
         else:
             pin = geometry.check_pin_at_boot_paths(segs, part, p)

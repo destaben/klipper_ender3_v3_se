@@ -51,6 +51,8 @@
     "printer": {
       "max_velocity": 200,
       "max_accel": 4000,
+      "max_z_velocity": 5,
+      "max_z_accel": 100,
       "square_corner_velocity": 5.0
     }
   },

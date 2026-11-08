@@ -20,6 +20,8 @@ position_max: 250
 [printer]
 max_velocity: 200
 max_accel: 4000
+max_z_velocity: 5
+max_z_accel: 100
 square_corner_velocity: 5.0
 [bltouch]
 x_offset: -23.0
@@ -105,6 +107,17 @@ class Fingerprint(unittest.TestCase):
 
     def test_matching_config(self):
         self.assertEqual(prof.fingerprint_mismatches(fx.profile(), prof.parse_printer_cfg(CFG)), [])
+
+    def test_z_motion_limit_change_is_r14(self):
+        # max_z_velocity / max_z_accel feed the timing model that places the
+        # stop window, so drift in them must be caught like any other limit.
+        for old, new, key in (("max_z_velocity: 5", "max_z_velocity: 8", "max_z_velocity"),
+                              ("max_z_accel: 100", "max_z_accel: 300", "max_z_accel")):
+            with self.subTest(key=key):
+                mm = prof.fingerprint_mismatches(
+                    fx.profile(), prof.parse_printer_cfg(CFG.replace(old, new)))
+                self.assertEqual(len(mm), 1)
+                self.assertIn("printer." + key, mm[0])
 
     def test_x_offset_change_is_r14(self):
         cfg = prof.parse_printer_cfg(CFG.replace("x_offset: -23.0", "x_offset: -25.0"))
