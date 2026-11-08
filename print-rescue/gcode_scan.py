@@ -130,6 +130,21 @@ FORBIDDEN_TAIL.update({name: "macro that reaches homing, probing or a stepper mo
 _NOT_SEEDS = frozenset(("G10", "G11", "ARC_NO_IJ", "CR_IN_LINE", "CTRL_IN_LINE",
                         "SET_GCODE_OFFSET_MOVE"))
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ACTION_CALL = re.compile(r"^\{\s*action_")
+
+
+def _builds_a_command(line: str) -> bool:
+    """A macro line that creates or runs a G-code command at run time: it calls
+    run_script*, or it is a bare Jinja expression (the text becomes a gcode line)
+    that concatenates strings with ~. What command results cannot be known, so
+    the macro counts as dangerous. action_*() calls only print or notify."""
+    s = line.strip()
+    if "run_script" in s.lower():
+        return True
+    return (s.startswith("{") and not s.startswith(("{%", "{#")) and "~" in s
+            and not _ACTION_CALL.match(s))
+
+
 _FIRST_WORD = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)")
 # Built-in commands that home, probe, sweep the head or restart: these count when
 # they appear ANYWHERE in a macro body (a Jinja string or expression included).
@@ -170,6 +185,8 @@ def dangerous_macros(sections: Dict[str, Dict[str, str]]) -> Dict[str, str]:
         first = {m.group(1).upper() for ln in lines for m in [_FIRST_WORD.match(ln)] if m}
         hard = {w.upper() for ln in lines for w in _WORD.findall(ln)} & _HARD_WORDS
         calls[n] = first | hard
+        if any(_builds_a_command(ln) for ln in lines):
+            calls[n].add("(runs a command built at run time)")
     danger: Dict[str, str] = {}
     grew = True
     while grew:
@@ -179,9 +196,11 @@ def dangerous_macros(sections: Dict[str, Dict[str, str]]) -> Dict[str, str]:
                     or re.fullmatch(r"T\d+", n)):
                 continue
             hit = next((c for c in sorted(called)
-                        if c in seeds or c in danger), None)
+                        if c in seeds or c in danger
+                        or c == "(runs a command built at run time)"), None)
             if hit:
-                danger[n] = "your macro reaches %s" % hit
+                danger[n] = ("your macro %s" % hit.strip("()")) if hit.startswith("(") \
+                    else "your macro reaches %s" % hit
                 grew = True
     return danger
 

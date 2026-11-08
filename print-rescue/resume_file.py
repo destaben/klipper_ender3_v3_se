@@ -42,6 +42,10 @@ GATE_MARK = "; GATE: Z is not re-referenced yet"
 # command" and stop the SD print here (TO VERIFY on the printer, KI-14), so
 # the preview should not run past the gate by accident.
 # The operator removes this line only after procedure step 9.
+# If Klipper instead kept running past the unknown command, the next line
+# lowers Z in absolute mode at an unreferenced Z. That cannot happen in phase 1
+# (nothing runs this file, and it is labelled NOT VERIFIED); the P2 runner owns
+# the gate and this line goes away (docs "Design notes", KI-14 and KI-19).
 GATE_STOP = "PRINT_RESCUE_GATE_REMOVE_THIS_LINE_AFTER_STEP_9"
 
 # Generated commands and the parameters each may carry. Classic G/M words are

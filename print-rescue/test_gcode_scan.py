@@ -468,12 +468,15 @@ class Denylist(unittest.TestCase):
         sections = {
             "gcode_macro VIA_JINJA": {"gcode": '{printer.gcode.run_script_from_command("G28")}'},
             "gcode_macro VIA_STRING": {"gcode": "{% set cmd = 'BED_TILT_CALIBRATE' %}\nM117 x"},
+            "gcode_macro BUILT": {"gcode": '{ "G" ~ "28" }'},
+            "gcode_macro CHAINED": {"gcode": "{printer.gcode.run_script_from_command(cmd)}"},
+            "gcode_macro RESPOND": {"gcode": '{ action_respond_info("hi") }\nM117 x'},
             "gcode_macro PLAIN": {"gcode": "{% set a = 1 %}\nM117 hello\nG1 X1"},
             "gcode_macro NOTAWORD": {"gcode": "M117 PAUSED_HOMED_G280"},
             "gcode_macro MENTIONS": {"gcode": "{% if printer.idle_timeout.state == 'PAUSE' %}\nM117 x\n{% endif %}"},
         }
         got = gs.dangerous_macros(sections)
-        self.assertEqual(sorted(got), ["VIA_JINJA", "VIA_STRING"])
+        self.assertEqual(sorted(got), ["BUILT", "CHAINED", "VIA_JINJA", "VIA_STRING"])
 
     def test_text_offsets_survive_invalid_utf8_before_them(self):
         import tempfile

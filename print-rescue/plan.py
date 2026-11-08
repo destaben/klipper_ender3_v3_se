@@ -451,12 +451,11 @@ def _run(args, out) -> int:
         cfg_all, missing_inc, external_inc = _cfg_with_includes(args.printer_cfg)
         user_macros = gs.dangerous_macros(cfg_all)
         if missing_inc:
-            # A saved printer.cfg without its config directory is the usual
-            # evidence, so this is a note, not NOT CHECKED: the macro check just
-            # covers fewer macros. Save the whole config directory to get it all.
-            live_notes.append("user-macro check is partial, includes not found: %s "
-                              "(save the config directory next to printer.cfg)"
-                              % ", ".join(sorted(set(missing_inc))[:5]))
+            # A named include that was not supplied can hold the macro the
+            # tail calls, so the R17 user-macro check is incomplete: NOT
+            # CHECKED, exit 3. Save the config directory next to printer.cfg.
+            not_checked.append("R17 user macros (include not read: %s)"
+                               % ", ".join(sorted(set(missing_inc))[:5]))
         if external_inc:
             live_notes.append("include outside the config directory not read for the "
                               "user-macro check: %s" % ", ".join(sorted(set(external_inc))[:5]))

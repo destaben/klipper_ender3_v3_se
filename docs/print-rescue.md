@@ -524,9 +524,9 @@ Open:
   `[gcode_macro]` sections (following `[include]` files inside the config
   directory) and refuses any macro that reaches a listed command, so a macro
   that exists only in the user's config is covered when its file is supplied.
-  A macro that moves the head without calling a listed command, a macro in an
-  include that was not supplied, or an absolute-path include can still pass
-  (the run prints a note naming the includes it could not read); the allow-list
+  A macro that moves the head without any listed word (for example a command
+  assembled in a way the checks above do not see) or an absolute-path include
+  can still pass; the allow-list
   against the live macro set is the P2 answer (design decision for the owner). Job-end
   commands (`END_PRINT`, `M84`, `M18`, `TURN_OFF_HEATERS`) are accepted only
   as the end of the file; `MANUAL_STEPPER` and `STEPPER_BUZZ` are refused; see `FORBIDDEN_TAIL` in
@@ -738,13 +738,19 @@ Choices behind items that the automated reviews raised repeatedly.
   in its body, a Jinja expression or string included
   (`{printer.gcode.run_script_from_command("G28")}`). Soft names such as
   `PAUSE` count only as the first word of a line, so a message or variable that
-  mentions them does not condemn a macro. Firmware retraction (`G10`/`G11`) does not make a
+  mentions them does not condemn a macro. A macro that runs a command it
+  builds at run time (`run_script*`, or a bare `{ ... ~ ... }` expression line,
+  whose text becomes a gcode line) is dangerous too, since the command cannot
+  be known; `action_*()` calls only print and are ignored. Firmware retraction (`G10`/`G11`) does not make a
   macro dangerous (a timelapse macro retracts and is fine in a tail), tool
   changes `T<n>` are left to the tool-change check, and the end macros keep
   their own rule. Every branch of an `{% if %}` counts, so it fails closed. A
   saved `printer.cfg` without its config directory is the usual evidence, so
-  missing includes give a note, not exit 3; save the directory to get the full
-  check.
+  a named include that was not supplied is `NOT CHECKED` (exit 3), because it can
+  hold the macro the tail calls; save the config directory next to
+  `printer.cfg`. An absolute include (the runtime-generated
+  `/run/klipper/mmu_temp.cfg`, which holds the MMU MCU section) cannot be
+  supplied as evidence and is only a note.
 - **Why the test fixtures set `PRINT_RESCUE_ALLOW_GCODE_MAP` process-wide.**
   `rescue_fixtures.py` sets it on import because the committed excerpts need
   `--gcode-map`, which is otherwise refused. Only test modules import it; a test

@@ -510,6 +510,31 @@ class FixturesStayInTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
 
 
+class MissingInclude(unittest.TestCase):
+    def test_a_named_but_missing_include_is_not_checked_and_exits_3(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, "printer.cfg")
+            with open(fx.REPO_PRINTER_CFG, encoding="utf-8") as fh:
+                text = "".join(ln for ln in fh if not ln.startswith("[include "))
+            with open(cfg, "w", encoding="utf-8") as fh:
+                fh.write("[include macros_not_saved.cfg]\n" + text)
+            r = run_full("--printer-cfg", cfg, profile=resumable_profile())
+        self.assertIn("NOT CHECKED: R17 user macros (include not read: macros_not_saved.cfg)",
+                      r.out)
+        self.assertEqual(r.code, 3)
+
+    def test_a_runtime_generated_absolute_include_is_only_a_note(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = os.path.join(d, "printer.cfg")
+            with open(cfg, "w", encoding="utf-8") as fh:
+                fh.write("[include /run/klipper/mmu_temp.cfg]\n")
+                with open(fx.REPO_PRINTER_CFG, encoding="utf-8") as src:
+                    fh.writelines(ln for ln in src if not ln.startswith("[include "))
+            r = run_full("--printer-cfg", cfg, profile=resumable_profile())
+        self.assertNotIn("NOT CHECKED: R17", r.out)
+        self.assertIn("include outside the config directory not read", r.out)
+
+
 class CfgMacros(unittest.TestCase):
     def write(self, d, name, text):
         path = os.path.join(d, name)
@@ -850,7 +875,13 @@ def copied_inputs(d, flags):
             with open(dst, "w", encoding="utf-8") as fh:
                 json.dump({"result": {"queue_state": "ready", "queued_jobs": []}}, fh)
         elif flag == "--printer-cfg":
-            _copy_bytes(fx.REPO_PRINTER_CFG, dst)
+            # A saved printer.cfg that stands alone: its relative [include] lines
+            # point at files that are not saved here, so they are dropped. (An
+            # include that is named but missing is NOT CHECKED, tested below.)
+            with open(fx.REPO_PRINTER_CFG, encoding="utf-8") as src, \
+                    open(dst, "w", encoding="utf-8") as out:
+                out.writelines(ln for ln in src
+                               if not ln.startswith("[include ") or "/run/" in ln)
         else:
             _copy_bytes(SOURCES[flag], dst)
         paths[flag] = dst
