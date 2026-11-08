@@ -73,6 +73,9 @@ Timeline (relative, in order):
 Run read-only on the saved evidence, it refused for reasons that were all
 legitimate, and warned of the right danger:
 
+- (record of the live run; with the current planner, which no longer maps the
+  source's `ACCEL_TO_DECEL`, the same evidence gives resume line 390881 and a
+  3.39 s overlap)
 - stop window lines 390902-391125, resume candidate line 390866 (X134.561
   Y137.957 Z53.000), overlap 3.55 s / 104.8 mm;
 - R14: the profile's `z_offset` 3.035 against the live 2.96 (the live value was

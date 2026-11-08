@@ -59,6 +59,16 @@ class Build(unittest.TestCase):
         self.assertLess(out.index("M82"), at(out, "G92 E1234.5"))
         self.assertGreater(out.index("M82"), at(out, "G1 E"))
 
+    def test_unknown_heating_target_refuses_the_preview(self):
+        # A source that heats through a macro leaves the temperatures unknown.
+        for field in ("bed_temp", "extruder_temp"):
+            with self.subTest(field=field):
+                with self.assertRaises(rfile.ResumeRefused) as cm:
+                    self.build_with(**{field: None})
+                self.assertIn("target temperature", str(cm.exception))
+        with self.assertRaises(rfile.ResumeRefused):
+            self.build_with(bed_temp=None, extruder_temp=None)
+
     def test_m221_scales_neither_generated_filament_nor_the_source_e(self):
         # Source: M82 with M221 S90. Scanner pos[3] is scaled (9 after E10).
         st = copy.deepcopy(self.state)
@@ -157,7 +167,7 @@ class Build(unittest.TestCase):
     def test_restored_state(self):
         out = self.build()
         self.assertIn("SET_PRESSURE_ADVANCE ADVANCE=0.08", out)
-        self.assertIn("SET_VELOCITY_LIMIT ACCEL=2500 ACCEL_TO_DECEL=1750", out)
+        self.assertIn("SET_VELOCITY_LIMIT ACCEL=2500", out)
         self.assertIn("M106 S255", out)
         self.assertIn("M109 S220", out)
         self.assertIn("M190 S60", out)

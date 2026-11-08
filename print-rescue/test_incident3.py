@@ -160,8 +160,8 @@ class Verdict(unittest.TestCase):
         self.assertIn("R12", codes(out))
         self.assertIn("R20", codes(out))
         self.assertNotIn("R02", codes(out))
-        self.assertIn("resume line 390866", out)
-        self.assertIn("overlap to the latest possible stop: 3.55 s", out)
+        self.assertIn("resume line 390881", out)
+        self.assertIn("overlap to the latest possible stop: 3.39 s", out)
         self.assertIsNotNone(preview)
 
     def test_front_spot_is_rejected_and_search_suggests_the_rear(self):

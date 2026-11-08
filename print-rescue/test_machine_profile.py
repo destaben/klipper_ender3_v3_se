@@ -122,6 +122,13 @@ class Fingerprint(unittest.TestCase):
                 self.assertEqual(len(mm), 1)
                 self.assertIn("printer." + key, mm[0])
 
+    def test_a_live_twin_that_drifts_from_motion_is_reported(self):
+        p = fx.profile()
+        self.assertEqual(prof.motion_inconsistencies(p), [])
+        p["config_fingerprint"]["printer"]["max_z_velocity"] = {
+            "value": 8, "source": "config", "live": True}
+        self.assertEqual(len(prof.motion_inconsistencies(p)), 1)
+
     def test_extrude_only_limit_change_is_r14(self):
         for old, new, key in (("max_extrude_only_velocity: 45", "max_extrude_only_velocity: 60",
                                "max_extrude_only_velocity"),
@@ -257,6 +264,10 @@ class Validation(unittest.TestCase):
             ].__setitem__("mesh_min", 30),
         "fingerprint live a string": lambda p: p["config_fingerprint"]["bltouch"][
             "z_offset"].__setitem__("live", "yes"),
+        "motion z velocity differs from the fingerprint": lambda p: p["motion"].__setitem__(
+            "max_z_velocity", 8),
+        "motion extrude-only accel differs from the fingerprint": lambda p: p[
+            "motion"].__setitem__("max_extrude_only_accel", 9000),
     }
 
     def test_each_malformed_profile_is_refused(self):

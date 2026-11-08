@@ -78,7 +78,7 @@ M221 S90
 
     def test_limits_temps_fan_pa_objects(self):
         r = gs.scan(recs("""
-SET_VELOCITY_LIMIT ACCEL=2500 ACCEL_TO_DECEL=1750
+SET_VELOCITY_LIMIT ACCEL=2500 MINIMUM_CRUISE_RATIO=0.3
 M204 S3000
 M220 S90
 M221 S95
@@ -433,17 +433,18 @@ class Denylist(unittest.TestCase):
                 self.assertEqual(len(f["forbidden"]), 1, cmd)
 
     def test_velocity_limits_that_klipper_rejects_are_ignored(self):
-        # Klipper: MINIMUM_CRUISE_RATIO must be >= 0 and < 1, ACCEL_TO_DECEL > 0;
-        # the line errors there, so it must not reach the timing model.
+        # Klipper: MINIMUM_CRUISE_RATIO must be >= 0 and < 1 (the line errors
+        # otherwise) and the pinned fork has no ACCEL_TO_DECEL at all: neither
+        # may reach the timing model.
         base = gs.scan(recs("G1 X1 Y1 E1")).state
         for form in ("SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=1.0",
                      "SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=1.5",
                      "SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=-0.1",
-                     "SET_VELOCITY_LIMIT ACCEL_TO_DECEL=0"):
+                     "SET_VELOCITY_LIMIT ACCEL_TO_DECEL=1750"):
             with self.subTest(form=form):
                 st = gs.scan(recs("G1 X1 Y1 E1\n%s" % form)).state
                 self.assertEqual(st.minimum_cruise_ratio, base.minimum_cruise_ratio)
-                self.assertFalse(st.mcr_set or st.accel_to_decel_set)
+                self.assertFalse(st.mcr_set)
         st = gs.scan(recs("SET_VELOCITY_LIMIT MINIMUM_CRUISE_RATIO=0.25")).state
         self.assertEqual(st.minimum_cruise_ratio, 0.25)
 

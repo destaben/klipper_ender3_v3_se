@@ -152,8 +152,8 @@ class TemplateProfile(unittest.TestCase):
     def test_report(self):
         self.assertIn("anchors: sd+end", self.out)
         self.assertIn("P_end - P_good 5.23 s", self.out)
-        self.assertIn("earliest stop: line 201951", self.out)
-        self.assertIn("latest stop:   line 202295", self.out)
+        self.assertIn("earliest stop: line 201962", self.out)
+        self.assertIn("latest stop:   line 202298", self.out)
         self.assertIn("part box X 29.8-188.4 Y 29.8-188.4, top 20.60", self.out)
         self.assertIn("last dispatched line: 202396", self.out)
         self.assertIn("USB serial read stalled (-32) at Nov 07 10:09:45", self.out)
@@ -162,7 +162,7 @@ class TemplateProfile(unittest.TestCase):
         self.assertLessEqual(int(m.group(1)), 202314)
         self.assertGreaterEqual(int(m.group(1)), fx.CUT_LAYER_START)
         self.assertIn("resume candidate", self.out)
-        self.assertRegex(self.out, r"overlap to the latest possible stop: 4\.83 s, [\d.]+ mm")
+        self.assertRegex(self.out, r"overlap to the latest possible stop: 4\.95 s, [\d.]+ mm")
 
     def test_no_preview_when_refused(self):
         self.assertIsNone(self.preview)

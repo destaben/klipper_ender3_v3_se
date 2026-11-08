@@ -239,7 +239,7 @@ then a forward pass; a regression test fixes a mixed-speed chain against it):
 cruise speed from F x M220 and `max_velocity`, Z and extrude-only limits,
 junction speed from `square_corner_velocity` (junction deviation, centripetal
 half-move limit, extruder `instant_corner_velocity`), `minimum_cruise_ratio`
-(`ACCEL_TO_DECEL` is mapped to it as recent Klipper does), and arcs split like
+(the pinned fork has no `ACCEL_TO_DECEL`: it ignores it, and so does the scanner), and arcs split like
 `gcode_arcs` (resolution 1.0). Approximations:
 
 - the stream is planned as one continuous lookahead; Klipper's forced flushes
@@ -329,7 +329,7 @@ Each finding prints as one ASCII line, safe inside
 | R11 | warning | Long time since the shutdown (part may have cooled loose). |
 | R12 | warning | The overlap from the resume line to the latest possible stop is above the budget (`stop_estimation.max_overlap_s`, or `--max-overlap-s`). The line states the path (mm), the filament (mm) and an estimate of the material printed twice (mm3). Refusing would favour a gap in the part, so it only warns. |
 | R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. The owner's head estimate has source `user`, so it keeps this block on. |
-| R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
+| R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. A `motion` limit that differs from its fingerprint twin (for example `motion.max_z_velocity` vs `printer.max_z_velocity`) is a profile error, and after live values are applied it is reported as R14: the stop window must be timed with the limits printer.cfg has. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
 | R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z in the tail or anywhere before the resume line; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
@@ -719,10 +719,11 @@ Choices behind items that the automated reviews raised repeatedly.
   has no hard links (a FAT card) it falls back to the pre-run check alone.
   The temp file is created with mode 0666, so the kernel applies the umask and
   the process-wide umask is never changed.
-- **Why `MINIMUM_CRUISE_RATIO=1` and `ACCEL_TO_DECEL=0` are not modelled.**
-  Klipper requires `0 <= MINIMUM_CRUISE_RATIO < 1` and `ACCEL_TO_DECEL > 0`
-  (`klippy/extras/gcode_move.py` and `klippy/toolhead.py`), so such a line
-  errors there and changes nothing. The scanner ignores them and profile
+- **Why `MINIMUM_CRUISE_RATIO=1` and `ACCEL_TO_DECEL` are not modelled.**
+  Klipper requires `0 <= MINIMUM_CRUISE_RATIO < 1` (`klippy/toolhead.py`), so
+  such a line errors there and changes nothing, and the pinned fork's
+  `SET_VELOCITY_LIMIT` has no `ACCEL_TO_DECEL` parameter at all (a source that
+  carries it, like the incident file, runs with the configured ratio). The scanner ignores both and profile
   validation rejects `motion.minimum_cruise_ratio >= 1`; with no deceleration
   headroom the look-ahead port would have no junction to time.
 - **Which built-in commands the deny-list names.** Config macros are derived
@@ -792,6 +793,13 @@ Choices behind items that the automated reviews raised repeatedly.
   file system without hard links (a FAT card) falls back to check-then-replace;
   exploiting that needs a local actor who can already write to the output
   directory.
+- **Heating targets and snapping.** The scanner reads `M104/M109/M140/M190`
+  only. When the source heats through a macro (`START_PRINT BED=.. HEATER=..`)
+  a target stays unknown and the preview is refused (R17 line "resume preview
+  refused"): a tail that extrudes after the shutdown must not run on a cold
+  nozzle. The snap to a travel or unretract is bounded by the start of its
+  SOURCE line (an arc starts earlier than its last segment), so it never
+  exceeds `max_overlap_s`.
 - **Pre-resume XYZ `G92` and log sessions.** A `G92` on X, Y or Z before the
   resume line shifts the coordinate origin and the preview does not restore it:
   R17 refuses. Stats before a Klippy restart never supply the link-freeze sample

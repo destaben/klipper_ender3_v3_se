@@ -460,6 +460,8 @@ def _run(args, out) -> int:
             live_notes.append("include outside the config directory not read for the "
                               "user-macro check: %s" % ", ".join(sorted(set(external_inc))[:5]))
         live_notes = live_notes + prof.apply_live_config(p, cfg)
+        for mm in prof.motion_inconsistencies(p):
+            add("R14", mm)
         for mm in prof.fingerprint_mismatches(p, cfg):
             add("R14", mm)
 

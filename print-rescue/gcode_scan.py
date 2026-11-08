@@ -299,7 +299,6 @@ class State:
     fan: Optional[int] = None     # 0-255
     pressure_advance: Optional[float] = None
     pa_smooth_time: Optional[float] = None
-    accel_to_decel_set: bool = False
     mcr_set: bool = False
     objects: Dict[str, str] = field(default_factory=dict)   # name -> define line
     current_object: Optional[str] = None
@@ -653,21 +652,15 @@ class Scanner:
             scv = _fparam(params, "SQUARE_CORNER_VELOCITY")
             if scv is not None and scv >= 0:
                 st.square_corner_velocity = scv
-            # Klipper rejects MINIMUM_CRUISE_RATIO outside 0 <= r < 1 and
-            # ACCEL_TO_DECEL <= 0 (the line errors and changes nothing), so such a
-            # value must not reach the timing model: 1.0 would leave no
-            # deceleration headroom and break the look-ahead.
+            # Klipper rejects MINIMUM_CRUISE_RATIO outside 0 <= r < 1 (the line
+            # errors and changes nothing), so such a value must not reach the
+            # timing model: 1.0 would leave no deceleration headroom and break
+            # the look-ahead. The pinned fork has no ACCEL_TO_DECEL parameter
+            # (SET_VELOCITY_LIMIT ignores it), so it is deliberately not modelled.
             mcr = _fparam(params, "MINIMUM_CRUISE_RATIO")
-            a2d = _fparam(params, "ACCEL_TO_DECEL")
-            if mcr is not None:
-                if 0.0 <= mcr < 1.0:
-                    st.minimum_cruise_ratio = mcr
-                    st.mcr_set = True
-            elif a2d is not None and a2d > 0:
-                # Recent Klipper maps the deprecated ACCEL_TO_DECEL to a
-                # minimum_cruise_ratio relative to the current accel.
-                st.minimum_cruise_ratio = min(max(1.0 - min(1.0, a2d / st.accel), 0.0), 1.0)
-                st.accel_to_decel_set = True
+            if mcr is not None and 0.0 <= mcr < 1.0:
+                st.minimum_cruise_ratio = mcr
+                st.mcr_set = True
         elif cmd == "M220":
             s = _fparam(params, "S")
             if s and s > 0:

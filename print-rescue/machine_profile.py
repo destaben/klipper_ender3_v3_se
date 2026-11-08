@@ -299,6 +299,36 @@ def _check_structure(p: dict) -> List[str]:
     return errs
 
 
+# motion key -> its twin in config_fingerprint. The timing model reads motion,
+# R14 checks the fingerprint against printer.cfg: the two must say the same.
+MOTION_TWINS = {
+    "max_velocity": ("printer", "max_velocity"),
+    "max_accel": ("printer", "max_accel"),
+    "square_corner_velocity": ("printer", "square_corner_velocity"),
+    "max_z_velocity": ("printer", "max_z_velocity"),
+    "max_z_accel": ("printer", "max_z_accel"),
+    "max_extrude_only_velocity": ("extruder", "max_extrude_only_velocity"),
+    "max_extrude_only_accel": ("extruder", "max_extrude_only_accel"),
+}
+
+
+def motion_inconsistencies(p: dict) -> List[str]:
+    """motion values that differ from their config_fingerprint twin (so the
+    stop window would be timed with limits printer.cfg does not have)."""
+    out = []
+    fp = p.get("config_fingerprint", {})
+    for k, (sec, opt) in MOTION_TWINS.items():
+        node = fp.get(sec, {}).get(opt) if isinstance(fp.get(sec), dict) else None
+        if node is None or k not in p.get("motion", {}):
+            continue
+        a, b = val(p["motion"][k]), val(node)
+        if _is_num(a) and _is_num(b) and abs(a - b) > 1e-6:
+            out.append("motion.%s is %s but config_fingerprint.%s.%s is %s: the "
+                       "timing would use limits printer.cfg does not have"
+                       % (k, a, sec, opt, b))
+    return out
+
+
 def _check_ranges(p: dict) -> List[str]:
     errs = []
     env = p["envelope"]
@@ -346,6 +376,7 @@ def _check_ranges(p: dict) -> List[str]:
         errs.append("stop_estimation.absurd_overlap_s must be a number >= max_overlap_s")
     if se["min_resume_layer"] < 0:
         errs.append("stop_estimation.min_resume_layer must be >= 0")
+    errs.extend(motion_inconsistencies(p))
     for t in p["head_footprint"]["tiers"]:
         v = val(t)
         if v["z_from"] > v["z_to"]:

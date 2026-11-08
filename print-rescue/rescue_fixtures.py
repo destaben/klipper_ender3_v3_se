@@ -114,4 +114,4 @@ INC3_QUEUE = os.path.join(FIX, "inc3-queue.json")
 INC3_PRINTER_CFG = os.path.join(FIX, "inc3-printer-cfg.cfg")
 INC3_EXIT_POSITION = 8772080
 INC3_LAST_LINE = 391419
-INC3_RESUME_LINE = 390866
+INC3_RESUME_LINE = 390881

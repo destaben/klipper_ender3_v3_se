@@ -98,7 +98,7 @@ class IncidentEvidence(unittest.TestCase):
         # The end anchor (the plan's formula) is the one that sets both ends here.
         self.assertLess(d["end_anchor_earliest_t"], d["sd_anchor_earliest_t"])
         self.assertGreater(d["end_anchor_latest_t"], d["sd_anchor_latest_t"])
-        self.assertEqual((w.earliest_line, w.latest_line), (201951, 202295))
+        self.assertEqual((w.earliest_line, w.latest_line), (201962, 202298))
 
     def test_end_anchor_numbers(self):
         # The plan's formula (end anchor): 4.23 s .. 6.27 s plus lookahead.
@@ -121,7 +121,7 @@ class IncidentEvidence(unittest.TestCase):
         self.assertLess(d["sd_anchor_earliest_t"], d["sd_anchor_latest_t"])
 
     def test_overlap_above_the_budget_warns_with_the_extra_material(self):
-        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.8 s. That
+        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.95 s. That
         # is a warning (R12) with the extra material, not a refusal: the
         # alternative would be a gap in the part.
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 3.0)
@@ -130,7 +130,7 @@ class IncidentEvidence(unittest.TestCase):
         self.assertIn("mm3", c.warning)
         self.assertGreater(c.extra_filament_mm, 0)
         self.assertEqual(c.line, 201925)
-        self.assertAlmostEqual(c.overlap_s, 4.83, places=2)
+        self.assertAlmostEqual(c.overlap_s, 4.95, places=2)
 
     def test_resume_choice_with_five_second_budget(self):
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0)
@@ -172,11 +172,11 @@ class IncidentEvidence(unittest.TestCase):
         self.assertIn("margin", c.refusal)
 
     def test_manual_estimates_against_the_combined_window(self):
-        # Line 202282 (the hand-built resume) starts 0.14 s INSIDE the latest
+        # Line 202282 (the hand-built resume) starts 0.18 s INSIDE the latest
         # possible stop, not after it. Lines 202314 and 202335 do lie after it.
         t = sp.line_start_t(self.timed, fx.MANUAL_RESUME_LINE)
         self.assertLess(t, self.w.latest_t)
-        self.assertAlmostEqual(self.w.latest_t - t, 0.14, delta=0.01)
+        self.assertAlmostEqual(self.w.latest_t - t, 0.176, delta=0.01)
         for line in (202314, 202335):
             self.assertGreater(sp.line_start_t(self.timed, line), self.w.latest_t)
         # It is still refused: it starts after the earliest possible stop (gap).
@@ -238,6 +238,31 @@ class Kernel(unittest.TestCase):
             stalls = sp.kernel_usb_stalls(fh.read().splitlines())
         # 10:09:45 local (UTC+1) is the 09:09:45 UTC freeze in the Stats lines
         self.assertEqual(stalls, [("Nov 07 07:51:48", -32), ("Nov 07 10:09:45", -32)])
+
+
+class SnapBounds(unittest.TestCase):
+    @staticmethod
+    def timed():
+        T = planner.Timed
+        out = [T(1, 10.0, 0.0, 10.0)]
+        # line 2: a travel arc cut into four segments, its source line starts at 10
+        out += [T(2, 2.0, 10.0 + 2 * i, 12.0 + 2 * i, travel=True) for i in range(4)]
+        out.append(T(3, 12.0, 18.0, 30.0, extruding=True))
+        return out
+
+    def window(self):
+        return sp.Window("end", 20.0, 25.0, 30.0, 3, 3, 10.0, 5.0, 0.0)
+
+    def test_snap_is_bounded_by_the_start_of_the_source_line(self):
+        # The last arc segment starts at 16 s, inside the 3 s snap window below
+        # the target (18 s), but the arc itself starts at 10 s: no snap.
+        c = sp.choose_resume(self.window(), self.timed(), None, 2.0, 3.0, 20.0)
+        self.assertEqual((c.line, c.snapped), (3, False))
+
+    def test_snap_inside_the_bound_still_happens(self):
+        c = sp.choose_resume(self.window(), self.timed(), None, 2.0, 9.0, 20.0)
+        self.assertEqual((c.line, c.snapped), (2, True))
+        self.assertAlmostEqual(c.t, 10.0)
 
 
 class SyntheticEvidence(unittest.TestCase):

@@ -521,7 +521,10 @@ def choose_resume(w: Window, timed, layer_start_line: Optional[int],
     if layer_t is not None:
         lo = max(lo, layer_t)
     for tm in reversed(timed):
-        if tm.t_start > t or tm.t_start < lo:
+        # The resume starts at the beginning of the source line, which for a
+        # segmented arc is earlier than the segment: bound that start, not the
+        # segment, or the snap can exceed the overlap budget.
+        if tm.t_start > t or start_of(tm.line) < lo:
             continue
         if tm.travel or tm.unretract:
             if tm.line != line:
