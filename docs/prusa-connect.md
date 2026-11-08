@@ -92,14 +92,15 @@ every second. Temperatures are empty while the printer is off, because there is
 no data.
 
 Result of the end-to-end test from Printables Easy Print with the plug off
-(2026-11-05): Connect sends `SET_PRINTER_READY`, then `START_PRINT`. The bridge
+(2026-11-05): Connect sends the `SET_PRINTER_READY` command, then its own `START_PRINT`
+command (a Connect protocol command to the bridge, not the `START_PRINT` G-code macro). The bridge
 reports READY (not IDLE) once Connect has marked the printer ready, queues the
 job, Moonraker powers the plug on and restarts Klipper, and the print starts
-(about 30 s). Connect may resend `START_PRINT` during the restart. In that test
+(about 30 s). Connect may resend that command during the restart. In that test
 the resend showed ERROR in Connect briefly, then the state recovered. Whether a
 resend can queue the same job a second time has not been tested.
 
-`START_PRINT` is not sent by Connect itself: the sliced file's own start G-code
+The `START_PRINT` G-code macro is not issued by Connect: the sliced file's own start G-code
 calls it with `BED` and `HEATER`. The macro refuses a missing, empty or non-numeric
 `BED` or `HEATER` (for example an unexpanded slicer placeholder such as
 `{first_layer_bed_temperature}`) before heating anything, so the print aborts with

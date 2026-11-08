@@ -103,7 +103,7 @@ jobs:
           # yamllint disable rule:line-length
           claude_args: >-
             --model claude-haiku-5-5 --effort low
-            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*)${{ github.event_name != 'issue_comment' && ',Bash(git show:*),Read,Grep,Glob' || '' }}"
+            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*)${{ github.event_name != 'issue_comment' && ',Bash(git show:*),Read' || '' }}"
             --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
           # yamllint enable rule:line-length
           prompt: |
