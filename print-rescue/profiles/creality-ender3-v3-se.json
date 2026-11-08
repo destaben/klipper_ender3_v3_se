@@ -54,6 +54,10 @@
       "max_z_velocity": 5,
       "max_z_accel": 100,
       "square_corner_velocity": 5.0
+    },
+    "extruder": {
+      "max_extrude_only_velocity": 45,
+      "max_extrude_only_accel": 3000
     }
   },
   "envelope": {

@@ -388,8 +388,8 @@ Two further fields are used by the preview:
   compare it yet.
 
 The profile is validated before anything is planned: section types, finite
-numbers, ranges (for example `margin_s`, `snap_window_s` and `max_overlap_s`
-must be finite and not negative) and required keys. A profile without
+numbers, ranges (for example `snap_window_s` and `max_overlap_s` must be
+finite and not negative, and `margin_s` greater than 0) and required keys. A profile without
 `envelope.probe_area` or `envelope.bed` is invalid. A malformed profile exits 1 with the list
 of problems. The spot check also refuses any spot when no bed area is
 given, so the check is never skipped.
@@ -651,6 +651,38 @@ Choices behind items that the automated reviews raised repeatedly.
   (read from `klippy/gcode.py` and `klippy/extras/gcode_move.py`). The scanner
   models what a move does, and that one does nothing; a file with such lines
   does not print on the real machine in the first place.
+- **Why `margin_s` must be greater than 0.** The stop window is clamped to the
+  moves the scan kept (two layers). With a margin of 0, a window that started
+  before the kept moves would be clamped to the first kept move and the
+  planner could resume at the start of the oldest kept layer, skipping part of
+  the model. A positive margin makes that case refuse (R22) instead. Profile
+  validation rejects 0.
+- **Why the R14 fingerprint covers only options that `printer.cfg` sets.** It
+  compares `max_velocity`, `max_accel`, `max_z_velocity`, `max_z_accel`,
+  `square_corner_velocity` and the two `[extruder]` extrude-only limits, which
+  feed the timing model. `minimum_cruise_ratio`, `instant_corner_velocity` and
+  `arc_resolution` are not set in this repository's `printer.cfg`, so they are
+  Klipper defaults and there is nothing to compare; if the file ever sets them
+  the profile must follow. The `motion` and `stop_estimation` numbers are
+  tuning values, not measured geometry, so they stay outside R13 (KI-09); R10
+  catches a timing model that disagrees with the log by more than 0.5 s.
+- **Why `PIN_AT_BOOT` stays a warning.** It is a council-ruled catalogue
+  entry and the premise is still **TO VERIFY**: whether the pin deploys on
+  `FIRMWARE_RESTART` at all (see "To verify"). Escalating it to a refusal would
+  make an unverified assumption block every rescue; the text tells the
+  operator what to do and that exit 0 does not clear it. Raising it to a
+  refusal is a design choice for the owner.
+- **Why the review workflow accepts the `Copilot` bot (`allowed_bots`).** It
+  only lets the action run when the Copilot cloud agent is the *actor* of an
+  event the job already admits: a `pull_request` event with a same-repo head
+  (the Copilot cloud agent pushes to same-repo branches) or an `@claude
+  review` comment by an OWNER, MEMBER or COLLABORATOR on a same-repo PR. There
+  is no `pull_request_review` trigger, so a Copilot review does not start it.
+  The job has `contents: read`, and the agent may only run `gh pr diff`,
+  `gh pr view` and `Read` (secret paths denied). The residual risk is that
+  Copilot-authored same-repo heads are now reviewed with the head's
+  `.claude/` settings in the checkout, exactly like any collaborator's branch;
+  anyone who can make Copilot push there already has write access.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.

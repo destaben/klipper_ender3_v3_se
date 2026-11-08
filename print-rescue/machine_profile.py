@@ -53,6 +53,9 @@ FINGERPRINT_KEYS = {
     ("printer", "max_accel"): ("printer", "max_accel", "float"),
     ("printer", "max_z_velocity"): ("printer", "max_z_velocity", "float"),
     ("printer", "max_z_accel"): ("printer", "max_z_accel", "float"),
+    ("extruder", "max_extrude_only_velocity"):
+        ("extruder", "max_extrude_only_velocity", "float"),
+    ("extruder", "max_extrude_only_accel"): ("extruder", "max_extrude_only_accel", "float"),
     ("printer", "square_corner_velocity"): ("printer", "square_corner_velocity", "float"),
 }
 
@@ -292,9 +295,14 @@ def _check_ranges(p: dict) -> List[str]:
         if val(p["thermal"][k]) < 0:
             errs.append("thermal.%s must be >= 0" % k)
     se = p["stop_estimation"]
-    for k in ("margin_s", "snap_window_s", "max_overlap_s"):
+    for k in ("snap_window_s", "max_overlap_s"):
         if se[k] < 0:
             errs.append("stop_estimation.%s must be >= 0 (got %r)" % (k, se[k]))
+    # margin_s > 0: the stop window is clamped to the moves the scan kept, and
+    # only a positive margin makes a clamped window refuse instead of resuming
+    # at the start of the oldest kept layer (a gap in the part).
+    if se["margin_s"] <= 0:
+        errs.append("stop_estimation.margin_s must be > 0 (got %r)" % (se["margin_s"],))
     absurd = se.get("absurd_overlap_s")
     if absurd is not None and (not _is_num(absurd) or absurd < se["max_overlap_s"]):
         errs.append("stop_estimation.absurd_overlap_s must be a number >= max_overlap_s")

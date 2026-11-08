@@ -23,6 +23,9 @@ max_accel: 4000
 max_z_velocity: 5
 max_z_accel: 100
 square_corner_velocity: 5.0
+[extruder]
+max_extrude_only_velocity: 45
+max_extrude_only_accel: 3000
 [bltouch]
 x_offset: -23.0
 y_offset: -14.5
@@ -119,6 +122,17 @@ class Fingerprint(unittest.TestCase):
                 self.assertEqual(len(mm), 1)
                 self.assertIn("printer." + key, mm[0])
 
+    def test_extrude_only_limit_change_is_r14(self):
+        for old, new, key in (("max_extrude_only_velocity: 45", "max_extrude_only_velocity: 60",
+                               "max_extrude_only_velocity"),
+                              ("max_extrude_only_accel: 3000", "max_extrude_only_accel: 9000",
+                               "max_extrude_only_accel")):
+            with self.subTest(key=key):
+                mm = prof.fingerprint_mismatches(
+                    fx.profile(), prof.parse_printer_cfg(CFG.replace(old, new)))
+                self.assertEqual(len(mm), 1)
+                self.assertIn("extruder." + key, mm[0])
+
     def test_x_offset_change_is_r14(self):
         cfg = prof.parse_printer_cfg(CFG.replace("x_offset: -23.0", "x_offset: -25.0"))
         mm = prof.fingerprint_mismatches(fx.profile(), cfg)
@@ -191,6 +205,7 @@ class Validation(unittest.TestCase):
     CASES = {
         "version as string": lambda p: p.__setitem__("version", "1"),
         "version as bool": lambda p: p.__setitem__("version", True),
+        "margin_s zero": lambda p: p["stop_estimation"].__setitem__("margin_s", 0),
         "margin_s negative": lambda p: p["stop_estimation"].__setitem__("margin_s", -0.5),
         "margin_s nan": lambda p: p["stop_estimation"].__setitem__("margin_s", float("nan")),
         "margin_s infinite": lambda p: p["stop_estimation"].__setitem__("margin_s", float("inf")),

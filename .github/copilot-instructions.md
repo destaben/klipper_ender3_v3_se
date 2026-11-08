@@ -65,7 +65,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── serial-links/                 # Tracked default symlink for the Pico MMU serial path
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── patches/klipper-connect/      # Local patch for the Prusa Connect bridge, and its tests
-├── docs/                         # Setup and upgrade notes (prusa-connect.md, virtual-mmu.md, print-rescue.md, ...)
+├── docs/                         # Setup and upgrade notes (prusa-connect.md, virtual-mmu.md, print-rescue*.md, ...)
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
 ├── build_firmware.sh             # Builds Klipper .bin for flashing

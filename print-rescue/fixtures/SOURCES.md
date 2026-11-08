@@ -44,7 +44,7 @@ with `urb stopped: -32` in the same minute. Numbers are unchanged.
 | `inc3-history-job.json` | Moonraker job history | Only the interrupted job: file name, times, durations, filament, `size`, `modified`, slicer, layer count, heights. | User field, UUID, filament names and thumbnails dropped. |
 | `inc3-queue.json` | Moonraker job queue | An empty, paused queue. | - |
 | `inc3-kernel-usb.log` | `journalctl -k` | The one `urb stopped: -32` line (18:59:43 local). | Host name replaced with `pi`, the tty name with `<tty>`. |
-| `inc3-printer-cfg.cfg` | The live `printer.cfg` | The sections the profile fingerprint reads (`stepper_x/y/z`, `printer`, `bltouch`, `safe_z_home`, `bed_mesh`) and a SAVE_CONFIG block with `z_offset = 2.960` (the repository file has 3.035). | Everything else dropped (it holds the MCU serial path). |
+| `inc3-printer-cfg.cfg` | The live `printer.cfg` | The sections the profile fingerprint reads (`stepper_x/y/z`, `printer`, `extruder` (only its two extrude-only limits), `bltouch`, `safe_z_home`, `bed_mesh`) and a SAVE_CONFIG block with `z_offset = 2.960` (the repository file has 3.035). | Everything else dropped (it holds the MCU serial path). |
 
 The planner result on the excerpt (stop window, resume line 390866, overlap
 3.55 s / 104.8 mm, part box, pin at boot) is identical to the result on the

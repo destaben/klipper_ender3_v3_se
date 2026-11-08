@@ -73,6 +73,21 @@ class Build(unittest.TestCase):
                 mark = at(out, "; ---- original file")
                 self.assertEqual(out[mark - 1], plane)
 
+    def test_control_characters_in_a_tail_line_are_refused(self):
+        for ch in ("\x0b", "\x0c", "\x00", "\x1b", "\x7f", "\x85"[:1] and "\x1c"):
+            with self.subTest(ch=repr(ch)):
+                tail = list(self.tail) + ["G1 X1 ;a%sb" % ch]
+                with self.assertRaises(rfile.ResumeRefused):
+                    rfile.build(self.state, "part.gcode", LINE, tail, overlap_s=2.98,
+                                overlap_mm=216.3, park_xy=(15, 205),
+                                bed_mesh_profile="default")
+
+    def test_tab_and_non_ascii_comments_in_a_tail_line_are_kept(self):
+        tail = list(self.tail) + ["G1 X1\t; vase \u00e9"]
+        out = rfile.build(self.state, "part.gcode", LINE, tail, overlap_s=2.98,
+                          overlap_mm=216.3, park_xy=(15, 205), bed_mesh_profile="default")
+        self.assertIn("G1 X1\t; vase \u00e9", out)
+
     def test_default_modes_add_nothing_after_the_gate(self):
         out = self.build()
         mark = at(out, "; ---- original file")

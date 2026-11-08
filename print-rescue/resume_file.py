@@ -393,6 +393,11 @@ def build(state: State, source_name: str, resume_line: int,
     layer = max(state.layer, 0)
     for raw in tail:
         line = raw.rstrip("\r\n")
+        # The copied original may hold TAB and non-ASCII comment text, but no
+        # other control character: whether Klipper splits input only at LF is
+        # unverified (KI-14), so a hidden line break is refused, not trusted.
+        if any((ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in line):
+            raise ResumeRefused("a copied tail line holds a control character")
         gen.append(rewrite_estimate(line, remaining_fraction))
         if line.startswith(";LAYER_CHANGE") and total_layers:
             layer += 1

@@ -92,6 +92,8 @@ FORBIDDEN_TAIL = {
     "FORCE_MOVE": "move without homing",
     "SET_KINEMATIC_POSITION": "declares a position without a measurement",
     "BLTOUCH_DEBUG": "deploys or stows the probe pin",
+    "TESTZ": "moves Z for manual probing",
+    "BED_SCREWS_ADJUST": "probes and moves to the bed screws",
     # Not a command name: SET_GCODE_OFFSET with MOVE=1 is reported under this key.
     "SET_GCODE_OFFSET_MOVE": "SET_GCODE_OFFSET with MOVE=1 moves the toolhead",
 }
@@ -617,6 +619,8 @@ class Scanner:
                 z = float(text[3:].strip())
             except ValueError:
                 return
+            if not math.isfinite(z):
+                return    # ";Z:nan" / ";Z:inf" would poison the Z-monotonic check
             st.layer_z = z
             self.events.append(Event(line, "layer_z", text, z))
             if self.layer_starts and self.layer_starts[-1][1] == st.layer:

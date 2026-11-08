@@ -201,6 +201,22 @@ class Bytes(unittest.TestCase):
                 f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
                 self.assertEqual(f["forbidden"], [], form)
 
+    def test_non_finite_layer_z_is_ignored(self):
+        # nan before the resume line must not hide a real Z drop after it
+        text = "G1 X1 Y1 E1\n;Z:nan\n;Z:5\nG1 X2 E1\n;Z:3\nG1 X3 E1"
+        f = gs.tail_findings(gs.scan(recs(text)), 4, None)
+        self.assertEqual([ln for ln, _ in f["non_monotonic_z"]], [5])
+        # inf before the resume line must not flag every later layer
+        text = "G1 X1 Y1 E1\n;Z:inf\n;Z:5\nG1 X2 E1\n;Z:6\nG1 X3 E1"
+        f = gs.tail_findings(gs.scan(recs(text)), 4, None)
+        self.assertEqual(f["non_monotonic_z"], [])
+
+    def test_testz_and_bed_screws_adjust_are_forbidden_in_the_tail(self):
+        for form in ("TESTZ Z=-1", "BED_SCREWS_ADJUST"):
+            with self.subTest(form=form):
+                f = gs.tail_findings(gs.scan(recs("G1 X1 Y1 E1\n%s\nG1 X2 E1" % form)), 1, None)
+                self.assertEqual(len(f["forbidden"]), 1, form)
+
 
 class Tail(unittest.TestCase):
     def test_forbidden_tool_m82_vase_nonmonotonic(self):
