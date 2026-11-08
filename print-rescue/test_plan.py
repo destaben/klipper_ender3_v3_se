@@ -446,6 +446,70 @@ class Preview(unittest.TestCase):
         self.assertTrue(r.preview.startswith("; print-rescue resume PREVIEW"))
 
 
+class TextCheck(unittest.TestCase):
+    class Ev:
+        def __init__(self, texts):
+            self.sdcard_texts = texts
+
+    def records(self, text):
+        out, off = [], 0
+        for i, ln in enumerate(text.split("\n")):
+            out.append((i + 1, off, ln))
+            off += len(ln.encode()) + 1
+        return lambda: iter(out)
+
+    def test_an_offset_past_the_end_of_a_real_file_is_a_mismatch(self):
+        rec = self.records("G1 X1\nG1 X2\nG1 X3")
+        ok, why = plan._text_check(rec, self.Ev([(5000, "G1 X9")]), excerpt=False)
+        self.assertFalse(ok, why)
+
+    def test_a_missing_offset_does_not_hide_a_later_mismatch_in_an_excerpt(self):
+        rec = self.records("G1 X1\nG1 X2\nG1 X3")
+        ev = self.Ev([(5000, "G1 X9"), (6, "G1 X7")])        # second one differs
+        ok, why = plan._text_check(rec, ev, excerpt=True)
+        self.assertFalse(ok, why)
+
+    def test_an_excerpt_with_nothing_to_compare_says_so(self):
+        rec = self.records("G1 X1\nG1 X2")
+        ok, why = plan._text_check(rec, self.Ev([(5000, "G1 X9")]), excerpt=True)
+        self.assertTrue(ok)
+        self.assertIn("nothing", why)
+
+    def test_matching_text_passes(self):
+        rec = self.records("G1 X1\nG1 X2\nG1 X3")
+        ok, _ = plan._text_check(rec, self.Ev([(6, "G1 X2")]), excerpt=False)
+        self.assertTrue(ok)
+
+
+class JsonCap(unittest.TestCase):
+    def test_a_json_input_over_the_size_cap_is_an_input_error(self):
+        old = plan.MAX_TEXT_CHARS
+        plan.MAX_TEXT_CHARS = 100
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "h.json")
+                with open(path, "w") as fh:
+                    json.dump({"result": {"jobs": ["x" * 500]}}, fh)
+                with self.assertRaises(plan.InputError):
+                    plan._load_json(path, "history")
+        finally:
+            plan.MAX_TEXT_CHARS = old
+
+
+class FixturesStayInTests(unittest.TestCase):
+    def test_planning_code_never_imports_the_test_fixtures(self):
+        # rescue_fixtures sets PRINT_RESCUE_ALLOW_GCODE_MAP process-wide; it must
+        # only ever be loaded by tests, never by the planner itself.
+        import subprocess, sys
+        here = os.path.dirname(os.path.abspath(__file__))
+        code = ("import plan, gcode_scan, resume_file, stop_point, machine_profile, "
+                "geometry, planner, refusals, sys; "
+                "sys.exit(1 if 'rescue_fixtures' in sys.modules else 0)")
+        r = subprocess.run([sys.executable, "-c", code], cwd=here,
+                           capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
 class CfgMacros(unittest.TestCase):
     def write(self, d, name, text):
         path = os.path.join(d, name)

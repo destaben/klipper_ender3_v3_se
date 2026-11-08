@@ -129,25 +129,47 @@ FORBIDDEN_TAIL.update({name: "macro that reaches homing, probing or a stepper mo
 # with G10 and is fine in a tail) and the pseudo-names the scanner raises itself.
 _NOT_SEEDS = frozenset(("G10", "G11", "ARC_NO_IJ", "CR_IN_LINE", "CTRL_IN_LINE",
                         "SET_GCODE_OFFSET_MOVE"))
-_MACRO_CALL = re.compile(r"^\s*([A-Za-z_]\w*)\b")
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FIRST_WORD = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)")
+# Built-in commands that home, probe, sweep the head or restart: these count when
+# they appear ANYWHERE in a macro body (a Jinja string or expression included).
+# Every other deny-listed name counts only as the first word of a gcode line, so
+# a variable or message that merely mentions PAUSE does not condemn a macro.
+_HARD_WORDS = frozenset((
+    "G28", "G29", "G30", "G32", "HOME", "PROBE", "PROBE_ACCURACY", "PROBE_CALIBRATE",
+    "BED_MESH_CALIBRATE", "Z_TILT_ADJUST", "QUAD_GANTRY_LEVEL", "SCREWS_TILT_CALCULATE",
+    "BED_SCREWS_ADJUST", "BED_TILT_CALIBRATE", "Z_ENDSTOP_CALIBRATE", "TEST_RESONANCES",
+    "SHAPER_CALIBRATE", "AXIS_TWIST_COMPENSATION_CALIBRATE", "DELTA_CALIBRATE",
+    "DELTA_ANALYZE", "MANUAL_PROBE", "TESTZ", "FORCE_MOVE", "SET_KINEMATIC_POSITION",
+    "MANUAL_STEPPER", "STEPPER_BUZZ", "FIRMWARE_RESTART", "RESTART", "SAVE_CONFIG",
+    "M112", "M999", "M410", "BLTOUCH_DEBUG"))
 
 
 def dangerous_macros(sections: Dict[str, Dict[str, str]]) -> Dict[str, str]:
     """Macros of a parsed printer.cfg (plus includes) that reach a forbidden
-    command, directly or through other macros: {NAME: reason}. A call is the
-    first word of a gcode line; Jinja lines and comments never match, and every
-    branch of an {% if %} counts (over-approximation, so it fails closed).
+    command, directly or through other macros: {NAME: reason}. The first word of
+    a line counts when it is a deny-listed command or a dangerous macro; the
+    hard words (homing, probing, restart...) count anywhere in the body, Jinja
+    expressions and every {% if %} branch included (over-approximation, so it
+    fails closed). Comments (; and #) are dropped first.
     END_MACROS and tool changes are not seeds: they are accepted or refused by
     their own checks."""
     body: Dict[str, List[str]] = {}
     for name, opts in sections.items():
         if name.lower().startswith("gcode_macro "):
-            body[name.split(None, 1)[1].strip().upper()] = (
-                opts.get("gcode", "").split("\n"))
+            body[name.split(None, 1)[1].strip().upper()] = [
+                re.split(r"[;#]", ln, maxsplit=1)[0]     # drop comments
+                for ln in opts.get("gcode", "").split("\n")]
     seeds = {n for n in FORBIDDEN_TAIL if n not in END_MACROS and n not in _NOT_SEEDS}
-    calls = {n: {m.group(1).upper() for ln in lines
-                 for m in [_MACRO_CALL.match(ln)] if m}
-             for n, lines in body.items()}
+    # First word of each line = a call to any deny-listed command or dangerous
+    # macro. Hard words (_HARD_WORDS) also count anywhere in the body, so a
+    # command run through a Jinja expression (run_script_from_command("G28")) or
+    # a string is caught too.
+    calls = {}
+    for n, lines in body.items():
+        first = {m.group(1).upper() for ln in lines for m in [_FIRST_WORD.match(ln)] if m}
+        hard = {w.upper() for ln in lines for w in _WORD.findall(ln)} & _HARD_WORDS
+        calls[n] = first | hard
     danger: Dict[str, str] = {}
     grew = True
     while grew:
@@ -173,6 +195,7 @@ EPS = 1e-9
 MAX_COORDINATE = 1e6
 MAX_ARC_SEGMENTS = 100000
 MAX_EXCERPT_CHARS = 256 * 1024 * 1024
+MAX_LINE_BYTES = 4 * 1024 * 1024
 
 
 @dataclass
@@ -796,7 +819,16 @@ def iter_file(path: str, start_line: int = 1) -> Iterator[Record]:
     """Records of a plain G-code file (byte offsets exact, any line ending)."""
     offset = 0
     with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
+        n = 0
+        while True:
+            # A single line is read in bounded pieces: a file with one enormous
+            # line must not be pulled into memory whole.
+            raw = fh.readline(MAX_LINE_BYTES + 1)
+            if not raw:
+                break
+            if len(raw) > MAX_LINE_BYTES and not raw.endswith(b"\n"):
+                raise ValueError("line %d is longer than %d bytes" % (n + 1, MAX_LINE_BYTES))
+            n += 1
             if n >= start_line:
                 yield n, offset, raw.decode("utf-8", "replace").rstrip("\r\n")
             offset += len(raw)
@@ -811,6 +843,17 @@ def _tail_from_byte(text: str, skip: int) -> str:
     return text.encode("utf-8", "replace")[skip:].decode("utf-8", "replace")
 
 
+def _with_next_offset(records: Iterable[Record]):
+    """(record, offset of the next record or None), one record of lookahead."""
+    prev = None
+    for rec in records:
+        if prev is not None:
+            yield prev, rec[1]
+        prev = rec
+    if prev is not None:
+        yield prev, None
+
+
 def file_text_at(records: Iterable[Record], wanted: List[Tuple[int, int]]) -> Dict[int, str]:
     """For each (byte offset, length) in `wanted`, the file's text from that
     offset (up to `length` characters), rebuilt from the records. Lines are
@@ -820,10 +863,15 @@ def file_text_at(records: Iterable[Record], wanted: List[Tuple[int, int]]) -> Di
     todo = dict(wanted)
     horizon = max((p + n for p, n in wanted), default=0)
     pending = {}
-    for _, offset, text in records:
+    for (_, offset, text), next_offset in _with_next_offset(records):
         if offset > horizon:
             break
+        # The next record's offset is exact even when this line holds invalid
+        # UTF-8 (each such byte re-encodes to three bytes); an excerpt can have
+        # a gap after the line, so never extend past the line's own length.
         end = offset + len(text.encode("utf-8", "replace")) + 1
+        if next_offset is not None:
+            end = min(end, next_offset)
         for pos in list(todo):
             if pos < end and pos + todo[pos] > offset:
                 piece = pending.get(pos)

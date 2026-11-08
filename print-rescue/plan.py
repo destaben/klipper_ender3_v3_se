@@ -80,15 +80,16 @@ def _records_factory(args):
     return lambda: gs.iter_file(args.gcode)
 
 
-def _load_json(path, what):
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError, RecursionError) as e:
-        raise InputError("%s %s: %s" % (what, os.path.basename(path), e))
-
-
 MAX_TEXT_CHARS = 256 * 1024 * 1024
+
+
+def _load_json(path, what):
+    """Parse a JSON input, with the same size cap as every other text input."""
+    text = _read_text(path, what)
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError) as e:
+        raise InputError("%s %s: %s" % (what, os.path.basename(path), e))
 
 
 def _read_text(path, what):
@@ -200,24 +201,33 @@ def _exit_boundary(res, exit_position, size):
                    "the file that was printing" % exit_position)
 
 
-def _text_check(records, ev):
+def _text_check(records, ev, excerpt=False):
     """Stronger half of the content check (R07): the text the log printed for
     'Virtual sdcard (N)' and 'Upcoming (N)' is the file's own text at those
-    offsets. Returns (ok, message); ok is True when there is nothing to
-    compare."""
+    offsets. Returns (ok, message). Every offset is checked. An offset with no
+    text in a real file means the file ends before it, which is not the file
+    that was printing; in a fixture excerpt (gaps are expected) it is skipped.
+    ok is True when there is nothing to compare."""
     texts = [(p, t) for p, t in ev.sdcard_texts][:4]
     if not texts:
         return True, "no file text in the log to compare"
     got = gs.file_text_at(records(), [(p, len(t)) for p, t in texts])
+    compared = 0
     for pos, logged in texts:
         mine = got.get(pos, "")
         if not mine:
-            return True, "the file has no text at offset %d to compare (excerpt)" % pos
+            if excerpt:
+                continue
+            return False, ("the file has no text at offset %d the log shows, so it is "
+                           "not the file that was printing" % pos)
+        compared += 1
         n = min(len(mine), len(logged))
         if mine[:n] != logged[:n]:
             return False, ("the text the log shows at offset %d differs from the file, so "
                            "it is not the file that was printing" % pos)
-    return True, "the text the log shows at %d offset(s) matches the file" % len(texts)
+    if not compared:
+        return True, "the excerpt holds nothing at the logged offsets to compare"
+    return True, "the text the log shows at %d offset(s) matches the file" % compared
 
 
 def _gcode_identity(args):
@@ -501,7 +511,7 @@ def _run(args, out) -> int:
         if not same:
             add("R07", why)
         else:
-            same, why = _text_check(records, ev)
+            same, why = _text_check(records, ev, excerpt=bool(args.gcode_map))
             say("content check: %s" % why)
             if not same:
                 add("R07", why)

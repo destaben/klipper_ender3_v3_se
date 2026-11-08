@@ -464,6 +464,42 @@ class Denylist(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         list(gs.iter_excerpt(gz, mp))
 
+    def test_a_jinja_expression_that_runs_a_command_is_flagged(self):
+        sections = {
+            "gcode_macro VIA_JINJA": {"gcode": '{printer.gcode.run_script_from_command("G28")}'},
+            "gcode_macro VIA_STRING": {"gcode": "{% set cmd = 'BED_TILT_CALIBRATE' %}\nM117 x"},
+            "gcode_macro PLAIN": {"gcode": "{% set a = 1 %}\nM117 hello\nG1 X1"},
+            "gcode_macro NOTAWORD": {"gcode": "M117 PAUSED_HOMED_G280"},
+            "gcode_macro MENTIONS": {"gcode": "{% if printer.idle_timeout.state == 'PAUSE' %}\nM117 x\n{% endif %}"},
+        }
+        got = gs.dangerous_macros(sections)
+        self.assertEqual(sorted(got), ["VIA_JINJA", "VIA_STRING"])
+
+    def test_text_offsets_survive_invalid_utf8_before_them(self):
+        import tempfile
+        raw = b"G1 X1 Y1 E1\n; caf\xe9 \xe9\xe9\nG1 X2 Y2 E1\nG1 X3 Y3 E1\n"
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "x.gcode")
+            with open(path, "wb") as fh:
+                fh.write(raw)
+            pos = raw.index(b"G1 X2")
+            got = gs.file_text_at(gs.iter_file(path), [(pos, 5)])
+        self.assertEqual(got[pos], "G1 X2")
+
+    def test_a_single_huge_line_is_refused(self):
+        import tempfile
+        old = gs.MAX_LINE_BYTES
+        gs.MAX_LINE_BYTES = 50
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "x.gcode")
+                with open(path, "w") as fh:
+                    fh.write("G1 X1\n; " + "x" * 200 + "\nG1 X2\n")
+                with self.assertRaises(ValueError):
+                    list(gs.iter_file(path))
+        finally:
+            gs.MAX_LINE_BYTES = old
+
     def test_stepper_commands_are_forbidden(self):
         for cmd in ("MANUAL_STEPPER", "STEPPER_BUZZ"):
             self.assertIn(cmd, gs.FORBIDDEN_TAIL)

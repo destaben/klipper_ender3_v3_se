@@ -564,7 +564,8 @@ Open:
   commands; `END_PRINT` is accepted only as the end of the file).
 - **KI-18**: `--preview --force-preview` may replace any regular file the user
   names that is not an input. It is an explicit operator choice. Text inputs
-  and unpacked excerpts are capped at 256 million characters.
+  and unpacked excerpts are capped at 256 million characters; JSON inputs share
+  that cap, and a single G-code line longer than 4 MiB is refused.
 - **KI-19**: the preview lifts by a fixed relative amount and travels at that
   height; the planner's safe pass-1 height is not used and Z is unknown before
   re-referencing. The preview must not be run; the P2 design replaces it with
@@ -732,13 +733,39 @@ Choices behind items that the automated reviews raised repeatedly.
 - **How user macros reach the deny-list.** `dangerous_macros()` in
   `gcode_scan.py` takes the parsed `printer.cfg` (plus includes) and marks every
   `[gcode_macro]` whose gcode calls, as the first word of a line and at any
-  depth, a deny-listed command. Firmware retraction (`G10`/`G11`) does not make a
+  depth, a deny-listed command, or that mentions a hard word (homing, probing,
+  stepper, restart: `G28`, `PROBE`, `FORCE_MOVE`, `FIRMWARE_RESTART`...) anywhere
+  in its body, a Jinja expression or string included
+  (`{printer.gcode.run_script_from_command("G28")}`). Soft names such as
+  `PAUSE` count only as the first word of a line, so a message or variable that
+  mentions them does not condemn a macro. Firmware retraction (`G10`/`G11`) does not make a
   macro dangerous (a timelapse macro retracts and is fine in a tail), tool
   changes `T<n>` are left to the tool-change check, and the end macros keep
   their own rule. Every branch of an `{% if %}` counts, so it fails closed. A
   saved `printer.cfg` without its config directory is the usual evidence, so
   missing includes give a note, not exit 3; save the directory to get the full
   check.
+- **Why the test fixtures set `PRINT_RESCUE_ALLOW_GCODE_MAP` process-wide.**
+  `rescue_fixtures.py` sets it on import because the committed excerpts need
+  `--gcode-map`, which is otherwise refused. Only test modules import it; a test
+  starts a clean interpreter, imports every planning module and fails if
+  `rescue_fixtures` is loaded, so production code can never pick the variable up
+  from it.
+- **Why the author metadata of the early commits stays.** One early commit
+  carries a local host name in its author header. It is not a credential, the PR
+  body discloses it, and removing it needs a history rewrite, which this
+  repository's rules forbid; a squash-merge drops it, and that choice is the
+  owner's.
+- **Why offsets past the end of a real file are a mismatch.** The log's
+  `Virtual sdcard (N)` text must exist in the file at `N`. In a real file a
+  missing offset means the file is shorter than the print, so R07 refuses; only
+  a fixture excerpt (which has gaps) skips such an offset, and a run that
+  compared nothing says so.
+- **Why invalid UTF-8 is tolerated in offsets.** Lines are decoded with
+  replacement characters, so a stray byte re-encodes longer than it was; text
+  offsets therefore use the next line's exact offset as the end of a line. A
+  logged offset that falls inside a line holding invalid bytes may compare
+  imprecisely, which can only cause a false refusal (R07), never a false pass.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.
