@@ -9,6 +9,10 @@ The procedure was written after the [2026-11-07 incident](print-rescue-incident-
 where a hand-built resume worked but several steps were riskier than they had
 to be.
 
+**To run a rescue yourself, without AI, follow [print-rescue-runbook.md](print-rescue-runbook.md):** capture, bring the machine back,
+`rescue_job.py` (builds the resume file), `rescue_run.py` (one pass, finger on the emergency stop), `rescue_watch.py`. It was validated live
+on 2026-11-08. The sections below are the design and the planner reference.
+
 Items marked **TO VERIFY** are claims that have not been checked on the
 hardware or in the Klipper fork source. They are listed again in
 [To verify](#to-verify-against-the-klipper-fork).
