@@ -56,7 +56,7 @@ Includes:
    ```
 
    - The script uses the preconfigured `config.ender3_v3_se` file, which enables both USART1 and USART2 for maximum compatibility.
-   - The generated binary will be in `klipper/out/klipper_<date>.bin`. Copy this file to an SD card, insert it into the printer, and power it on to flash.
+   - The generated binary will be in `klipper/out/klipper_<timestamp>.bin`. Copy this file to an SD card, insert it into the printer, and power it on to flash.
    - **Important:** The firmware filename must end in `.bin` and must not match the last filename that was flashed.
    - If the screen freezes, wait a few minutes and try again if needed.
 
