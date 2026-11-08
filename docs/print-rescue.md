@@ -719,7 +719,7 @@ Choices behind items that the automated reviews raised repeatedly.
   `MANUAL_STEPPER`, `STEPPER_BUZZ`, `FORCE_MOVE`, `SET_KINEMATIC_POSITION`).
   A built-in added by a future Klipper is not caught until it is listed (KI-08).
 - **Why `CLAUDE.md` has the print-rescue test section it has.** Its
-  "Print-rescue unit tests" entry (line 78) mirrors the other test sections: the
+  "Print-rescue unit tests" entry mirrors the other test sections: the
   command `python3 -m unittest discover -s print-rescue -v`, the workflow that
   runs it, and the standard-library-only note. The refusal codes, procedure and
   design notes live in `docs/print-rescue.md` and are deliberately not
