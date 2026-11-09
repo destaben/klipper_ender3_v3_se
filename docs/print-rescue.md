@@ -309,7 +309,7 @@ lists the findings that were open when it was made.
 
 ## Refusal catalogue
 
-Hard refusals stop the rescue. R13 blocks motion only: plan mode still runs.
+Codes and wording are defined in `print-rescue/refusals.py`. Hard refusals stop the rescue. R13 blocks motion only: plan mode still runs.
 Warnings need a human confirmation before any motion (later phases).
 Each finding prints as one ASCII line, safe inside
 `RESPOND TYPE=error MSG="..."` (quotes and semicolons replaced).
