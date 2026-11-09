@@ -10,7 +10,8 @@ import planner
 import machine_profile as prof
 import stop_point as sp
 
-# The fixture excerpts need --gcode-map, which is otherwise refused.
+# The fixture excerpts need --gcode-map, which is otherwise refused. Set at import on purpose: this module
+# is test-only (a test asserts the planner never imports it), so the gate stays closed in real use.
 os.environ["PRINT_RESCUE_ALLOW_GCODE_MAP"] = "1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))

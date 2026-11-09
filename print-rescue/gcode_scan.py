@@ -663,6 +663,8 @@ class Scanner:
                 st.mcr_set = True
         elif cmd == "M220":
             s = _fparam(params, "S")
+            # `S0` is ignored on purpose: Klipper reads S with get_float(..., above=0.), so M220 S0 and
+            # M221 S0 are errors there and change nothing (not a factor of zero).
             if s and s > 0:
                 st.speed_factor = s
         elif cmd == "M221":

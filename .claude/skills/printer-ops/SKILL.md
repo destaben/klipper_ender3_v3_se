@@ -49,7 +49,9 @@ for m in json.load(sys.stdin)['result']['gcode_store']:
 
 The HTTP reply to `gcode/script` is `{"result": "ok"}` or `{"error": {"message": ...}}` (for example `Probe triggered prior to movement`). Use `--data-urlencode` for scripts with spaces or `=`.
 
-Safe read-only/diagnostic commands: `QUERY_PROBE`, `M115`, `MAINTAIN_STATUS`, `SP_*` status macros, `BLTOUCH_DEBUG COMMAND=pin_up|pin_down|reset|touch_mode` (moves only the probe pin).
+Safe read-only/diagnostic commands: `QUERY_PROBE`, `M115`, `MAINTAIN_STATUS`, `SP_*` status macros.
+
+Not read-only: `BLTOUCH_DEBUG COMMAND=pin_up|pin_down|reset|touch_mode` moves the probe pin. Check that the nozzle and bed are clear first, and never run it during a rescue without checking.
 
 ## Restart
 

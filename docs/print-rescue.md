@@ -563,7 +563,15 @@ Open:
 - **KI-14**: the preview stops at `GATE_STOP`, a deliberately invalid command.
   That Klipper stops the SD print on an unknown command is **TO VERIFY** on the
   printer. The P2 design removes the trick: the resume file holds state and
-  tail only, and the gate is the runner's state machine.
+  tail only, and the gate is the runner's state machine. Non-severe in phase 1
+  because nothing executes the file; it must be verified (or removed) before any
+  runner ships.
+- **Settled review points** (do not report again): `M220 S0` / `M221 S0` are
+  ignored because Klipper rejects them (`above=0`); `rescue_fixtures.py` sets
+  the `--gcode-map` gate variable at import because it is test-only and a test
+  asserts the planner never imports it; the `actions/checkout` pin in
+  `print-rescue-test.yml` is the commit of the `v4` tag (checked with the GitHub
+  API on 2026-11-09), the same pin `lint.yml` uses.
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
 - **KI-16**: a source file name or copied header line with a control character or a
