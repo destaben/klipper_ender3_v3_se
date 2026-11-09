@@ -576,7 +576,12 @@ Open:
   warning (`PIN_AT_BOOT`) exits 0 by design, its text says exit 0 does not clear
   it, and no consumer exists in phase 1; `.github/workflows/claude-pr-review.yml`
   and `.github/scripts/check_review.py` are synced verbatim from dotclaude, so their
-  comments cite dotclaude's ADR 0002 and are not edited here.
+  comments cite dotclaude's ADR 0002 and are not edited here; plain-number safety
+  values never reach R13 (KI-09) and G2/G3 arcs outside G17 are neither
+  translated nor refused (see the Build notes), both known limits for P2; the
+  tag pins of `actions/checkout@v4` / `claude-code-action@v1` in the synced
+  review workflow are dotclaude's choice (the review job is read-only and runs
+  on same-repo PRs only).
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
 - **KI-16**: a source file name or copied header line with a control character or a
