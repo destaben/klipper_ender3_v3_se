@@ -176,6 +176,24 @@ class OriginShift(unittest.TestCase):
         self.assertEqual(plan.origin_shift_before(r.events, 3), (2, "G92 X"))
         self.assertIsNone(plan.origin_shift_before(r.events, 2))
 
+    def test_a_plain_xy_gcode_offset_before_the_resume_line_is_found(self):
+        # The preview restores only the Z offset, so an X/Y baby-step set earlier would put every
+        # resumed move off by that amount: it must refuse like a G92 does.
+        for line in ("SET_GCODE_OFFSET X=20", "SET_GCODE_OFFSET Y_ADJUST=-0.5", "set_gcode_offset z=0.1 x=3"):
+            with self.subTest(line=line):
+                r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, line), (3, 21, "G1 X10 E1")],
+                               fx.limits())
+                found = plan.origin_shift_before(r.events, 3)
+                self.assertIsNotNone(found)
+                self.assertEqual(found[0], 2)
+
+    def test_a_z_only_or_zero_gcode_offset_is_not_an_origin_shift(self):
+        for line in ("SET_GCODE_OFFSET Z=0.05", "SET_GCODE_OFFSET Z_ADJUST=0.02", "SET_GCODE_OFFSET X=0 Y=0"):
+            with self.subTest(line=line):
+                r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, line), (3, 21, "G1 X10 E1")],
+                               fx.limits())
+                self.assertIsNone(plan.origin_shift_before(r.events, 3))
+
 
 class MeasuredProfile(unittest.TestCase):
     def test_resumable(self):

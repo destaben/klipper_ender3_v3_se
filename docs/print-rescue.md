@@ -273,7 +273,8 @@ What a resume skips: **a resume does not run `START_PRINT`**, so everything
 `START_PRINT` does for the whole job must be restated in the file. The preview
 restates `CANCEL_PRINTER_SHUTDOWN` (an armed auto power-off would otherwise cut
 the power mid-print), clears the display message it leaves behind (`M117`
-without text), and sets `G17` (the slicer's arc plane) before the original
+without text), and sets the arc plane that was active at the resume line (`G17`, the slicer's
+plane, unless the source set `G18` or `G19`) before the original
 lines. `SET_IDLE_TIMEOUT TIMEOUT=600` restates the configured `[idle_timeout]`
 default so the file does not depend on an earlier change; the longer timeout
 the rescue itself needs (the idle gcode turns the heaters off and clears
@@ -582,7 +583,10 @@ Open:
   translated nor refused (see the Build notes), both known limits for P2; the
   tag pins of `actions/checkout@v4` / `claude-code-action@v1` in the synced
   review workflow are dotclaude's choice (the review job is read-only and runs
-  on same-repo PRs only).
+  on same-repo PRs only); R14 reads only the main `printer.cfg` while R17 follows
+  `[include]`, which can refuse a valid split config (fails closed, and this
+  repository's `printer.cfg` is a single file); the remaining-filament estimate mixes
+  scaled and unscaled E under `M221` (KI-23, an estimate only).
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
 - **KI-16**: a source file name or copied header line with a control character or a
@@ -686,8 +690,8 @@ Choices behind items that the automated reviews raised repeatedly.
   in `test_incident3.py` depends on this.
 - **Why the tail deny-list leaves out `SDCARD_*`, `M24` and `M32` (KI-08,
   KI-20).** A slicer does not emit the SD-card and file-control commands in a
-  part file. A plain `SET_GCODE_OFFSET` (a baby-step) only shifts later moves
-  and is allowed; `SET_GCODE_OFFSET ... MOVE=1`, which moves at once, and
+  part file. A plain Z `SET_GCODE_OFFSET` (a baby-step) only shifts later moves
+  and is allowed (an X/Y offset is refused, see "Pre-resume XYZ `G92`"); `SET_GCODE_OFFSET ... MOVE=1`, which moves at once, and
   `BLTOUCH_DEBUG`, which deploys the pin, are refused (R17). The rest are
   accepted gaps, not claims of safety: a deny-list cannot be complete
   (KI-08), and the P2 allow-list against the live macro set replaces it.
@@ -819,9 +823,10 @@ Choices behind items that the automated reviews raised repeatedly.
   nozzle. The snap to a travel or unretract is bounded by the start of its
   SOURCE line (an arc starts earlier than its last segment), so it never
   exceeds `max_overlap_s`.
-- **Pre-resume XYZ `G92` and log sessions.** A `G92` on X, Y or Z before the
+- **Pre-resume XYZ `G92`, X/Y gcode offsets and log sessions.** A `G92` on X, Y or Z, or a
+  non-zero `SET_GCODE_OFFSET` on X or Y (`X`, `Y`, `X_ADJUST`, `Y_ADJUST`), before the
   resume line shifts the coordinate origin and the preview does not restore it:
-  R17 refuses. Stats before a Klippy restart never supply the link-freeze sample
+  R17 refuses. A Z offset is restored from the log and is allowed. Stats before a Klippy restart never supply the link-freeze sample
   of a later shutdown, and only the first `Exiting SD card print` after a
   shutdown (before the next restart) is its exit position.
 - **Flow factor in the preview (M221).** Klipper scales every E value, `G92 E`

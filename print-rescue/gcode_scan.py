@@ -721,6 +721,15 @@ class Scanner:
         elif cmd == "SET_GCODE_OFFSET" and _fparam(params, "MOVE", 0.0) != 0.0:
             # A plain offset only shifts later moves; with MOVE=1 it moves now.
             self.events.append(Event(line, "forbidden", "SET_GCODE_OFFSET_MOVE"))
+        if cmd == "SET_GCODE_OFFSET":
+            # A non-zero X/Y offset shifts the coordinate origin like a G92 does, and the preview
+            # restores only the Z offset, so it is reported with the origin shifts (R17). Z and
+            # explicit zeros are harmless: Z is restored from the log, zero is the default.
+            for key in ("X", "Y", "X_ADJUST", "Y_ADJUST"):
+                value = _fparam(params, key)
+                if value is not None and value != 0.0:
+                    self.events.append(Event(line, "g92_xyz", "SET_GCODE_OFFSET " + key))
+                    break
         if cmd in END_MACROS:
             self.end_seen = True
         elif self.end_seen and cmd in ("G0", "G1", "G2", "G3"):
