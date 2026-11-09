@@ -516,7 +516,8 @@ Open:
 - **KI-01**: phase 1 is a read-only planner. Phases 2+ (motion, upload/start)
   are not implemented in this branch: it contains no code that heats, moves,
   restarts or starts anything. A prototype one-pass runner exists only on the
-  separate branch `feat/print-rescue-p2` (not reviewed, not part of this PR).
+  separate branch `feat/print-rescue-p2` (it has open review findings listed in
+  its handoff; not part of this PR).
   The live rescue of 2026-11-07 was done by hand through Moonraker
   ([live validation](print-rescue-live-validation-2026-11-07.md)).
 - **KI-02**: `--gcode-map` exists only for the test fixture excerpts (hidden
@@ -571,7 +572,11 @@ Open:
   the `--gcode-map` gate variable at import because it is test-only and a test
   asserts the planner never imports it; the `actions/checkout` pin in
   `print-rescue-test.yml` is the commit of the `v4` tag (checked with the GitHub
-  API on 2026-11-09), the same pin `lint.yml` uses.
+  API on 2026-11-09), the same pin `lint.yml` uses; the unknown-head-position
+  warning (`PIN_AT_BOOT`) exits 0 by design, its text says exit 0 does not clear
+  it, and no consumer exists in phase 1; `.github/workflows/claude-pr-review.yml`
+  and `.github/scripts/check_review.py` are synced verbatim from dotclaude, so their
+  comments cite dotclaude's ADR 0002 and are not edited here.
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
 - **KI-16**: a source file name or copied header line with a control character or a

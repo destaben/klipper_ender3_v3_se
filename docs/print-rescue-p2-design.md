@@ -2,7 +2,7 @@
 
 Status: **design only. Nothing in this page is implemented in this branch.** A
 prototype of part of it (a one-pass runner) lives on the separate branch
-`feat/print-rescue-p2`; it is not reviewed and not part of phase 1. **Nothing in
+`feat/print-rescue-p2`; it has open review findings (listed in its handoff) and is not part of phase 1. **Nothing in
 this page has been run by code in this repository's reviewed history.** Phase 1 ([print-rescue.md](print-rescue.md)) is a read-only planner.
 This page describes the runner that phase 2 would add, derived from the manual
 rescue of 2026-11-07 ([live validation](print-rescue-live-validation-2026-11-07.md)),
