@@ -198,6 +198,8 @@ def _violation(line: str) -> Optional[str]:
             ok = key in keys and _NUMBER.match(value) is not None
         else:
             key, _, value = tok.partition("=")
+            # An object name with `(`, `)` or a space is refused here as R17 (KI-10): the code is
+            # imprecise but the run fails closed, which is the accepted behaviour.
             ok = "=" in tok and key.upper() in keys and _VALUE.match(value) is not None
         if not ok:
             return "%s: parameter %r is not allowed" % (cmd, tok)
@@ -425,6 +427,9 @@ def build(state: State, source_name: str, resume_line: int,
         # The copied original may hold TAB and non-ASCII comment text, but no
         # other control character: whether Klipper splits input only at LF is
         # unverified (KI-14), so a hidden line break is refused, not trusted.
+        # Accepted limit (KI-08), do not report again: the copied tail is vetted by the scanner's
+        # deny-list, not by this allow-list. Phase 1 output is a NOT VERIFIED review artefact that no
+        # code sends to a printer; P2 must check the tail against an allow-list before it runs it.
         if any((ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in line):
             raise ResumeRefused("a copied tail line holds a control character")
         gen.append(rewrite_estimate(line, remaining_fraction))

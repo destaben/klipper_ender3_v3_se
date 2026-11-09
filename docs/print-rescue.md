@@ -576,7 +576,8 @@ Open:
   warning (`PIN_AT_BOOT`) exits 0 by design, its text says exit 0 does not clear
   it, and no consumer exists in phase 1; `.github/workflows/claude-pr-review.yml`
   and `.github/scripts/check_review.py` are synced verbatim from dotclaude, so their
-  comments cite dotclaude's ADR 0002 and are not edited here; plain-number safety
+  comments cite an ADR in the dotclaude repository (ADR 0002), which is not in
+  this repo and is not edited here; plain-number safety
   values never reach R13 (KI-09) and G2/G3 arcs outside G17 are neither
   translated nor refused (see the Build notes), both known limits for P2; the
   tag pins of `actions/checkout@v4` / `claude-code-action@v1` in the synced
