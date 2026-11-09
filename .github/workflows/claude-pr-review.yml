@@ -145,7 +145,9 @@ jobs:
             else
               # any other code (2, a crash, a missing script) is a setup error, not a bad review:
               # a retry would not help, so fail without spending another run.
-              echo "::error::check_review.py failed (exit $rc): see its message above. Exit 2 is a setup or secret-leak stop; if the script is missing, copy .github/scripts/check_review.py into the repo."
+              echo "::error::check_review.py failed (exit $rc): see its message above." \
+                "Exit 2 is a setup or secret-leak stop; if the script is missing," \
+                "copy .github/scripts/check_review.py into the repo."
               exit 1
             fi
           fi
@@ -184,7 +186,9 @@ jobs:
       # nothing new; fork PRs are skipped and the `@claude review` path checks
       # out the default branch.
       - name: Post the review
-        if: ${{ !cancelled() && steps.review.outcome == 'success' && steps.check.outcome != 'failure' && (github.event.pull_request.number || github.event.issue.number) }}
+        if: >-
+          ${{ !cancelled() && steps.review.outcome == 'success' && steps.check.outcome != 'failure'
+          && (github.event.pull_request.number || github.event.issue.number) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
