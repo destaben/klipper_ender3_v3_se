@@ -109,7 +109,7 @@ def validate(text, pr_number):
     # ("still waiting for the documenter") does not count as its section.
     # A heading is a `#` line or a line that is only a bold label; "Bug Hunter"
     # spelled with a space counts as the bug-hunter.
-    # Accepted limit (ADR 0002, "Known limits"): this proves each agent has a
+    # Accepted limit (dotclaude ADR 0002, "Known limits"; that repo is the source of this script): this proves each agent has a
     # section, not that the section is finished, so a line like
     # "**documenter: still running**" can pass. Judging bodies would need a
     # second model pass; the review is advisory and read by a human.
