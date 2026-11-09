@@ -75,6 +75,12 @@ Runs `mmu-fallback/test_mmu_link.py` (also run by sim-boot in CI). Standard libr
 python3 -m unittest discover -s mmu-fallback -v
 ```
 
+### Print-rescue unit tests (if you touched `print-rescue/` or `config/`)
+Runs `print-rescue/test_*.py` (also run by `.github/workflows/print-rescue-test.yml`). Standard library only, no Docker needed; on the Pi use `nice -n 19` while Klipper is connected:
+```bash
+python3 -m unittest discover -s print-rescue -v
+```
+
 ### Klipper Connect patch tests (if you touched `patches/klipper-connect/` or `Dockerfile-klipper-connect`)
 `patches/klipper-connect/test_queue_start.py` covers the local patch and runs in
 `.github/workflows/klipper-connect-test.yml`. The build and run commands are in `docs/prusa-connect.md`, "Upgrading the

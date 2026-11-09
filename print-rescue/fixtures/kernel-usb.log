@@ -1,0 +1,4 @@
+Nov 07 07:43:44 pi kernel: ch341 1-1.1.3:1.0: ch341-uart converter detected
+Nov 07 07:43:44 pi kernel: usb 1-1.1.3: ch341-uart converter now attached to <tty>
+Nov 07 07:51:48 pi kernel: ch341-uart <tty>: usb_serial_generic_read_bulk_callback - urb stopped: -32
+Nov 07 10:09:45 pi kernel: ch341-uart <tty>: usb_serial_generic_read_bulk_callback - urb stopped: -32

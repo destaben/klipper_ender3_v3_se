@@ -1,0 +1,135 @@
+{
+  "schema": "print-rescue-profile",
+  "version": 1,
+  "printer": {
+    "model": "Creality Ender-3 V3 SE (this repo's config)",
+    "kinematics": "cartesian",
+    "bed_moves": "y"
+  },
+  "motion": {
+    "max_velocity": 200,
+    "max_accel": 4000,
+    "square_corner_velocity": 5.0,
+    "minimum_cruise_ratio": 0.5,
+    "max_z_velocity": 5,
+    "max_z_accel": 100,
+    "max_extrude_only_velocity": 45,
+    "max_extrude_only_accel": 3000,
+    "instant_corner_velocity": 1.0,
+    "arc_resolution": 1.0
+  },
+  "config_fingerprint": {
+    "bltouch": {
+      "x_offset": {"value": -23.0, "unit": "mm", "source": "config", "safety_critical": true},
+      "y_offset": {"value": -14.5, "unit": "mm", "source": "config", "safety_critical": true},
+      "z_offset": {"value": 2.96, "unit": "mm", "source": "config", "safety_critical": true, "live": true,
+                   "note": "from the SAVE_CONFIG block and it drifts after every PROBE_CALIBRATE: with --printer-cfg the live value replaces this one and R14 does not compare it; without it this copy may be stale"}
+    },
+    "stepper_x": {
+      "position_min": {"value": -6, "unit": "mm", "source": "config", "safety_critical": true},
+      "position_max": {"value": 230, "unit": "mm", "source": "config", "safety_critical": true}
+    },
+    "stepper_y": {
+      "position_min": {"value": -14, "unit": "mm", "source": "config", "safety_critical": true},
+      "position_max": {"value": 230, "unit": "mm", "source": "config", "safety_critical": true}
+    },
+    "stepper_z": {
+      "position_min": {"value": -3, "unit": "mm", "source": "config", "safety_critical": true},
+      "position_max": {"value": 250, "unit": "mm", "source": "config", "safety_critical": true},
+      "rotation_distance": {"value": 8, "unit": "mm", "source": "config", "safety_critical": true,
+                            "note": "T8 leadscrew: the Z axis can back-drive when the motors are off"}
+    },
+    "safe_z_home": {
+      "home_xy_position": {"value": [134, 123], "unit": "mm", "source": "config", "safety_critical": true,
+                           "note": "G28 / G28 Z probes here: never with a part covering this point"},
+      "z_hop": {"value": 10, "unit": "mm", "source": "config", "safety_critical": true}
+    },
+    "bed_mesh": {
+      "mesh_min": [30, 30],
+      "mesh_max": [190, 190]
+    },
+    "printer": {
+      "max_velocity": 200,
+      "max_accel": 4000,
+      "max_z_velocity": 5,
+      "max_z_accel": 100,
+      "square_corner_velocity": 5.0
+    },
+    "extruder": {
+      "max_extrude_only_velocity": 45,
+      "max_extrude_only_accel": 3000
+    }
+  },
+  "envelope": {
+    "x_min": {"value": -6, "unit": "mm", "source": "config", "safety_critical": true},
+    "x_max": {"value": 230, "unit": "mm", "source": "config", "safety_critical": true},
+    "y_min": {"value": -14, "unit": "mm", "source": "config", "safety_critical": true},
+    "y_max": {"value": 230, "unit": "mm", "source": "config", "safety_critical": true},
+    "x_max_safe": {"value": 205, "unit": "mm", "source": "user", "safety_critical": true,
+                   "note": "beyond X=205 the toolhead can trip the filament cutter lever"},
+    "z_max": {"value": 250, "unit": "mm", "source": "config", "safety_critical": true},
+    "z_top_margin": {"value": 10, "unit": "mm", "source": "default", "safety_critical": true,
+                     "note": "unmeasured: real free height under the top bar not checked yet (P3)"},
+    "bed": {"value": {"x_min": 0, "x_max": 220, "y_min": 0, "y_max": 220}, "unit": "mm",
+            "source": "config", "safety_critical": true,
+            "note": "the printable bed; a probe point must lie inside it (Ender-3 V3 SE 220 x 220, not measured here)"},
+    "probe_area": {"value": {"x_min": 30, "x_max": 190, "y_min": 30, "y_max": 190}, "unit": "mm",
+                   "source": "config", "safety_critical": true,
+                   "note": "the bed MESH area, equal to [bed_mesh] mesh_min/mesh_max; a probe point outside it is only a warning (the mesh is extrapolated there)"}
+  },
+  "probe": {
+    "offsets_from": "config_fingerprint.bltouch",
+    "rescue_probe_speed": 5
+  },
+  "head_footprint": {
+    "note": "boxes relative to the nozzle tip (x, y in mm; z_from/z_to above the tip). The head envelope is an ESTIMATE by the owner (not calipers): worst case, lowest point at nozzle level. Source stays user, so R13 keeps motion blocked until it is measured.",
+    "tiers": [
+      {"name": "nozzle tip", "unit": "mm", "source": "default", "safety_critical": true,
+       "value": {"z_from": 0, "z_to": 2, "x_min": -3, "x_max": 3, "y_min": -3, "y_max": 3}},
+      {"name": "head and fan envelope (owner estimate)", "unit": "mm", "source": "user", "safety_critical": true,
+       "note": "left 70, right 100 with the cutter lever extended, front 50, back 65 counting the X crossbar (about 30 to the carriage); lowest point of fan and duct taken at nozzle level",
+       "value": {"z_from": 0, "z_to": 40, "x_min": -70, "x_max": 100, "y_min": -50, "y_max": 65}},
+      {"name": "probe body", "unit": "mm", "source": "default", "safety_critical": true,
+       "value": {"z_from": 4, "z_to": 30, "x_min": -30, "x_max": -16, "y_min": -21, "y_max": -8}},
+      {"name": "probe pin deployed", "unit": "mm", "source": "default", "safety_critical": true,
+       "value": {"z_from": -5, "z_to": 4, "x_min": -25, "x_max": -21, "y_min": -16.5, "y_max": -12.5}}
+    ]
+  },
+  "probe_spots": [],
+  "no_go_zones": [
+    {"name": "cutter lever", "unit": "mm", "source": "user", "safety_critical": true,
+     "note": "config/macros/sp_mmu.cfg _SP_TIP_FORM moves to X=225 on purpose to cut (clear position X=175)",
+     "value": {"frame": "gantry", "x": [205, null], "y": null, "z": null, "margin": 0,
+               "allowed_callers": ["_SP_TIP_FORM"]}}
+  ],
+  "clearances": {
+    "travel_clearance": 5,
+    "min_lift": 10,
+    "probe_spot_margin": 5,
+    "footprint_margin": 3
+  },
+  "thermal": {
+    "standby_temp": {"PLA": 150},
+    "retract_before_travel": 2.5,
+    "prime_extra": 0.8,
+    "max_hot_dwell_over_part_s": 30
+  },
+  "stop_estimation": {
+    "margin_s": 0.5,
+    "snap_window_s": 1.0,
+    "max_overlap_s": 3.0,
+    "absurd_overlap_s": 30.0,
+    "min_resume_layer": 3
+  },
+  "accessories": {
+    "mmu": {"type": "pico", "lanes": 4, "multi_tool_resume": false},
+    "cutter": {"present": true, "macro": "_SP_TIP_FORM", "cut_position_x": 225},
+    "prtouch": {"present": true}
+  },
+  "witness": {"enabled": false},
+  "park": {
+    "xy": {"value": [15, 205], "unit": "mm", "source": "default", "safety_critical": true,
+           "note": "off-part spot where the preview heats and primes; unmeasured placeholder. Must be clear of the part, the probe pin and the cutter. The placeholder [15, 205] is X 15, Y 205; it has not been checked against the cutter position."}
+  },
+  "bed_mesh_profile": "default"
+}

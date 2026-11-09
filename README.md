@@ -122,6 +122,8 @@ The [Klipper Connect patch tests](.github/workflows/klipper-connect-test.yml) wo
 
 The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, `mmu-fallback/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
 
+The [Print Rescue Tests](.github/workflows/print-rescue-test.yml) workflow runs on pull requests and on pushes to `main` that touch `print-rescue/`, anything under `config/`, or the workflow file itself. It runs the standard-library unit tests of the read-only print-rescue planner. The planner, its refusal catalogue and the manual rescue procedure are described in [docs/print-rescue.md](docs/print-rescue.md); the [incident](docs/print-rescue-incident-2026-11-07.md), the [live validation](docs/print-rescue-live-validation-2026-11-07.md) and the [phase 2 design](docs/print-rescue-p2-design.md) have their own pages.
+
 ## Services
 
 All services are defined in `docker-compose.yaml` and managed via Docker Compose.
@@ -189,8 +191,9 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-klipper-connect # Dockerfile for the Prusa Connect bridge container
 ├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
 ├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py, run_virtual.sh and unit tests)
+├── print-rescue/              # Read-only print rescue planner (phase 1) and its unit tests; see docs/print-rescue.md
 ├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
-├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md)
+├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md, print-rescue.md, print-rescue-incident-2026-11-07.md, print-rescue-p2-design.md, print-rescue-live-validation-2026-11-07.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)
 ├── docker-compose.yaml        # Docker Compose service definitions
 ├── config.ender3_v3_se        # Pre-configured firmware build config

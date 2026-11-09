@@ -7,11 +7,11 @@
 # https://code.claude.com/docs/en/github-actions. It is tied to the account that
 # ran `claude setup-token`; fine here since this is a personal repo. There is
 # deliberately no API-key fallback: when the quota runs out, runs fail and post
-# nothing — see docs/decisions/0002-cost-and-quota.md.
+# nothing — see dotclaude docs/decisions/0002-cost-and-quota.md.
 #
 # Runs on every same-repo, non-draft PR (opened/synchronize/reopened/
 # ready_for_review), not just on an
-# `@claude review` comment: see docs/decisions/0002-cost-and-quota.md,
+# `@claude review` comment: see dotclaude docs/decisions/0002-cost-and-quota.md,
 # which relaxes the old comment-only trigger now that the review runs on
 # Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
 # acceptable against the shared subscription quota. The comment and manual
@@ -145,7 +145,9 @@ jobs:
             else
               # any other code (2, a crash, a missing script) is a setup error, not a bad review:
               # a retry would not help, so fail without spending another run.
-              echo "::error::check_review.py failed (exit $rc): see its message above. Exit 2 is a setup or secret-leak stop; if the script is missing, copy .github/scripts/check_review.py into the repo."
+              echo "::error::check_review.py failed (exit $rc): see its message above." \
+                "Exit 2 is a setup or secret-leak stop; if the script is missing," \
+                "copy .github/scripts/check_review.py into the repo."
               exit 1
             fi
           fi
@@ -184,7 +186,9 @@ jobs:
       # nothing new; fork PRs are skipped and the `@claude review` path checks
       # out the default branch.
       - name: Post the review
-        if: ${{ !cancelled() && steps.review.outcome == 'success' && steps.check.outcome != 'failure' && (github.event.pull_request.number || github.event.issue.number) }}
+        if: >-
+          ${{ !cancelled() && steps.review.outcome == 'success' && steps.check.outcome != 'failure'
+          && (github.event.pull_request.number || github.event.issue.number) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -216,7 +220,7 @@ jobs:
 # a valid flag, and `claude-haiku-5-5` is a valid model id. Re-check them
 # before relying on this workflow later; the action may have moved on. On
 # 2026-11-08 the `env` expansion in `with:` and the `execution_file` output
-# were also seen working on this repo's runs (docs/decisions/0002).
+# were also seen working on this repo's runs (dotclaude docs/decisions/0002).
 #
 # To reuse this in a DIFFERENT repo: this file itself (project-specific CI)
 # and .claude/agents/{bug-hunter,documenter}.md + .claude/skills/release-policy/

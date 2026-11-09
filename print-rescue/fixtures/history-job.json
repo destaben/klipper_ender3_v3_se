@@ -1,0 +1,20 @@
+{
+ "job": {
+  "end_time": 1794042590.8375561,
+  "filament_used": 14710.30516000013,
+  "filename": "ps2-slim-wall-mount_PLA_3h15m.gcode",
+  "metadata": {
+   "layer_count": 255,
+   "layer_height": 0.2,
+   "modified": 1793982035.3844814,
+   "object_height": 35.0,
+   "size": 7975383,
+   "slicer": "OrcaSlicer",
+   "slicer_version": "2.4.2"
+  },
+  "print_duration": 8456.500589847012,
+  "start_time": 1794033841.0753512,
+  "status": "klippy_shutdown",
+  "total_duration": 8749.928096142015
+ }
+}
