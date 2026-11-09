@@ -314,6 +314,22 @@ class SyntheticEvidence(unittest.TestCase):
         self.assertTrue(ev.freeze)
         self.assertEqual(ev.p_end, 8.0)
 
+    def test_a_window_clamped_to_the_kept_moves_refuses_instead_of_skipping_print(self):
+        # The scan keeps only the last two layers, so compute_window clamps the earliest stop to the
+        # first kept move (t = 0 here) when the true one lay before it. With margin_s > 0 the resume
+        # must refuse (R22) whether or not a layer marker is known, never land on a later line.
+        items = [Move(line=i, start=(i * 100.0, 0, 0, 0), end=((i + 1) * 100.0, 0, 0, 1),
+                      speed=100.0, max_velocity=100.0, accel=1e9, accel_to_decel=1e9,
+                      square_corner_velocity=5.0, extruding=True) for i in range(1, 11)]
+        timed = planner.plan(items)
+        w = sp.Window("end", earliest_t=0.0, latest_t=6.0, file_end_t=10.0, earliest_line=1,
+                      latest_line=7, walkback_earliest_s=10.0, walkback_latest_s=4.0,
+                      lookahead_bound_s=0.0)
+        for layer_start in (5, None):
+            with self.subTest(layer_start=layer_start):
+                c = sp.choose_resume(w, timed, layer_start, 0.5, 1.0, 20.0)
+                self.assertIsNotNone(c.refusal)
+
     def test_layer_start_inside_the_margin_refuses(self):
         # 10 one-second moves; a layer starts at line 5 (t = 4 s).
         items = [Move(line=i, start=(i * 100.0, 0, 0, 0), end=((i + 1) * 100.0, 0, 0, 1),
