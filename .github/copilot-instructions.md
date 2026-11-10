@@ -62,6 +62,8 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── Dockerfile-mmu-fallback       # Optional virtual Pico MMU image (watcher + virtual MCU)
 ├── mmu-fallback/                 # Watcher (mmu_link.py), run_virtual.sh and unit tests
 ├── print-rescue/                 # Read-only print rescue planner (phase 1) and unit tests
+├── scripts/                      # rpi-metrics.sh (Pi health metrics), install-rpi-cron.sh and unit tests
+├── textfile/                     # node-exporter textfile collector output (git-ignored)
 ├── serial-links/                 # Tracked default symlink for the Pico MMU serial path
 ├── sim/                          # Virtual printer: boots the config to "ready" in CI
 ├── patches/klipper-connect/      # Local patch for the Prusa Connect bridge, and its tests
@@ -69,7 +71,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 ├── docker-compose.yaml
 ├── config.ender3_v3_se           # Pre-built firmware .config for make
 ├── build_firmware.sh             # Builds Klipper .bin for flashing
-├── setup_services.sh             # Installs Docker, clones deps, starts stack
+├── setup_services.sh             # Installs Docker, clones deps, installs the rpi-metrics cron line, starts stack
 ├── set_static_wifi.sh            # Sets static WiFi IP via nmcli
 ```
 
@@ -105,6 +107,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
 | `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
 | `./gcodes` | `/data/gcodes` | klipper-connect |
+| `./textfile` | `/textfile` (ro) | node-exporter |
 | `./KlipperMaintenance/maintain.py` | `/home/klipper/klipper/klippy/extras/maintain.py` | klipper |
 | `./chopper-resonance-tuner/` | `/home/klipper/chopper-resonance-tuner` (and `gcode_shell_command.py` into `klippy/extras`) | klipper |
 | `./moonraker-timelapse/component/timelapse.py` | `/opt/moonraker/moonraker/components/timelapse.py` | moonraker |

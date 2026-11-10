@@ -9,9 +9,11 @@ Raw evidence (logs, G-code, printer config) contains host data and is NOT in the
 > **Branch `feat/print-rescue-p2`: moved out of PR #114 (read-only phase 1). Do not run `rescue_run.py` against a printer until these review findings (PR #114, review of 5e5a296) are closed:**
 > 1. `rescue_run.py` moves a real printer and is not reviewed as safety-critical; `--dry-run` is opt-in.
 > 2. `probe_z`, "no trigger" branch: it redeclares `Z=z_offset` with `SET_KINEMATIC_POSITION` although the head stopped at the end of the probe stroke (below `z_offset`), so the next move lands low.
-> 3. `rescue_job.py --resume-name` is joined into the output path with no traversal or overwrite check.
+> 3. ~~`rescue_job.py --resume-name` is joined into the output path with no traversal or overwrite check.~~ Fixed 2026-11-10: a plain `*.gcode` name only, and the CLI never overwrites.
 > 4. `rescue_job.py build_job` is a second job builder that skips the planner's R07/R09/R14/R15 refusals and uses a byte-based overlap.
-> 5. `power_cycle_and_rebuild` swallows a failed `device_power` call and poll errors.
+> 5. ~~`power_cycle_and_rebuild` swallows a failed `device_power` call~~ (fixed 2026-11-10: it stops the run) and poll errors (still tolerated while waiting for `ready`).
+>
+> Also fixed 2026-11-10: a refused preflight (a print is active, R13, a cold bed...) used to run the abort cleanup, which switched off the nozzle and raised Z; it now sends nothing until preflight has passed.
 
 ## 1. Where things stand
 
@@ -21,7 +23,7 @@ Raw evidence (logs, G-code, printer config) contains host data and is NOT in the
 | `rescue_job.py` | Builds `job.json` and the resume G-code from the G-code and the Klippy log. Reproduces the file that printed on 2026-11-08 byte for byte (`--rate-bps 1543`). |
 | `rescue_run.py` | One-pass run through Moonraker with a head-vs-part guard. Used live once (a part rescued and finished). Head dimensions are owner-stated: it needs `--allow-unverified` and adds a 10 mm margin. |
 | `rescue_watch.py` | Polls, captures evidence at the first failure, detects a host reboot. No unit test yet. |
-| Tests | `python3 -m unittest discover -s print-rescue` (353 at the time of writing). |
+| Tests | `python3 -m unittest discover -s print-rescue` (468 on 2026-11-10). |
 | PR review loop | **Not at zero.** The `review` job has failed or stayed pending on and off (the earliest failures were `is_error:true` with 0 turns and no cost: probably quota or API on the repo side, never confirmed). Rounds up to 25 were pushed by the automated loop. Do not call the PR done until a review reports zero findings or each finding is fixed or justified. |
 | Commit metadata | Many commits carry a Mac hostname in the author field. History must not be rewritten; use a squash merge with a clean author (the maintainer's decision). New commits in this session used the GitHub `noreply` address. |
 

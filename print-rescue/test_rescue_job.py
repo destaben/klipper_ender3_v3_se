@@ -88,6 +88,39 @@ class TestResumeLine(unittest.TestCase):
         self.assertEqual(rj.temps_before(self.lines, i), (60, 220))
 
 
+class TestResumeName(unittest.TestCase):
+    def setUp(self):
+        self.lines = synth_gcode()
+        self.dir = tempfile.mkdtemp()
+        self.gcode = os.path.join(self.dir, "part.gcode")
+        with open(self.gcode, "w") as f:
+            f.write("\n".join(self.lines))
+        self.exit_pos = max(i for i, l in enumerate(self.lines) if l.startswith("G1 X20 Y20 Z"))
+
+    def build(self, name):
+        return rj.build_job(self.gcode, None, None, len("\n".join(self.lines[:self.exit_pos + 1])) + 1, 3.0, 40.0, name)
+
+    def test_names_that_could_leave_the_output_directory_are_refused(self):
+        for name in ("../evil.gcode", "/abs.gcode", "a/b.gcode", "..gcode", ".hidden.gcode", "x.txt", "", "a b.gcode"):
+            with self.assertRaises(rj.JobError, msg=name):
+                self.build(name)
+
+    def test_a_plain_name_is_accepted(self):
+        job, _ = self.build("resume_part.gcode")
+        self.assertEqual(job["resume_file"], "resume_part.gcode")
+
+    def test_the_cli_never_overwrites_an_existing_resume_file(self):
+        out = os.path.join(self.dir, "out")
+        os.makedirs(out)
+        with open(os.path.join(out, "resume_part.gcode"), "w") as f:
+            f.write("keep")
+        rc = rj.main(["--gcode", self.gcode, "--exit-pos", str(len("\n".join(self.lines[:self.exit_pos + 1])) + 1),
+                      "--rate-bps", "40", "--out-dir", out, "--resume-name", "resume_part.gcode"])
+        self.assertEqual(rc, 2)
+        with open(os.path.join(out, "resume_part.gcode")) as f:
+            self.assertEqual(f.read(), "keep")
+
+
 class TestResumeFile(unittest.TestCase):
     def setUp(self):
         self.lines = synth_gcode()

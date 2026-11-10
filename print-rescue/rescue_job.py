@@ -217,6 +217,8 @@ def build_resume(lines: List[str], i: int, bed: int, hot: int) -> List[str]:
 
 def build_job(gcode_path: str, log_path: Optional[str], exit_file: Optional[str], exit_pos: Optional[int],
               overlap_s: float, rate: float, resume_name: str) -> Tuple[dict, List[str]]:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.gcode", resume_name or "") or ".." in resume_name:
+        raise JobError("the resume file name must be a plain name ending in .gcode (letters, digits, dot, dash, underscore)")
     lines = _read(gcode_path, errors="surrogateescape").split("\n")
     state = parse_stop_state(_read(log_path, errors="ignore")) if log_path else {"exit_pos": None, "last_position": None}
     ep = exit_pos if exit_pos is not None else state["exit_pos"]
@@ -274,8 +276,12 @@ def main(argv=None) -> int:
     os.makedirs(a.out_dir, exist_ok=True)
     with open(os.path.join(a.out_dir, "job.json"), "w") as f:
         json.dump(job, f, indent=2)
-    with open(os.path.join(a.out_dir, a.resume_name), "w", errors="surrogateescape") as f:
-        f.write("\n".join(resume))
+    try:
+        with open(os.path.join(a.out_dir, a.resume_name), "x", errors="surrogateescape") as f:   # never overwrite a file
+            f.write("\n".join(resume))
+    except FileExistsError:
+        print("REFUSED: %s already exists in the output directory" % a.resume_name, file=sys.stderr)
+        return 2
     print(json.dumps({k: job[k] for k in ("stop", "overlap", "resume", "part", "temps")}, indent=2))
     return 0
 

@@ -1,5 +1,10 @@
 # Print rescue runbook: resume a stopped print in one pass, without AI
 
+> **Hold: do not run `rescue_run.py` against a printer until the open review findings in
+> [print-rescue-handoff-2026-11-08.md](print-rescue-handoff-2026-11-08.md) are closed.** As of 2026-11-10 findings 2 (the "no trigger"
+> redeclaration of Z), 4 (the second job builder skips the planner's refusals) and 1 (a safety review of `rescue_run.py`) are still
+> open; 3 and 5 are fixed. The procedure below describes what was validated live, not a gate that has been cleared.
+
 Status: **prototype, validated live twice** (2026-11-08, same part, two different stops). It moves the machine. Read
 [print-rescue.md](print-rescue.md) for the design, the refusal catalogue (R01-R22) and the known issues; this file is the
 procedure with every number and where it came from. Placeholders: `<host>` is the Moonraker host, `<alias>` an ssh alias,
@@ -138,7 +143,8 @@ Do a `--dry-run` first: it reads the printer and prints every command without se
    directions. Lift in 10 mm relative steps to 120 (never past the Z maximum minus 5), `G28 X`, `G28 Y` (the bed moves, so the head is high),
    move to the probe spot.
 4. **`PROBE` loop.** A stroke is bounded by declared Z minus -3. If a stroke ends without a trigger the pin cannot be below `z_offset`, so
-   `SET_KINEMATIC_POSITION Z=2.96` is a valid lower bound and the stroke repeats (each repeat descends at most 5.96 mm). On a trigger:
+   `SET_KINEMATIC_POSITION Z=2.96` is taken as a lower bound and the stroke repeats (**open finding 2 of the handoff:** the head stopped
+   at the end of the stroke, below `z_offset`, so the next move can land low; this has not been fixed or measured) (each repeat descends at most 5.96 mm). On a trigger:
    `SET_KINEMATIC_POSITION Z=2.96`. If `PROBE` answers `Probe triggered prior to movement` or `Failed to verify BLTouch probe is raised`, the
    script powers the printer off >= 25 s, on, restarts Klippy as needed, re-declares the lower bound, re-homes X/Y and probes again.
    (2026-11-08: the first stroke of 123 mm had no trigger, the second triggered 5.14 mm later: the head had been lifted about 11 mm by hand.)
