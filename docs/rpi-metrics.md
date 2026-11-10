@@ -21,7 +21,7 @@ directory, then `mv`).
 
 ## Install / deploy
 
-`setup_services.sh` creates `textfile/` and installs a user crontab line:
+`setup_services.sh` creates `textfile/` and installs a crontab line for the invoking user (`SUDO_USER` when run with sudo, not root):
 
 ```
 * * * * * <repo>/scripts/rpi-metrics.sh <repo>/textfile
@@ -42,7 +42,7 @@ Verify (HTTP only): `curl -s http://<host_ip>/nodeexporter/metrics | grep rpi_`
 
 ```bash
 crontab -l | grep -v 'scripts/rpi-metrics.sh' | crontab -
-git revert <merge-commit>   # or git checkout the previous docker-compose.yaml
+git revert -m 1 <merge-commit>   # or git checkout the previous docker-compose.yaml
 docker compose up -d node-exporter   # recreates it without the flag and mount
 rm -rf textfile
 ```

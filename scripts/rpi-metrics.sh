@@ -33,7 +33,8 @@ if command -v vcgencmd >/dev/null 2>&1; then
 fi
 
 tmp=$(mktemp "$dir/.rpi.prom.XXXXXX")
-trap 'rm -f "$tmp"' EXIT INT TERM
+trap 'rm -f "$tmp"' EXIT
+trap 'exit 1' INT TERM
 # mktemp creates 0600; the collector runs as another user inside the container.
 chmod 644 "$tmp"
 
@@ -43,7 +44,7 @@ chmod 644 "$tmp"
         raw=$(vcgencmd get_throttled 2>/dev/null || true)
         hex=${raw#throttled=}
         case $hex in
-            0x[0-9a-fA-F]*)
+            0x[0-9a-fA-F]|0x[0-9a-fA-F][0-9a-fA-F]*)
                 bits=$((hex))
                 echo "# HELP rpi_throttled_bitmask Raw vcgencmd get_throttled bitmask."
                 echo "# TYPE rpi_throttled_bitmask gauge"

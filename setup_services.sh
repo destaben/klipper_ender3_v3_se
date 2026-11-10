@@ -124,13 +124,26 @@ fi
 # crontab line runs scripts/rpi-metrics.sh every minute and writes
 # textfile/rpi.prom (mounted read-only into node-exporter). Idempotent: any
 # earlier rpi-metrics line is replaced. Remove with:
-#   crontab -l | grep -v 'scripts/rpi-metrics.sh' | crontab -
+#   crontab -l | grep -vF 'scripts/rpi-metrics.sh' | crontab -   (as the same user)
 mkdir -p textfile
 if command -v crontab &> /dev/null; then
     REPO_DIR=$(pwd)
-    CRON_LINE="* * * * * ${REPO_DIR}/scripts/rpi-metrics.sh ${REPO_DIR}/textfile"
-    { crontab -l 2>/dev/null | grep -vF 'scripts/rpi-metrics.sh' || true; echo "$CRON_LINE"; } | crontab -
-    echo "Installed rpi-metrics crontab line."
+    CRON_USER="${SUDO_USER:-$USER}"
+    CRON_LINE="* * * * * \"${REPO_DIR}/scripts/rpi-metrics.sh\" \"${REPO_DIR}/textfile\""
+    # Only rewrite the crontab when the current one was read successfully or
+    # does not exist yet, so an unexpected `crontab -l` failure can never
+    # replace the user's other jobs with the metrics line alone.
+    if CURRENT_CRON=$(crontab -l -u "$CRON_USER" 2>&1) || printf '%s' "$CURRENT_CRON" | grep -q '^no crontab for'; then
+        if ! printf '%s' "$CURRENT_CRON" | grep -q '^no crontab for'; then
+            CURRENT_CRON=$(printf '%s\n' "$CURRENT_CRON" | grep -vF 'scripts/rpi-metrics.sh' || true)
+        else
+            CURRENT_CRON=""
+        fi
+        { [ -n "$CURRENT_CRON" ] && printf '%s\n' "$CURRENT_CRON"; echo "$CRON_LINE"; } | crontab -u "$CRON_USER" -
+        echo "Installed rpi-metrics crontab line for $CRON_USER."
+    else
+        echo "WARNING: could not read the crontab of $CRON_USER; not installing the rpi-metrics line." >&2
+    fi
 else
     echo "WARNING: crontab not found; install cron (sudo apt-get install -y cron) and re-run to enable Pi metrics."
 fi
