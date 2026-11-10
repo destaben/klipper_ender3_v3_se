@@ -125,7 +125,7 @@ The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull
 
 The [Print Rescue Tests](.github/workflows/print-rescue-test.yml) workflow runs on pull requests and on pushes to `main` that touch `print-rescue/`, anything under `config/`, or the workflow file itself. It runs the standard-library unit tests of the read-only print-rescue planner. The planner, its refusal catalogue and the manual rescue procedure are described in [docs/print-rescue.md](docs/print-rescue.md); the [incident](docs/print-rescue-incident-2026-11-07.md), the [live validation](docs/print-rescue-live-validation-2026-11-07.md) and the [phase 2 design](docs/print-rescue-p2-design.md) have their own pages.
 
-The [RPi Metrics Tests](.github/workflows/rpi-metrics-test.yml) workflow runs on pull requests and on pushes to `main` that touch `scripts/` or the workflow file. It runs the unit tests of `scripts/rpi-metrics.sh` with a stubbed `vcgencmd` and checks the output with `promtool check metrics`.
+The [RPi Metrics Tests](.github/workflows/rpi-metrics-test.yml) workflow runs on pull requests and on pushes to `main` that touch `scripts/`, `setup_services.sh`, `docker-compose.yaml` or the workflow file. It runs the unit tests of `scripts/rpi-metrics.sh` and `scripts/install-rpi-cron.sh` with a stubbed `vcgencmd` and checks the output with `promtool check metrics`.
 
 ## Services
 
@@ -196,7 +196,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
 ├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py, run_virtual.sh and unit tests)
 ├── print-rescue/              # Read-only print rescue planner (phase 1) and its unit tests; see docs/print-rescue.md
-├── scripts/                   # rpi-metrics.sh (Pi health metrics for node-exporter) and its unit tests; see docs/rpi-metrics.md
+├── scripts/                   # rpi-metrics.sh (Pi health metrics for node-exporter), install-rpi-cron.sh and unit tests; see docs/rpi-metrics.md
 ├── textfile/                  # node-exporter textfile collector output (git-ignored except .gitkeep)
 ├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
 ├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md, print-rescue.md, print-rescue-incident-2026-11-07.md, print-rescue-p2-design.md, print-rescue-live-validation-2026-11-07.md, rpi-metrics.md)

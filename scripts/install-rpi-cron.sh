@@ -64,10 +64,13 @@ fi
 
 # LC_ALL=C and -a: treat the crontab as raw bytes. In a UTF-8 locale GNU grep
 # can mishandle or replace a non-UTF-8 line, and that text is written back.
-kept=$(printf '%s\n' "$current" | LC_ALL=C grep -avF 'scripts/rpi-metrics.sh' || true)
-case $kept in
-    *'Binary file'*'matches'*) echo "WARNING: crontab of $user looks binary; not installing the rpi-metrics line." >&2; exit 0 ;;
-esac
+rc=0
+kept=$(printf '%s\n' "$current" | LC_ALL=C grep -avF 'scripts/rpi-metrics.sh') || rc=$?
+# grep exits 1 when no line is left (fine), >1 on a real error: never rewrite then.
+if [ "$rc" -gt 1 ]; then
+    echo "WARNING: could not filter the crontab of $user; not installing the rpi-metrics line." >&2
+    exit 0
+fi
 if { [ -z "$kept" ] || printf '%s\n' "$kept"; printf '%s\n' "$line"; } | crontab "$@" -; then
     echo "Installed rpi-metrics crontab line for $user."
 else
