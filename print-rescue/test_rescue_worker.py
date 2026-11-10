@@ -1,6 +1,7 @@
 import gzip
 import io
 import json
+import urllib.request
 import os
 import re
 import stat
@@ -587,6 +588,26 @@ class TestPrepare(PrepareBase):
         self.client.routes["/server/history/list?limit=1"] = hist(metadata={"size": len(make_gcode_bytes())})
         with self.assertRaises(rw.WorkerError):
             self.prepare()
+
+    def test_history_file_named_like_a_worker_file_is_refused(self):
+        for name in ("CONFIRMED.json", "job.json", "evidence"):
+            self.client.routes["/server/history/list?limit=1"] = hist(filename=name)
+            with self.assertRaises(rw.WorkerError, msg=name) as cm:
+                self.prepare()
+            self.assertIn("collides", str(cm.exception))
+
+    def test_a_malformed_profile_is_a_refusal_not_a_traceback(self):
+        d = self.prepare()
+        bad = os.path.join(self.work, "bad.json")
+        with open(bad, "w") as f:
+            f.write("{not json")
+        tag = json.load(open(os.path.join(d, "PENDING.json")))["tag"]
+        with self.assertRaises(rw.WorkerError):
+            rw.confirm(d, rw.PHRASE % tag, self.client, bad, "134,215")
+
+    def test_default_opener_ignores_environment_proxies(self):
+        handlers = [h for h in rw._OPEN.__self__.handlers if isinstance(h, urllib.request.ProxyHandler)]
+        self.assertEqual([h.proxies for h in handlers if h.proxies], [])   # none registered, or only empty ones
 
     def test_history_without_a_file_size_is_refused(self):
         self.client.routes["/server/history/list?limit=1"] = hist(metadata={})

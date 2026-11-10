@@ -90,4 +90,4 @@ Pressing it prints one line and bumps the counter; nothing moves.
 
 * No supervisor is chosen yet: a systemd unit or a container restart policy both work, since state and logs are on disk.
 * Tests: `python3 -m unittest discover -s print-rescue -v` (the worker's are `test_rescue_worker.py`, all against stubs and local sockets).
-* Left open after review (low impact): a failed state write after a prepare can repeat the read-only prepare on the next poll (it prepares into a new job directory and moves nothing); a history file named `job.json` has its evidence copy overwritten by the job manifest (the resume was already built from it); an `http_proxy` in the environment would see the API key header when `--accept-plaintext-key` is used (unset it on the worker host). 
+* Left open after review (low impact): a failed state write after a prepare can repeat the read-only prepare on the next poll (it prepares into a new job directory and moves nothing); the G-code is not re-checked after the download; a transient Moonraker error still consumes the button press.  

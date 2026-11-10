@@ -89,7 +89,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_OPEN = urllib.request.build_opener(_NoRedirect).open
+# ProxyHandler({}): never route through an environment proxy; the private-host check covers only the Moonraker host
+_OPEN = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect).open
 
 
 class ReadOnlyClient:
@@ -313,6 +314,9 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", base) or "job.gcode"
 
 
+RESERVED_NAMES = {"job.json", "worker.json", "PENDING.json", "CONFIRMED.json", "evidence"}
+
+
 def _check_filename(name: str) -> None:
     if not name or name.startswith("/") or ".." in name.split("/") or "\\" in name or "\x00" in name:
         raise WorkerError("unsafe file name in the job history")
@@ -381,6 +385,8 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
     _check_filename(fname)
     if status not in ABNORMAL:
         raise WorkerError("the last job ended with status %r, not a stop that needs a rescue" % status)
+    if _safe_name(fname) in RESERVED_NAMES:
+        raise WorkerError("the history file name collides with a file the worker writes itself: build this one by hand (runbook, step 3)")
     if _safe_name(fname).startswith("resume_"):
         raise WorkerError("the last job is itself a resume file: build this one by hand with --exit-file (runbook, step 3)")
     keeper.snapshot_once()   # newest evidence first; a failed fetch is tolerated, the kept snapshots are still used
@@ -443,7 +449,10 @@ def confirm(job_dir: str, typed: str, client, profile_path: str, probe_spot: Opt
     if typed != PHRASE % p["tag"]:
         raise WorkerError("the phrase does not match. Type exactly: %s" % (PHRASE % p["tag"]))
     _require_idle_ready(client)
-    profile = mp.load_profile(profile_path)
+    try:
+        profile = mp.load_profile(profile_path)
+    except (mp.ProfileError, OSError, ValueError) as e:
+        raise WorkerError("cannot use the profile %s: %s" % (profile_path, e))
     blocked = bool(mp.motion_ready(profile))
     cmd = "python3 print-rescue/rescue_run.py --host %s --profile %s --job %s --probe-spot %s --dry-run" % (
         shlex.quote(str(getattr(client, "host", "<host>"))), shlex.quote(profile_path), shlex.quote(os.path.join(job_dir, "job.json")), shlex.quote(probe_spot or "<X,Y>"))
