@@ -85,7 +85,7 @@ chmod 644 "$tmp"
         milli=$(cat "$thermal_file" 2>/dev/null || true)
         case $milli in
             ''|*[!0-9]*) ;;
-            *) temp=$(awk -v m="$milli" 'BEGIN { printf "%.1f", m / 1000 }') ;;
+            *) temp=$(LC_ALL=C awk -v m="$milli" 'BEGIN { printf "%.1f", m / 1000 }') ;;
         esac
     elif [ "$have_vcgencmd" -eq 1 ]; then
         raw=$(vcgencmd measure_temp 2>/dev/null || true)
@@ -124,7 +124,7 @@ chmod 644 "$tmp"
 
     # --- Wi-Fi (/proc/net/wireless: iface: status link level noise ...) ---
     if [ -n "$iface" ] && [ -r "$wireless_file" ]; then
-        line=$(awk -v i="$iface:" '$1 == i { print $3, $4; exit }' "$wireless_file" 2>/dev/null || true)
+        line=$(LC_ALL=C awk -v i="$iface:" '$1 == i { print $3, $4; exit }' "$wireless_file" 2>/dev/null || true)
         if [ -n "$line" ]; then
             # Trailing dots mark the driver's "updated" flags: "60." -> 60.
             link=${line% *}

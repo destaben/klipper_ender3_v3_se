@@ -30,6 +30,14 @@ class RpiMetricsTest(unittest.TestCase):
         os.mkdir(self.out)
         os.mkdir(self.bin)
         self.calls = os.path.join(self.tmp, "calls.log")
+        # Hermetic: shadow any real vcgencmd (e.g. on a Pi) with one that fails.
+        self.write_stub("vcgencmd", "#!/bin/sh\nexit 127\n")
+
+    def write_stub(self, name, body):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write(body)
+        os.chmod(path, 0o755)
 
     def write(self, name, text):
         path = os.path.join(self.tmp, name)
@@ -223,6 +231,21 @@ class InstallCronTest(unittest.TestCase):
         self.assertEqual(lines[0], "0 5 * * * other")
         self.assertEqual(len([l for l in lines if "rpi-metrics.sh" in l]), 1)
         self.assertTrue(os.path.isdir(os.path.join(repo, "textfile")))
+
+    def test_non_utf8_crontab_is_preserved_byte_for_byte(self):
+        repo = os.path.join(self.tmp, "repo-bin")
+        os.mkdir(repo)
+        with open(self.tab, "wb") as f:
+            f.write(b"0 5 * * * echo caf\xe9\n30 6 * * * other\n")
+        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "USER": "tester",
+               "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8"}
+        r = subprocess.run([SH, INSTALLER, repo], env=env, capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        with open(self.tab, "rb") as f:
+            data = f.read()
+        self.assertTrue(data.startswith(b"0 5 * * * echo caf\xe9\n30 6 * * * other\n"), data)
+        self.assertNotIn(b"Binary file", data)
+        self.assertEqual(data.count(b"rpi-metrics.sh"), 1)
 
     def test_unsafe_paths_are_refused(self):
         for name in ("a$(touch pwned)b", "a`id`b", "a b", "a%b", 'a"b', "a'b", "a;b"):
