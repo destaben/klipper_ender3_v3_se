@@ -21,7 +21,7 @@ directory, then `mv`).
 
 ## Install / deploy
 
-`setup_services.sh` creates `textfile/` and installs a crontab line for the invoking user (`SUDO_USER` when run with sudo, not root):
+`setup_services.sh` creates `textfile/` and installs a crontab line for the invoking user (`SUDO_USER` when run through sudo; root if run directly as root):
 
 ```
 * * * * * <repo>/scripts/rpi-metrics.sh <repo>/textfile

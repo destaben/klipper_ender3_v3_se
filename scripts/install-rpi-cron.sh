@@ -2,7 +2,8 @@
 # Install the rpi-metrics crontab line for the invoking user (SUDO_USER when
 # run through sudo). Usage: scripts/install-rpi-cron.sh <repo-dir>
 #
-# - Creates <repo-dir>/textfile (owned by the cron user when run as root).
+# - Creates <repo-dir>/textfile (owned by the cron user when run as root);
+#   refuses it if it is a symlink or not a directory.
 # - Refuses a repo path with characters that are special to cron or the shell
 #   ($ ` % " ' \ ; whitespace, ...): the path is written into the crontab, and
 #   '$(...)' or backticks would run every minute, '%' truncates the line.
@@ -36,12 +37,21 @@ if ! command -v crontab >/dev/null 2>&1; then
 fi
 
 user=${SUDO_USER:-${USER:-$(id -un)}}
+
+# Never follow a symlink here: as root, chown on a symlinked textfile/ would
+# hand an arbitrary directory to the cron user. A plain file is refused too.
+if [ -L "$repo/textfile" ] || { [ -e "$repo/textfile" ] && [ ! -d "$repo/textfile" ]; }; then
+    echo "WARNING: $repo/textfile is a symlink or not a directory; not installing the rpi-metrics cron line." >&2
+    exit 0
+fi
+if ! mkdir -p "$repo/textfile"; then
+    echo "WARNING: could not create $repo/textfile; not installing the rpi-metrics cron line." >&2
+    exit 0
+fi
 if [ "$(id -u)" -eq 0 ]; then
-    mkdir -p "$repo/textfile"
-    chown "$user" "$repo/textfile" 2>/dev/null || true
+    chown -h "$user" "$repo/textfile" 2>/dev/null || true
     set -- -u "$user"
 else
-    mkdir -p "$repo/textfile"
     set --
 fi
 

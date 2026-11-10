@@ -233,6 +233,22 @@ class InstallCronTest(unittest.TestCase):
             self.assertFalse(os.path.exists(self.tab), name)
             self.assertIn("WARNING", r.stderr + r.stdout)
 
+    def test_symlinked_or_non_directory_textfile_is_refused(self):
+        victim = os.path.join(self.tmp, "victim")
+        os.mkdir(victim)
+        repo = os.path.join(self.tmp, "repo-link")
+        os.mkdir(repo)
+        os.symlink(victim, os.path.join(repo, "textfile"))
+        repo2 = os.path.join(self.tmp, "repo-file")
+        os.mkdir(repo2)
+        with open(os.path.join(repo2, "textfile"), "w") as f:
+            f.write("x")
+        for r_ in (repo, repo2):
+            r = self.run_installer(r_)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(self.tab))
+            self.assertIn("WARNING", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
