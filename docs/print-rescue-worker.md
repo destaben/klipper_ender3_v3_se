@@ -61,9 +61,7 @@ and a hash of the job and resume files.
 * A failed prepare (including a transient Moonraker timeout) marks the request handled, so the person must press again. Chosen over automatic retry to
   avoid a hot loop against a printer that is in trouble; the cause is printed as `REFUSED`.
 * Each log snapshot is read into memory whole. Fine for the hourly-rotated logs (a few MB); not for a log grown to hundreds of MB.
-* **Unverified, read-only check needed on the real printer:** after a shutdown and a restart, does `print_stats.state` read `standby`? The worker and the macro
-  require it (a paused, errored, cancelled or complete job is refused). If it stays `error`, the feature refuses in exactly the case it was built for and the
-  gate must be revisited (an owner decision, since it weakens the check).
+* **Checked on the real printer (2026-11-10, owner present by remote consent):** after the printer was powered on from `shutdown` (Moonraker power device, Klippy restarted by `restart_klipper_when_powered`), `print_stats.state` read `standby` with an empty job queue. That is a restart after power loss, not after an MCU-lost shutdown in the middle of a print followed by `FIRMWARE_RESTART`; the latter restarts the Klipper process the same way, but it has not been observed. If it ever stays `error`, the feature refuses in exactly the case it was built for and the gate must be revisited (an owner decision, since it weakens the check).
 * A Moonraker `/server/files/` read is limited to the `gcodes/` and `logs/` roots; paths with `..` or encoded dots and slashes are refused.
 * The worker does not upload the resume file (that is a POST); the person does it (runbook step 3).
 * Where the worker runs, and how it restarts, is the owner's choice: run `rescue_worker.py run` under any supervisor (systemd unit, container
