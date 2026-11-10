@@ -159,6 +159,7 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 - **Container Name**: `node-exporter`
 - **Image**: `prom/node-exporter:v1.9.1`
 - Exposes host-level metrics (CPU, memory, disk) for monitoring.
+- Also serves Raspberry Pi health metrics (throttling, voltage, temperature, clock, Wi-Fi signal) from `textfile/rpi.prom`, written every minute by `scripts/rpi-metrics.sh` via a user crontab line that `setup_services.sh` installs. See [docs/rpi-metrics.md](docs/rpi-metrics.md).
 
 ### 6. cAdvisor
 

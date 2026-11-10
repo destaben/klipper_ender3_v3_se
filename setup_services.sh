@@ -120,6 +120,20 @@ else
     echo "WARNING: could not determine moonraker container UID/GID (see build/run output above); falling back to permissive chmod 777."
     chmod 777 moonraker/logs moonraker/database
 fi
+# Raspberry Pi health metrics for node-exporter's textfile collector: a user
+# crontab line runs scripts/rpi-metrics.sh every minute and writes
+# textfile/rpi.prom (mounted read-only into node-exporter). Idempotent: any
+# earlier rpi-metrics line is replaced. Remove with:
+#   crontab -l | grep -v 'scripts/rpi-metrics.sh' | crontab -
+mkdir -p textfile
+if command -v crontab &> /dev/null; then
+    REPO_DIR=$(pwd)
+    CRON_LINE="* * * * * ${REPO_DIR}/scripts/rpi-metrics.sh ${REPO_DIR}/textfile"
+    { crontab -l 2>/dev/null | grep -vF 'scripts/rpi-metrics.sh' || true; echo "$CRON_LINE"; } | crontab -
+    echo "Installed rpi-metrics crontab line."
+else
+    echo "WARNING: crontab not found; install cron (sudo apt-get install -y cron) and re-run to enable Pi metrics."
+fi
 # Use sg to apply docker group membership without requiring a new login session
 sg docker -c "docker compose up -d"
 
