@@ -75,7 +75,7 @@ Runs `mmu-fallback/test_mmu_link.py` (also run by sim-boot in CI). Standard libr
 python3 -m unittest discover -s mmu-fallback -v
 ```
 
-### Print-rescue unit tests (if you touched `print-rescue/`)
+### Print-rescue unit tests (if you touched `print-rescue/` or `config/`)
 Runs `print-rescue/test_*.py` (also run by `.github/workflows/print-rescue-test.yml`). Standard library only, no Docker needed; on the Pi use `nice -n 19` while Klipper is connected:
 ```bash
 python3 -m unittest discover -s print-rescue -v

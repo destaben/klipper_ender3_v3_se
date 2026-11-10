@@ -282,6 +282,8 @@ class Bbox:
 class State:
     """Machine state after the last processed line."""
     line: int = 0
+    # pos[3] is the E coordinate scaled by M221 (what Klipper keeps); divide by
+    # extrude_factor / 100 to get the number the source's G-code would write.
     pos: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     absolute: bool = True
     e_absolute: bool = True
@@ -297,7 +299,6 @@ class State:
     fan: Optional[int] = None     # 0-255
     pressure_advance: Optional[float] = None
     pa_smooth_time: Optional[float] = None
-    accel_to_decel_set: bool = False
     mcr_set: bool = False
     objects: Dict[str, str] = field(default_factory=dict)   # name -> define line
     current_object: Optional[str] = None
@@ -624,7 +625,9 @@ class Scanner:
             for i, ax in enumerate("XYZE"):
                 v = _fparam(params, ax)
                 if v is not None:
-                    st.pos[i] = v
+                    # Klipper scales G92 E by M221 like any E value, so pos[3]
+                    # stays in the same (scaled) units as the move targets.
+                    st.pos[i] = v * st.extrude_factor / 100.0 if ax == "E" else v
                     if ax != "E":
                         self.events.append(Event(line, "g92_xyz", "G92 " + ax))
             if not params:
@@ -649,28 +652,27 @@ class Scanner:
             scv = _fparam(params, "SQUARE_CORNER_VELOCITY")
             if scv is not None and scv >= 0:
                 st.square_corner_velocity = scv
-            # Klipper rejects MINIMUM_CRUISE_RATIO outside 0 <= r < 1 and
-            # ACCEL_TO_DECEL <= 0 (the line errors and changes nothing), so such a
-            # value must not reach the timing model: 1.0 would leave no
-            # deceleration headroom and break the look-ahead.
+            # Klipper rejects MINIMUM_CRUISE_RATIO outside 0 <= r < 1 (the line
+            # errors and changes nothing), so such a value must not reach the
+            # timing model: 1.0 would leave no deceleration headroom and break
+            # the look-ahead. The pinned fork has no ACCEL_TO_DECEL parameter
+            # (SET_VELOCITY_LIMIT ignores it), so it is deliberately not modelled.
             mcr = _fparam(params, "MINIMUM_CRUISE_RATIO")
-            a2d = _fparam(params, "ACCEL_TO_DECEL")
-            if mcr is not None:
-                if 0.0 <= mcr < 1.0:
-                    st.minimum_cruise_ratio = mcr
-                    st.mcr_set = True
-            elif a2d is not None and a2d > 0:
-                # Recent Klipper maps the deprecated ACCEL_TO_DECEL to a
-                # minimum_cruise_ratio relative to the current accel.
-                st.minimum_cruise_ratio = min(max(1.0 - min(1.0, a2d / st.accel), 0.0), 1.0)
-                st.accel_to_decel_set = True
+            if mcr is not None and 0.0 <= mcr < 1.0:
+                st.minimum_cruise_ratio = mcr
+                st.mcr_set = True
         elif cmd == "M220":
             s = _fparam(params, "S")
+            # `S0` is ignored on purpose: Klipper reads S with get_float(..., above=0.), so M220 S0 and
+            # M221 S0 are errors there and change nothing (not a factor of zero).
             if s and s > 0:
                 st.speed_factor = s
         elif cmd == "M221":
             s = _fparam(params, "S")
             if s and s > 0:
+                # Klipper keeps the logical E coordinate across M221 (it moves
+                # its base), so the scaled coordinate follows the new factor.
+                st.pos[3] *= s / st.extrude_factor
                 st.extrude_factor = s
         elif cmd in ("M104", "M109"):
             s = _fparam(params, "S")
@@ -719,6 +721,15 @@ class Scanner:
         elif cmd == "SET_GCODE_OFFSET" and _fparam(params, "MOVE", 0.0) != 0.0:
             # A plain offset only shifts later moves; with MOVE=1 it moves now.
             self.events.append(Event(line, "forbidden", "SET_GCODE_OFFSET_MOVE"))
+        if cmd == "SET_GCODE_OFFSET":
+            # A non-zero X/Y offset shifts the coordinate origin like a G92 does, and the preview
+            # restores only the Z offset, so it is reported with the origin shifts (R17). Z and
+            # explicit zeros are harmless: Z is restored from the log, zero is the default.
+            for key in ("X", "Y", "X_ADJUST", "Y_ADJUST"):
+                value = _fparam(params, key)
+                if value is not None and value != 0.0:
+                    self.events.append(Event(line, "g92_xyz", "SET_GCODE_OFFSET " + key))
+                    break
         if cmd in END_MACROS:
             self.end_seen = True
         elif self.end_seen and cmd in ("G0", "G1", "G2", "G3"):

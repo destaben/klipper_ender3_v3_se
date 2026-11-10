@@ -10,7 +10,8 @@ import planner
 import machine_profile as prof
 import stop_point as sp
 
-# The fixture excerpts need --gcode-map, which is otherwise refused.
+# The fixture excerpts need --gcode-map, which is otherwise refused. Set at import on purpose: this module
+# is test-only (a test asserts the planner never imports it), so the gate stays closed in real use.
 os.environ["PRINT_RESCUE_ALLOW_GCODE_MAP"] = "1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -76,7 +77,7 @@ OLD_TIERS = [
 ]
 
 
-def measured_profile(owner_footprint=False, **changes):
+def measured_profile(owner_footprint=False, live_z_offset=3.035, **changes):
     """The real profile with every safety leaf marked measured, plus a wide
     probe area and one measured rear probe spot. For tests only. The head
     footprint is the old placeholder set unless owner_footprint is True."""
@@ -88,6 +89,10 @@ def measured_profile(owner_footprint=False, **changes):
             leaf["source"] = "measured"
             leaf["measured_on"] = "2026-11-07"
             leaf["method"] = "test fixture"
+    # The live z_offset of the test printer.cfg (3.035 for incident 1, 2.96 for
+    # incident 3): a measured value that differs from the live one stops
+    # counting as measured (apply_live_config).
+    p["config_fingerprint"]["bltouch"]["z_offset"]["value"] = live_z_offset
     p["envelope"]["probe_area"]["value"] = {"x_min": 0, "x_max": 230,
                                             "y_min": 0, "y_max": 230}
     p["envelope"]["bed"]["value"] = {"x_min": 0, "x_max": 230, "y_min": 0, "y_max": 230}
@@ -110,4 +115,4 @@ INC3_QUEUE = os.path.join(FIX, "inc3-queue.json")
 INC3_PRINTER_CFG = os.path.join(FIX, "inc3-printer-cfg.cfg")
 INC3_EXIT_POSITION = 8772080
 INC3_LAST_LINE = 391419
-INC3_RESUME_LINE = 390866
+INC3_RESUME_LINE = 390881

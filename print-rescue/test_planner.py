@@ -38,6 +38,17 @@ class Trapezoid(unittest.TestCase):
         self.assertAlmostEqual(t[0].end_v, 5.0, places=9)
         self.assertAlmostEqual(t[1].start_v, 5.0, places=9)
 
+    def test_mixed_speed_chain_matches_the_forks_two_pass_flush(self):
+        # 10/1/10/1 mm collinear at 200/100/100/10 mm/s, accel 1000, ratio 0.5:
+        # 0.4043545 s with the fork's uncapped peak and forward propagation
+        # (a capped peak gives 0.4055 s).
+        moves = [mv(1, (0, 0), (10, 0), speed=200, mcr=0.5),
+                 mv(2, (10, 0), (11, 0), speed=100, mcr=0.5),
+                 mv(3, (11, 0), (21, 0), speed=100, mcr=0.5),
+                 mv(4, (21, 0), (22, 0), speed=10, mcr=0.5)]
+        t = planner.plan(moves)
+        self.assertAlmostEqual(t[-1].t_end, 0.4043545, places=6)
+
     def test_minimum_cruise_ratio(self):
         # 10 mm, v 100, a 1000. Without the ratio: triangle peak 100 -> 0.2 s.
         # With 0.5, accel_to_decel 500 caps the peak at sqrt(5000).
@@ -102,8 +113,9 @@ class AgainstKlipperLog(unittest.TestCase):
         dp = pts[-1][0] - pts[0][0]
         dt = pts[-1][1] - pts[0][1]
         self.assertGreater(dp, 15.0)
-        # Klipper ran 0-5 % slower than the plan over the cut layer.
-        self.assertGreaterEqual(dp / dt, 1.0)
+        # Within -1..+5 % of the plan over the cut layer (the fork ignores the
+        # source's ACCEL_TO_DECEL, which is not modelled).
+        self.assertGreaterEqual(dp / dt, 0.99)
         self.assertLess(dp / dt, 1.05)
 
 

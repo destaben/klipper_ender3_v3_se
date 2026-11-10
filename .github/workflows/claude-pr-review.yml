@@ -7,12 +7,13 @@
 # https://code.claude.com/docs/en/github-actions. It is tied to the account that
 # ran `claude setup-token`; fine here since this is a personal repo. There is
 # deliberately no API-key fallback: when the quota runs out, runs fail and post
-# nothing.
+# nothing — see dotclaude docs/decisions/0002-cost-and-quota.md.
 #
 # Runs on every same-repo, non-draft PR (opened/synchronize/reopened/
 # ready_for_review), not just on an
-# `@claude review` comment: the old comment-only trigger was relaxed now that
-# the review runs on Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
+# `@claude review` comment: see dotclaude docs/decisions/0002-cost-and-quota.md,
+# which relaxes the old comment-only trigger now that the review runs on
+# Haiku 5.5 at low effort — cheap enough per run that the per-push cost is
 # acceptable against the shared subscription quota. The comment and manual
 # triggers stay as a fallback. To bound that draw, draft PRs are skipped until
 # marked ready, and a newer run on the same PR cancels the one in progress, so
@@ -57,130 +58,169 @@ jobs:
             || format('claude-pr-review-{0}', github.event.pull_request.number || github.event.issue.number) }}
       cancel-in-progress: true
     runs-on: ubuntu-latest
+    # --allowedTools only adds approvals, and on pull_request runs the action
+    # restores .claude/ from the base branch (restoreConfigFromBase), so the
+    # repo's .claude/settings.json (unscoped Read/Grep/Glob, Edit, Write, git)
+    # would still apply. `--setting-sources user` keeps project settings out;
+    # the deny list also names the write/search/git tools (a deny wins).
+    env:
+      REVIEW_ARGS: >-
+        --model claude-haiku-5-5 --effort low --setting-sources user
+        --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read(/${{ github.workspace }}/**)"
+        --disallowedTools "Read(.git/**),Read(//proc/**),Read(//etc/**),Read(//run/**),Grep,Glob,Edit,Write,MultiEdit,NotebookEdit,Bash(git:*)"
+      REVIEW_PROMPT: |
+        Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
+        of this repository (HEAD is detached, so use this number with
+        `gh pr view`/`gh pr diff`; run commands from the repo root with
+        relative paths, no `git -C`). Project agents and settings are not
+        auto-loaded in this run: Read .claude/agents/bug-hunter.md and run a
+        subagent that follows its instructions to review the change, using the
+        severity definitions in .claude/skills/release-policy/SKILL.md. Then
+        do the same with .claude/agents/documenter.md to check whether
+        docs need updating for this change.
+        In this run you can only read the code: you cannot write files,
+        run tests (CI already runs them), or post to GitHub. The documenter reports only, and the
+        bug-hunter reviews the diff without running the suite.
+        Run the agents in the foreground and wait for their results: this
+        is a non-interactive run that ends when you stop, so you must not
+        end your turn while any agent is still running.
+        Your FINAL message is posted verbatim as the PR comment by a later
+        workflow step, so it must be the finished review and nothing else: no
+        preamble, no status or progress text (never "I'm waiting for..." or
+        "I posted..."). It must start with this exact first line:
+        ## Review of PR #${{ github.event.pull_request.number || github.event.issue.number }}
+        then the combined findings as Markdown (say so briefly if there are
+        none), and it must end with this exact last line, with real counts
+        (total = severe + non-severe, 0 when there are no findings):
+        Result: <total> findings (<severe> severe, <non-severe> non-severe)
+        (write "1 finding" instead of "1 findings" when the total is exactly 1)
+        Between them, give one section per agent, titled "### bug-hunter" and
+        "### documenter", and write the message only after both have reported.
+        If you could not read the files you need, do not write a review: start
+        your message with the line "REVIEW INCOMPLETE" and explain what was
+        blocked. Never report "0 findings" for code you did not check.
+        A final message without these parts is discarded as incomplete.
     steps:
-      # The @claude review comment path also fires for fork PRs, and the agent
-      # then reads attacker-controlled diff text while the job holds the OAuth
-      # token. Fork heads are therefore refused on that path (review them by
-      # pushing a same-repo branch). The pull_request path is already limited to
-      # same-repo heads by the job `if:`.
-      - name: Refuse fork PRs on the comment path
-        if: ${{ github.event_name == 'issue_comment' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          head_repo=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name // "deleted-fork"')
-          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
-            echo "Refusing to review a PR whose head is ${head_repo}: fork code never runs with this job's secrets."
-            exit 1
-          fi
-
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@v4
         with:
-          # Never check out PR code on the issue_comment path: that path also
-          # runs for fork PRs, and Claude Code loads project settings (hooks)
-          # from the checkout while the job holds CLAUDE_CODE_OAUTH_TOKEN. The
-          # comment path therefore reviews from the default branch's checkout
-          # and reads the PR only through `gh pr diff`/`gh pr view`. The
-          # pull_request path is restricted to same-repo heads by the job `if:`,
-          # so its default merge-ref checkout is trusted code.
           fetch-depth: 0
           persist-credentials: false
 
       - name: Run bug-hunter and documenter review
         id: review
-        # A manual workflow_dispatch run has no PR to review: skip the agent (and its quota use).
-        if: ${{ github.event.pull_request.number || github.event.issue.number }}
-        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c  # v1 (v1.0.268)
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the workflow's own token instead of the OIDC exchange for the
           # Claude GitHub App token, which needs `id-token: write` and the
           # app installed on the repo.
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # The option lines must stay single lines (a folded scalar keeps line breaks of
-          # more-indented lines, which would put whitespace inside the quoted patterns).
-          # yamllint disable rule:line-length
-          claude_args: >-
-            --model claude-haiku-5-5 --effort low
-            --allowedTools "Bash(gh pr diff:*),Bash(gh pr view:*),Read"
-            --disallowedTools "Read(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(//home/runner/work/_temp/**),Read(//home/runner/.*/**),Read(//home/runner/.claude*)"
-          # yamllint enable rule:line-length
-          prompt: |
-            Review pull request #${{ github.event.pull_request.number || github.event.issue.number }}
-            of this repository. The checkout may not contain the PR's changes
-            (it is the default branch on an `@claude review` comment), so use
-            this number with `gh pr view`/`gh pr diff` to see what changed; run
-            commands from the repo root with relative paths, no `git -C`.
-            Files you read from the checkout may predate the PR, so judge what the PR
-            changed only from `gh pr diff`, never from the checked-out copy of a changed file. Review it using the bug-hunter agent defined in
-            .claude/agents/bug-hunter.md and the severity definitions in
-            .claude/skills/release-policy/SKILL.md. Then run the documenter
-            agent defined in .claude/agents/documenter.md to check whether
-            docs need updating for this change. Post the combined findings
-            as Markdown in your FINAL message, and make that message the review
-            itself (no preamble such as "I posted..."): a later workflow step
-            posts it as the PR comment. If there are no findings, say so
-            briefly instead of leaving it empty.
-            In this run you can only read the code: you cannot write files,
-            run tests (CI already runs them), or post to GitHub. The documenter reports only, and the
-            bug-hunter reviews the diff without running the suite.
-            Run the agents in the foreground and wait for their results: this
-            is a non-interactive run that ends when you stop, so do not end
-            your turn until you have written the final review message.
+          claude_args: ${{ env.REVIEW_ARGS }}
+          prompt: ${{ env.REVIEW_PROMPT }}
+
+      # An agent turn can end early with a progress message ("I'm waiting for
+      # the agents...") and still exit green, so the result is checked before
+      # it counts as a review (.github/scripts/check_review.py). One retry on
+      # an incomplete result; if that is incomplete too, the next step fails
+      # the job rather than posting it.
+      - name: Check the review is complete
+        id: check
+        if: ${{ !cancelled() && steps.review.outcome == 'success' }}
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"   # workflow_dispatch: nothing to post
+          else
+            rc=0
+            python3 -I .github/scripts/check_review.py "$EXECUTION_FILE" "$PR_NUMBER" "$RUNNER_TEMP/review.md" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              echo "valid=true" >> "$GITHUB_OUTPUT"
+            elif [ "$rc" -eq 3 ]; then
+              echo "valid=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::first review run was incomplete; retrying once"
+            else
+              # any other code (2, a crash, a missing script) is a setup error, not a bad review:
+              # a retry would not help, so fail without spending another run.
+              echo "::error::check_review.py failed (exit $rc): see its message above." \
+                "Exit 2 is a setup or secret-leak stop; if the script is missing," \
+                "copy .github/scripts/check_review.py into the repo."
+              exit 1
+            fi
+          fi
+
+      # Accepted limit (ADR 0002, "Known limits"): if the action ever posts a
+      # comment per invocation, a retry could leave a second bot comment; none
+      # were seen on this repo's runs, and re-checking is part of upgrading
+      # the action.
+      - name: Retry the review once (first result was incomplete)
+        id: retry
+        if: ${{ !cancelled() && steps.check.outputs.valid == 'false' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use the workflow's own token instead of the OIDC exchange for the
+          # Claude GitHub App token, which needs `id-token: write` and the
+          # app installed on the repo.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: ${{ env.REVIEW_ARGS }}
+          prompt: ${{ env.REVIEW_PROMPT }}
 
       # The agent has no write tools and no `gh pr comment`: its final message
       # is the review and this step posts it. That removes the "run gh with
       # arbitrary content" path, but not influence: an injected diff can still
-      # make the review say anything (including "no findings"). Fork PRs are
-      # refused on the comment path (first step), and the posted text is scrubbed of
-      # this job's tokens (exact-match defence in depth, not a guarantee: an
-      # encoded copy would pass, so the real controls are the fork refusal and
-      # the tool restrictions: the agent has no Grep/Glob/git show, only Read
-      # (sensitive paths denied) and `gh pr diff`/`gh pr view`, and fork code is never
-      # in reach on the comment path). The pull_request
-      # path still checks out a same-repo merge ref and loads its .claude settings
-      # while holding the token: a same-repo writer could equally edit this
-      # workflow, so that is accepted. Treat the review as advisory. A workflow_dispatch run has
+      # make the review say anything (including "no findings"), and the
+      # `@claude review` comment path also runs on fork PRs when a trusted user
+      # asks for it. Treat the review as advisory. A workflow_dispatch run has
       # no PR number, so there is nothing to post to and it is skipped.
+      # A review that is still incomplete here is not posted: the job fails so
+      # the gap shows as a red check, and the only comment this step ever
+      # posts is a finished review whose last line states the outcome. (The
+      # action itself could add its own comments; none were seen on this
+      # repo's runs.)
+      # The gate script runs from the checkout. On a same-repo PR the author
+      # can edit it, but they can already edit this workflow, so it grants
+      # nothing new; fork PRs are skipped and the `@claude review` path checks
+      # out the default branch.
       - name: Post the review
-        if: ${{ !cancelled() && (github.event.pull_request.number || github.event.issue.number) }}
+        if: >-
+          ${{ !cancelled() && steps.review.outcome == 'success' && steps.check.outcome != 'failure'
+          && (github.event.pull_request.number || github.event.issue.number) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
-          # Only used to scrub the posted text, never printed.
-          REDACT_1: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          REDACT_2: ${{ secrets.GITHUB_TOKEN }}
+          FIRST_FILE: ${{ steps.review.outputs.execution_file }}
+          RETRY_FILE: ${{ steps.retry.outputs.execution_file }}
+          RETRY_OUTCOME: ${{ steps.retry.outcome }}
         run: |
-          if [ -f "$EXECUTION_FILE" ]; then
-            jq -r '
-              [.[]? | select(.type == "result" and .subtype == "success" and (.is_error | not))]
-              | last | .result // empty
-            ' "$EXECUTION_FILE" > "$RUNNER_TEMP/review.md"
+          if [ "$RETRY_OUTCOME" = "failure" ]; then
+            echo "::error::the retry run failed; not posting its output"
+            exit 1
           fi
-          if [ -s "$RUNNER_TEMP/review.md" ]; then
-            # Defence in depth: a prompt-injected review must not publish the job's tokens.
-            python3 - "$RUNNER_TEMP/review.md" <<'PY'
-          import os, sys
-          p = sys.argv[1]
-          t = open(p, encoding="utf-8").read()
-          for k in ("REDACT_1", "REDACT_2"):
-              v = os.environ.get(k, "")
-              if len(v) >= 8:
-                  t = t.replace(v, "[redacted]")
-          open(p, "w", encoding="utf-8").write(t)
-          PY
-            gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
+          # If the retry ran, only its output counts: falling back to the
+          # first (incomplete) file would discard a good retry silently.
+          if [ "$RETRY_OUTCOME" = "success" ]; then
+            EXECUTION_FILE="$RETRY_FILE"
           else
-            echo "no final review message found; nothing to post"
+            EXECUTION_FILE="$FIRST_FILE"
           fi
+          if ! python3 -I .github/scripts/check_review.py "$EXECUTION_FILE" "$PR_NUMBER" "$RUNNER_TEMP/review.md"; then
+            echo "::error::the review run ended without a finished review; nothing posted"
+            exit 1
+          fi
+          gh pr comment "$PR_NUMBER" --body-file "$RUNNER_TEMP/review.md"
 
 # Checked 2026-10-25 against the action's action.yml and the CLI reference: the
 # inputs `claude_code_oauth_token`, `github_token`,
 # `prompt`, `claude_args` and the `execution_file` output exist, `--effort` is
 # a valid flag, and `claude-haiku-5-5` is a valid model id. Re-check them
-# before relying on this workflow later; the action may have moved on.
+# before relying on this workflow later; the action may have moved on. On
+# 2026-11-08 the `env` expansion in `with:` and the `execution_file` output
+# were also seen working on this repo's runs (dotclaude docs/decisions/0002).
 #
 # To reuse this in a DIFFERENT repo: this file itself (project-specific CI)
 # and .claude/agents/{bug-hunter,documenter}.md + .claude/skills/release-policy/
@@ -188,7 +228,8 @@ jobs:
 # out the target repo, not your ~/.claude — user-scope install isn't visible
 # to it. Run `python3 scripts/install.py --mode project --target <path-to-that-repo>`
 # from this dotclaude repo to install the agents/skills there, then copy this
-# workflow file in too. `destaben/github-config`'s `apply.sh` automates the
+# workflow file in too, plus .github/scripts/check_review.py (without it the
+# check step fails and no review is ever posted). `destaben/github-config`'s `apply.sh` automates the
 # `CLAUDE_CODE_OAUTH_TOKEN` secret for every public repo tagged with the
 # `github-config` topic, but not the agent/skill files or this workflow file
 # itself — those still need `install.py --mode project` plus a manual copy

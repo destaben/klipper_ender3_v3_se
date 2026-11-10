@@ -80,6 +80,11 @@ conservative union of both anchors):
 | Resume candidate (tool, default budget) | line 201925, layer 158, commanded Z 21.0 (the layer is at Z 20.6); overlap to the latest possible stop **4.83 s, 426 mm**. Maximum allowed is 3.0 s, so the tool **refused with R12** (at the time; R12 is a warning now, see the live validation record). |
 | Probe pin at boot | over the part for every position in the window |
 
+Note: the table is the record of the first planner version, which mapped
+`ACCEL_TO_DECEL` to a cruise ratio. The pinned fork ignores that parameter, so
+the planner no longer models it; on the same evidence it now gives lines
+201962-202298 and an overlap of 4.95 s for the same resume line 201925.
+
 The tool's first version, before the window was combined, chose line 201955
 (nozzle (170.7, 131.2) at its start, 2.98 s of overlap, 216 mm). That choice
 used the sd anchor alone. The end anchor's earliest possible stop is 0.5 s

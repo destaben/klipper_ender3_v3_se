@@ -1,3 +1,4 @@
+import copy
 import unittest
 
 import geometry as g
@@ -39,6 +40,15 @@ class Basics(unittest.TestCase):
         self.assertIsNone(g.too_tall(PART, p))
         tall = g.Part(50, 60, 50, 60, 240.0)
         self.assertIn("top 240.0", g.too_tall(tall, p))
+
+    def test_too_tall_uses_footprint_aware_travel_lift(self):
+        # 225 + min_lift 10 fits under 250 - 10, but 225 + travel 15 + 5 mm of
+        # pin below the tip needs 245.
+        p = copy.deepcopy(fx.profile())
+        p["clearances"]["travel_clearance"] = 15
+        part = g.Part(50, 60, 50, 60, 225.0)
+        self.assertIn("top 225.0", g.too_tall(part, p))
+        self.assertIsNone(g.too_tall(g.Part(50, 60, 50, 60, 215.0), p))
 
 
 class ProbeSpots(unittest.TestCase):

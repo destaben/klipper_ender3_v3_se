@@ -122,6 +122,13 @@ class Fingerprint(unittest.TestCase):
                 self.assertEqual(len(mm), 1)
                 self.assertIn("printer." + key, mm[0])
 
+    def test_a_live_twin_that_drifts_from_motion_is_reported(self):
+        p = fx.profile()
+        self.assertEqual(prof.motion_inconsistencies(p), [])
+        p["config_fingerprint"]["printer"]["max_z_velocity"] = {
+            "value": 8, "source": "config", "live": True}
+        self.assertEqual(len(prof.motion_inconsistencies(p)), 1)
+
     def test_extrude_only_limit_change_is_r14(self):
         for old, new, key in (("max_extrude_only_velocity: 45", "max_extrude_only_velocity: 60",
                                "max_extrude_only_velocity"),
@@ -241,6 +248,26 @@ class Validation(unittest.TestCase):
         "printer is a list": lambda p: p.__setitem__("printer", []),
         "clearances is a list": lambda p: p.__setitem__("clearances", []),
         "stop_estimation is null": lambda p: p.__setitem__("stop_estimation", None),
+        "no-go x reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("x", [230, 205]),
+        "no-go y reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("y", [10, 0]),
+        "no-go z reversed": lambda p: p["no_go_zones"][0]["value"].__setitem__("z", [5, 1]),
+        "fingerprint bltouch null": lambda p: p["config_fingerprint"].__setitem__("bltouch", None),
+        "fingerprint section a list": lambda p: p["config_fingerprint"].__setitem__(
+            "stepper_x", []),
+        "fingerprint bltouch z_offset missing": lambda p: p["config_fingerprint"]["bltouch"].pop(
+            "z_offset"),
+        "fingerprint option null": lambda p: p["config_fingerprint"]["stepper_x"].__setitem__(
+            "position_min", None),
+        "fingerprint option a string": lambda p: p["config_fingerprint"]["stepper_x"][
+            "position_max"].__setitem__("value", "230"),
+        "fingerprint list option a number": lambda p: p["config_fingerprint"]["bed_mesh"
+            ].__setitem__("mesh_min", 30),
+        "fingerprint live a string": lambda p: p["config_fingerprint"]["bltouch"][
+            "z_offset"].__setitem__("live", "yes"),
+        "motion z velocity differs from the fingerprint": lambda p: p["motion"].__setitem__(
+            "max_z_velocity", 8),
+        "motion extrude-only accel differs from the fingerprint": lambda p: p[
+            "motion"].__setitem__("max_extrude_only_accel", 9000),
     }
 
     def test_each_malformed_profile_is_refused(self):
@@ -274,6 +301,39 @@ class Validation(unittest.TestCase):
                 json.dump(p, fh)
             with self.assertRaises(prof.ProfileError):
                 prof.load_profile(path)
+
+
+class LiveConfig(unittest.TestCase):
+    def test_changed_live_value_loses_measured_provenance(self):
+        p = fx.measured_profile()
+        leaf = p["config_fingerprint"]["bltouch"]["z_offset"]
+        leaf.update(source="measured", measured_on="2026-11-01", method="feeler gauge",
+                    live=True, value=2.96)
+        self.assertEqual([m for m in prof.motion_ready(p) if "z_offset" in m], [])
+        notes = prof.apply_live_config(p, prof.parse_printer_cfg(CFG))
+        self.assertEqual(leaf["value"], 3.035)
+        self.assertEqual(leaf["source"], "config")
+        self.assertTrue(any("z_offset" in m for m in prof.motion_ready(p)))
+        self.assertTrue(any("no longer applies" in n for n in notes))
+
+    def test_unchanged_live_value_keeps_measured_provenance(self):
+        p = fx.measured_profile()
+        leaf = p["config_fingerprint"]["bltouch"]["z_offset"]
+        leaf.update(source="measured", measured_on="2026-11-01", method="feeler gauge",
+                    live=True, value=3.035)
+        self.assertEqual(prof.apply_live_config(p, prof.parse_printer_cfg(CFG)), [])
+        self.assertEqual(leaf["source"], "measured")
+
+
+class LiveNonFinite(unittest.TestCase):
+    def test_infinite_live_z_offset_is_not_applied_and_is_r14(self):
+        p = fx.profile()
+        cfg = prof.parse_printer_cfg(CFG.replace("#*# z_offset = 3.035", "#*# z_offset = inf"))
+        notes = prof.apply_live_config(p, cfg)
+        self.assertEqual(prof.val(p["config_fingerprint"]["bltouch"]["z_offset"]), 2.96)
+        self.assertTrue(any("not a finite number" in n for n in notes))
+        self.assertTrue(any("z_offset" in m and "not a finite" in m
+                            for m in prof.fingerprint_mismatches(p, cfg)))
 
 
 class FingerprintCoverage(unittest.TestCase):

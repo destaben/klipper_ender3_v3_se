@@ -152,8 +152,8 @@ class TemplateProfile(unittest.TestCase):
     def test_report(self):
         self.assertIn("anchors: sd+end", self.out)
         self.assertIn("P_end - P_good 5.23 s", self.out)
-        self.assertIn("earliest stop: line 201951", self.out)
-        self.assertIn("latest stop:   line 202295", self.out)
+        self.assertIn("earliest stop: line 201962", self.out)
+        self.assertIn("latest stop:   line 202298", self.out)
         self.assertIn("part box X 29.8-188.4 Y 29.8-188.4, top 20.60", self.out)
         self.assertIn("last dispatched line: 202396", self.out)
         self.assertIn("USB serial read stalled (-32) at Nov 07 10:09:45", self.out)
@@ -162,11 +162,37 @@ class TemplateProfile(unittest.TestCase):
         self.assertLessEqual(int(m.group(1)), 202314)
         self.assertGreaterEqual(int(m.group(1)), fx.CUT_LAYER_START)
         self.assertIn("resume candidate", self.out)
-        self.assertRegex(self.out, r"overlap to the latest possible stop: 4\.83 s, [\d.]+ mm")
+        self.assertRegex(self.out, r"overlap to the latest possible stop: 4\.95 s, [\d.]+ mm")
 
     def test_no_preview_when_refused(self):
         self.assertIsNone(self.preview)
         self.assertIn("preview not written", self.out)
+
+
+class OriginShift(unittest.TestCase):
+    def test_xyz_g92_before_the_resume_line_is_found(self):
+        r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, "G92 X0"), (3, 21, "G1 X10 E1")],
+                       fx.limits())
+        self.assertEqual(plan.origin_shift_before(r.events, 3), (2, "G92 X"))
+        self.assertIsNone(plan.origin_shift_before(r.events, 2))
+
+    def test_a_plain_xy_gcode_offset_before_the_resume_line_is_found(self):
+        # The preview restores only the Z offset, so an X/Y baby-step set earlier would put every
+        # resumed move off by that amount: it must refuse like a G92 does.
+        for line in ("SET_GCODE_OFFSET X=20", "SET_GCODE_OFFSET Y_ADJUST=-0.5", "set_gcode_offset z=0.1 x=3"):
+            with self.subTest(line=line):
+                r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, line), (3, 21, "G1 X10 E1")],
+                               fx.limits())
+                found = plan.origin_shift_before(r.events, 3)
+                self.assertIsNotNone(found)
+                self.assertEqual(found[0], 2)
+
+    def test_a_z_only_or_zero_gcode_offset_is_not_an_origin_shift(self):
+        for line in ("SET_GCODE_OFFSET Z=0.05", "SET_GCODE_OFFSET Z_ADJUST=0.02", "SET_GCODE_OFFSET X=0 Y=0"):
+            with self.subTest(line=line):
+                r = fx.gs.scan([(1, 0, "G1 X100 F6000"), (2, 14, line), (3, 21, "G1 X10 E1")],
+                               fx.limits())
+                self.assertIsNone(plan.origin_shift_before(r.events, 3))
 
 
 class MeasuredProfile(unittest.TestCase):
@@ -184,6 +210,14 @@ class MeasuredProfile(unittest.TestCase):
         self.assertIn("R12", codes(r.out))
         self.assertIn("mm3", r.out)
         self.assertIsNotNone(r.preview)
+
+    def test_changed_live_z_offset_blocks_motion_r13(self):
+        # The measured z_offset no longer matches printer.cfg: the live number
+        # is used but it is not the one that was measured.
+        r = run_full(profile=fx.measured_profile(live_z_offset=2.5))
+        self.assertEqual(r.code, 3, r.out)
+        self.assertIn("R13", codes(r.out))
+        self.assertIn("measured provenance no longer applies", r.out)
 
     def test_missing_evidence_exits_3_not_0(self):
         r = run_full(profile=fx.measured_profile(), evidence=False)

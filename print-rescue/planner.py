@@ -14,8 +14,8 @@ kinematics/extruder.py (extrude-only moves, extruder junction speed):
   the extruder's instant_corner_velocity limit;
 - minimum_cruise_ratio: the "smoothed" pass with max_accel_to_decel =
   accel * (1 - minimum_cruise_ratio), exactly as Klipper's flush();
-- a backward pass (reachable start speeds) and the delayed-move forward
-  propagation of the peak cruise speed, as in Klipper's flush().
+- a backward pass (reachable start speeds, uncapped peak cruise speed) and a
+  forward pass propagating the cruise speed, as in the pinned fork's flush().
 
 Approximations (documented in docs/print-rescue.md):
 - The whole stream is planned as if the lookahead queue had seen every move.
@@ -156,33 +156,38 @@ class _PMove:
 
 
 def _flush(queue: List[_PMove]):
-    """Klipper LookAheadQueue.flush(lazy=False): stop after the last move."""
-    delayed = []
-    next_end_v2 = next_smoothed_v2 = peak_cruise_v2 = 0.0
+    """LookAheadQueue.flush(lazy=False) of the pinned fork (0xD34D/klipper_ender3_v3_se
+    7e61c1cc): stop after the last move. A backward pass finds the reachable
+    start speeds and an uncapped peak cruise speed for the moves that can
+    accelerate (minimum_cruise_ratio), then a forward pass propagates the
+    cruise speed to the moves that cannot."""
+    info = [None] * len(queue)
+    next_start_v2 = next_mcr_start_v2 = peak_cruise_v2 = 0.0
+    pending = 0
     for i in range(len(queue) - 1, -1, -1):
         move = queue[i]
-        reachable_start_v2 = next_end_v2 + move.delta_v2
+        reachable_start_v2 = next_start_v2 + move.delta_v2
         start_v2 = min(move.max_start_v2, reachable_start_v2)
-        reachable_smoothed_v2 = next_smoothed_v2 + move.smooth_delta_v2
-        smoothed_v2 = min(move.max_smoothed_v2, reachable_smoothed_v2)
-        if smoothed_v2 < reachable_smoothed_v2:
-            if smoothed_v2 + move.smooth_delta_v2 > next_smoothed_v2 or delayed:
-                peak_cruise_v2 = min(move.max_cruise_v2,
-                                     (smoothed_v2 + reachable_smoothed_v2) * 0.5)
-                if delayed:
-                    mc_v2 = peak_cruise_v2
-                    for m, ms_v2, me_v2 in reversed(delayed):
-                        mc_v2 = min(mc_v2, ms_v2)
-                        m.set_junction(min(ms_v2, mc_v2), mc_v2, min(me_v2, mc_v2))
-                    del delayed[:]
+        cruise_v2 = None
+        pending += 1
+        reach_mcr_start_v2 = next_mcr_start_v2 + move.smooth_delta_v2
+        mcr_start_v2 = min(move.max_smoothed_v2, reach_mcr_start_v2)
+        if mcr_start_v2 < reach_mcr_start_v2:
+            if mcr_start_v2 + move.smooth_delta_v2 > next_mcr_start_v2 or pending > 1:
+                peak_cruise_v2 = (mcr_start_v2 + reach_mcr_start_v2) * 0.5
             cruise_v2 = min((start_v2 + reachable_start_v2) * 0.5,
                             move.max_cruise_v2, peak_cruise_v2)
-            move.set_junction(min(start_v2, cruise_v2), cruise_v2,
-                              min(next_end_v2, cruise_v2))
-        else:
-            delayed.append((move, start_v2, next_end_v2))
-        next_end_v2 = start_v2
-        next_smoothed_v2 = smoothed_v2
+            pending = 0
+        info[i] = (move, start_v2, cruise_v2, next_start_v2)
+        next_start_v2 = start_v2
+        next_mcr_start_v2 = mcr_start_v2
+    prev_cruise_v2 = 0.0
+    for move, start_v2, cruise_v2, next_start_v2 in info:
+        if cruise_v2 is None:
+            cruise_v2 = min(prev_cruise_v2, start_v2)
+        move.set_junction(min(start_v2, cruise_v2), cruise_v2,
+                          min(next_start_v2, cruise_v2))
+        prev_cruise_v2 = cruise_v2
 
 
 def _timed(pm: _PMove) -> Timed:

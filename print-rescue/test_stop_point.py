@@ -98,7 +98,7 @@ class IncidentEvidence(unittest.TestCase):
         # The end anchor (the plan's formula) is the one that sets both ends here.
         self.assertLess(d["end_anchor_earliest_t"], d["sd_anchor_earliest_t"])
         self.assertGreater(d["end_anchor_latest_t"], d["sd_anchor_latest_t"])
-        self.assertEqual((w.earliest_line, w.latest_line), (201951, 202295))
+        self.assertEqual((w.earliest_line, w.latest_line), (201962, 202298))
 
     def test_end_anchor_numbers(self):
         # The plan's formula (end anchor): 4.23 s .. 6.27 s plus lookahead.
@@ -121,7 +121,7 @@ class IncidentEvidence(unittest.TestCase):
         self.assertLess(d["sd_anchor_earliest_t"], d["sd_anchor_latest_t"])
 
     def test_overlap_above_the_budget_warns_with_the_extra_material(self):
-        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.8 s. That
+        # Window + margin 0.5 s + 3.0 s budget: the incident needs 4.95 s. That
         # is a warning (R12) with the extra material, not a refusal: the
         # alternative would be a gap in the part.
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 3.0)
@@ -130,7 +130,7 @@ class IncidentEvidence(unittest.TestCase):
         self.assertIn("mm3", c.warning)
         self.assertGreater(c.extra_filament_mm, 0)
         self.assertEqual(c.line, 201925)
-        self.assertAlmostEqual(c.overlap_s, 4.83, places=2)
+        self.assertAlmostEqual(c.overlap_s, 4.95, places=2)
 
     def test_resume_choice_with_five_second_budget(self):
         c = sp.choose_resume(self.w, self.timed, fx.CUT_LAYER_START, 0.5, 1.0, 5.0)
@@ -172,11 +172,11 @@ class IncidentEvidence(unittest.TestCase):
         self.assertIn("margin", c.refusal)
 
     def test_manual_estimates_against_the_combined_window(self):
-        # Line 202282 (the hand-built resume) starts 0.14 s INSIDE the latest
+        # Line 202282 (the hand-built resume) starts 0.18 s INSIDE the latest
         # possible stop, not after it. Lines 202314 and 202335 do lie after it.
         t = sp.line_start_t(self.timed, fx.MANUAL_RESUME_LINE)
         self.assertLess(t, self.w.latest_t)
-        self.assertAlmostEqual(self.w.latest_t - t, 0.14, delta=0.01)
+        self.assertAlmostEqual(self.w.latest_t - t, 0.176, delta=0.01)
         for line in (202314, 202335):
             self.assertGreater(sp.line_start_t(self.timed, line), self.w.latest_t)
         # It is still refused: it starts after the earliest possible stop (gap).
@@ -240,6 +240,31 @@ class Kernel(unittest.TestCase):
         self.assertEqual(stalls, [("Nov 07 07:51:48", -32), ("Nov 07 10:09:45", -32)])
 
 
+class SnapBounds(unittest.TestCase):
+    @staticmethod
+    def timed():
+        T = planner.Timed
+        out = [T(1, 10.0, 0.0, 10.0)]
+        # line 2: a travel arc cut into four segments, its source line starts at 10
+        out += [T(2, 2.0, 10.0 + 2 * i, 12.0 + 2 * i, travel=True) for i in range(4)]
+        out.append(T(3, 12.0, 18.0, 30.0, extruding=True))
+        return out
+
+    def window(self):
+        return sp.Window("end", 20.0, 25.0, 30.0, 3, 3, 10.0, 5.0, 0.0)
+
+    def test_snap_is_bounded_by_the_start_of_the_source_line(self):
+        # The last arc segment starts at 16 s, inside the 3 s snap window below
+        # the target (18 s), but the arc itself starts at 10 s: no snap.
+        c = sp.choose_resume(self.window(), self.timed(), None, 2.0, 3.0, 20.0)
+        self.assertEqual((c.line, c.snapped), (3, False))
+
+    def test_snap_inside_the_bound_still_happens(self):
+        c = sp.choose_resume(self.window(), self.timed(), None, 2.0, 9.0, 20.0)
+        self.assertEqual((c.line, c.snapped), (2, True))
+        self.assertAlmostEqual(c.t, 10.0)
+
+
 class SyntheticEvidence(unittest.TestCase):
     ROWS = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0),
             (3.0, 12.0, 1.0, 23, 20, 200, 0), (4.0, 13.0, 1.0, 23, 20, 200, 0)]
@@ -247,6 +272,35 @@ class SyntheticEvidence(unittest.TestCase):
     def test_non_comm_shutdown(self):
         ev = sp.analyze(synthetic_log(self.ROWS, reason="MCU 'mcu' shutdown: Timer too close"))
         self.assertFalse(ev.comm_loss)
+
+    def test_second_shutdown_drops_the_first_dump(self):
+        first = synthetic_log(self.ROWS)
+        first[-1:-1] = ["INFO:root:Virtual sdcard (50): 'G1 X1\\n'",
+                        "Upcoming (60): 'G1 X2\\n'",
+                        "gcode state: absolute_coord=True"]
+        second = synthetic_log(self.ROWS)
+        second.insert(len(second) - 1, "INFO:root:Virtual sdcard (150): 'G1 X9\\n'")
+        ev = sp.analyze(first + second)
+        self.assertEqual(ev.sdcard_texts, [(150, "G1 X9\n")])
+        self.assertIsNone(ev.sdcard_position)
+        self.assertEqual(ev.gcode_state, {})
+        self.assertEqual(ev.exit_position, 100)
+
+    def test_stats_before_a_restart_do_not_supply_the_good_sample(self):
+        old = synthetic_log(self.ROWS)[:-2]          # session 1: freeze, no shutdown
+        rows2 = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 10, 10, 100, 0)]
+        ev = sp.analyze(old + ["INFO:root:Starting Klippy..."] + synthetic_log(rows2))
+        self.assertIsNone(ev.good)
+        self.assertTrue(any("never advanced" in n for n in ev.notes))
+
+    def test_a_later_normal_exit_does_not_replace_the_shutdown_exit(self):
+        log = synthetic_log(self.ROWS) + ["INFO:root:Exiting SD card print (position 999)"]
+        self.assertEqual(sp.analyze(log).exit_position, 100)
+
+    def test_dump_after_a_restart_is_ignored(self):
+        log = synthetic_log(self.ROWS)[:-1] + ["INFO:root:Starting Klippy...",
+                                               "INFO:root:Exiting SD card print (position 999)"]
+        self.assertIsNone(sp.analyze(log).exit_position)
 
     def test_no_freeze_visible(self):
         rows = [(1.0, 10.0, 1.0, 10, 10, 100, 0), (2.0, 11.0, 1.0, 20, 20, 200, 0)]
@@ -259,6 +313,22 @@ class SyntheticEvidence(unittest.TestCase):
         self.assertEqual(ev.good.eventtime, 2.0)
         self.assertTrue(ev.freeze)
         self.assertEqual(ev.p_end, 8.0)
+
+    def test_a_window_clamped_to_the_kept_moves_refuses_instead_of_skipping_print(self):
+        # The scan keeps only the last two layers, so compute_window clamps the earliest stop to the
+        # first kept move (t = 0 here) when the true one lay before it. With margin_s > 0 the resume
+        # must refuse (R22) whether or not a layer marker is known, never land on a later line.
+        items = [Move(line=i, start=(i * 100.0, 0, 0, 0), end=((i + 1) * 100.0, 0, 0, 1),
+                      speed=100.0, max_velocity=100.0, accel=1e9, accel_to_decel=1e9,
+                      square_corner_velocity=5.0, extruding=True) for i in range(1, 11)]
+        timed = planner.plan(items)
+        w = sp.Window("end", earliest_t=0.0, latest_t=6.0, file_end_t=10.0, earliest_line=1,
+                      latest_line=7, walkback_earliest_s=10.0, walkback_latest_s=4.0,
+                      lookahead_bound_s=0.0)
+        for layer_start in (5, None):
+            with self.subTest(layer_start=layer_start):
+                c = sp.choose_resume(w, timed, layer_start, 0.5, 1.0, 20.0)
+                self.assertIsNotNone(c.refusal)
 
     def test_layer_start_inside_the_margin_refuses(self):
         # 10 one-second moves; a layer starts at line 5 (t = 4 s).

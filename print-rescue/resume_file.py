@@ -57,7 +57,7 @@ ALLOWED = {
     "M104": ("S",), "M109": ("S",), "M140": ("S",), "M190": ("S",),
     "SET_IDLE_TIMEOUT": ("TIMEOUT",),
     "SET_PRESSURE_ADVANCE": ("ADVANCE", "SMOOTH_TIME"),
-    "SET_VELOCITY_LIMIT": ("ACCEL", "ACCEL_TO_DECEL", "MINIMUM_CRUISE_RATIO",
+    "SET_VELOCITY_LIMIT": ("ACCEL", "MINIMUM_CRUISE_RATIO",
                            "VELOCITY", "SQUARE_CORNER_VELOCITY"),
     "SET_GCODE_OFFSET": ("Z",),
     "BED_MESH_PROFILE": ("LOAD",),
@@ -198,6 +198,8 @@ def _violation(line: str) -> Optional[str]:
             ok = key in keys and _NUMBER.match(value) is not None
         else:
             key, _, value = tok.partition("=")
+            # An object name with `(`, `)` or a space is refused here as R17 (KI-10): the code is
+            # imprecise but the run fails closed, which is the accepted behaviour.
             ok = "=" in tok and key.upper() in keys and _VALUE.match(value) is not None
         if not ok:
             return "%s: parameter %r is not allowed" % (cmd, tok)
@@ -327,9 +329,7 @@ def build(state: State, source_name: str, resume_line: int,
             pa += " SMOOTH_TIME=%s" % _num(state.pa_smooth_time)
         gen.append(pa)
     svl = "SET_VELOCITY_LIMIT ACCEL=%s" % _num(state.accel)
-    if state.accel_to_decel_set:
-        svl += " ACCEL_TO_DECEL=%s" % _num(state.accel_to_decel)
-    elif state.mcr_set:
+    if state.mcr_set:
         svl += " MINIMUM_CRUISE_RATIO=%s" % _num(state.minimum_cruise_ratio)
     if default_velocity is not None and abs(state.max_velocity - default_velocity) > 1e-9:
         svl += " VELOCITY=%s" % _num(state.max_velocity)
@@ -338,10 +338,20 @@ def build(state: State, source_name: str, resume_line: int,
     gen.append(svl)
     gen.append("M220 S%s" % _num(speed_factor if speed_factor is not None
                                  else state.speed_factor))
-    gen.append("M221 S%s" % _num(extrude_factor if extrude_factor is not None
-                                 else state.extrude_factor))
+    # The generated retract and prime below must not be scaled by the job's
+    # flow factor; it is restored just before the copied tail.
+    gen.append("M221 S100 ; flow back to 100% for the generated retract and prime")
     if state.fan is not None:
         gen.append("M106 S%d" % state.fan if state.fan > 0 else "M107")
+    # The scanner reads M104/M109/M140/M190 only; a source that heats through a
+    # macro (START_PRINT BED=.. HEATER=..) leaves a target unknown, and a tail
+    # that extrudes after the shutdown cooled the heaters must not run cold.
+    if state.bed_temp is None or state.extruder_temp is None:
+        raise ResumeRefused(
+            "the %s target temperature is not set by M104/M109/M140/M190 in the "
+            "source (a heating macro is not expanded): the preview cannot restore it"
+            % ("bed and nozzle" if state.bed_temp is None and state.extruder_temp is None
+               else "bed" if state.bed_temp is None else "nozzle"))
     if gcode_offset_z is not None and not math.isfinite(gcode_offset_z):
         raise ResumeRefused("gcode offset Z from the log is not a finite number")
     if gcode_offset_z is not None:
@@ -362,12 +372,10 @@ def build(state: State, source_name: str, resume_line: int,
         % (_num(px), _num(py), TRAVEL_FEED),
         "BED_MESH_PROFILE LOAD=%s" % bed_mesh_profile,
     ]
-    if state.bed_temp is not None:
-        gen.append("M140 S%s" % _num(state.bed_temp))
-        gen.append("M190 S%s" % _num(state.bed_temp))
-    if state.extruder_temp is not None:
-        gen.append("M104 S%s" % _num(state.extruder_temp))
-        gen.append("M109 S%s" % _num(state.extruder_temp))
+    gen.append("M140 S%s" % _num(state.bed_temp))
+    gen.append("M190 S%s" % _num(state.bed_temp))
+    gen.append("M104 S%s" % _num(state.extruder_temp))
+    gen.append("M109 S%s" % _num(state.extruder_temp))
     gen.append("G1 X%s Y%s F%d ; over the part at the lifted height, retracted"
                % (_num(x), _num(y), TRAVEL_FEED))
     gen.append("%s. Stop here until procedure step 9 (two measured probe spots) is done"
@@ -396,10 +404,15 @@ def build(state: State, source_name: str, resume_line: int,
     # was in at the resume line, or its first moves would be misread: absolute
     # E values run as relative extrusion (M82 source), relative XYZ moves run
     # as absolute (G91 source).
+    gen.append("M221 S%s ; the job's flow factor, restored for the copied tail"
+               % _num(extrude_factor if extrude_factor is not None
+                      else state.extrude_factor))
     if state.e_absolute:
         gen.append("M82")
+        # state.pos[3] is scaled by M221; G92 E is scaled by it again.
+        src_e = state.pos[3] * 100.0 / state.extrude_factor
         gen.append("G92 E%s ; the source's own E value at the resume line"
-                   % _num(state.pos[3]))
+                   % _num(src_e))
     if not state.absolute:
         gen.append("G91")
     problems = check_generated(gen)
@@ -414,6 +427,9 @@ def build(state: State, source_name: str, resume_line: int,
         # The copied original may hold TAB and non-ASCII comment text, but no
         # other control character: whether Klipper splits input only at LF is
         # unverified (KI-14), so a hidden line break is refused, not trusted.
+        # Accepted limit (KI-08), do not report again: the copied tail is vetted by the scanner's
+        # deny-list, not by this allow-list. Phase 1 output is a NOT VERIFIED review artefact that no
+        # code sends to a printer; P2 must check the tail against an allow-list before it runs it.
         if any((ord(ch) < 0x20 and ch != "\t") or ord(ch) == 0x7F for ch in line):
             raise ResumeRefused("a copied tail line holds a control character")
         gen.append(rewrite_estimate(line, remaining_fraction))

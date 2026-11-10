@@ -164,6 +164,38 @@ def _check_leaves(p: dict) -> List[str]:
     return errs
 
 
+def _check_fingerprint(fp: dict) -> List[str]:
+    """Every present fingerprint section is an object and every known option
+    holds a number (or a list of numbers); the probe offsets are required
+    because the planner reads them unconditionally."""
+    errs = []
+    for sec, body in fp.items():
+        if not isinstance(body, dict):
+            errs.append("config_fingerprint.%s must be an object" % sec)
+    for (sec, opt), (_csec, _copt, kind) in FINGERPRINT_KEYS.items():
+        body = fp.get(sec)
+        if not isinstance(body, dict):
+            continue
+        if opt not in body:
+            if sec == "bltouch":
+                errs.append("config_fingerprint.bltouch.%s missing" % opt)
+            continue
+        v = val(body[opt])
+        if kind == "list":
+            ok = isinstance(v, list) and len(v) > 0 and all(_is_num(x) for x in v)
+        else:
+            ok = _is_num(v)
+        if not ok:
+            errs.append("config_fingerprint.%s.%s must be a finite %s"
+                        % (sec, opt, "list of numbers" if kind == "list" else "number"))
+        live = body[opt].get("live") if isinstance(body[opt], dict) else None
+        if live is not None and not isinstance(live, bool):
+            errs.append("config_fingerprint.%s.%s: live must be a boolean" % (sec, opt))
+    if not isinstance(fp.get("bltouch"), dict):
+        errs.append("config_fingerprint.bltouch must be an object")
+    return errs
+
+
 def _check_structure(p: dict) -> List[str]:
     errs = []
     if p.get("schema") != SCHEMA:
@@ -184,6 +216,7 @@ def _check_structure(p: dict) -> List[str]:
         return errs + section_errs
     if not isinstance(p["head_footprint"].get("tiers"), list):
         return errs + ["head_footprint.tiers must be a list"]
+    errs += _check_fingerprint(p["config_fingerprint"])
     if val(p["printer"].get("kinematics")) != "cartesian":
         errs.append("printer.kinematics must be cartesian")
     for k in MOTION_KEYS:
@@ -249,6 +282,9 @@ def _check_structure(p: dict) -> List[str]:
             if not (isinstance(rng, list) and len(rng) == 2 and
                     all(b is None or _is_num(b) for b in rng)):
                 errs.append("no_go_zone %r: %s must be null or [low, high]" % (name, axis))
+            elif rng[0] is not None and rng[1] is not None and rng[0] > rng[1]:
+                errs.append("no_go_zone %r: %s is reversed (low %s > high %s)"
+                            % (name, axis, rng[0], rng[1]))
         m = v.get("margin")
         if m is not None and not (_is_num(m) and m >= 0):
             errs.append("no_go_zone %r: margin must be a number >= 0" % name)
@@ -261,6 +297,36 @@ def _check_structure(p: dict) -> List[str]:
         if not isinstance(v, dict) or not _is_num(v.get("x")) or not _is_num(v.get("y")):
             errs.append("probe_spot %r: needs numeric x and y" % name)
     return errs
+
+
+# motion key -> its twin in config_fingerprint. The timing model reads motion,
+# R14 checks the fingerprint against printer.cfg: the two must say the same.
+MOTION_TWINS = {
+    "max_velocity": ("printer", "max_velocity"),
+    "max_accel": ("printer", "max_accel"),
+    "square_corner_velocity": ("printer", "square_corner_velocity"),
+    "max_z_velocity": ("printer", "max_z_velocity"),
+    "max_z_accel": ("printer", "max_z_accel"),
+    "max_extrude_only_velocity": ("extruder", "max_extrude_only_velocity"),
+    "max_extrude_only_accel": ("extruder", "max_extrude_only_accel"),
+}
+
+
+def motion_inconsistencies(p: dict) -> List[str]:
+    """motion values that differ from their config_fingerprint twin (so the
+    stop window would be timed with limits printer.cfg does not have)."""
+    out = []
+    fp = p.get("config_fingerprint", {})
+    for k, (sec, opt) in MOTION_TWINS.items():
+        node = fp.get(sec, {}).get(opt) if isinstance(fp.get(sec), dict) else None
+        if node is None or k not in p.get("motion", {}):
+            continue
+        a, b = val(p["motion"][k]), val(node)
+        if _is_num(a) and _is_num(b) and abs(a - b) > 1e-6:
+            out.append("motion.%s is %s but config_fingerprint.%s.%s is %s: the "
+                       "timing would use limits printer.cfg does not have"
+                       % (k, a, sec, opt, b))
+    return out
 
 
 def _check_ranges(p: dict) -> List[str]:
@@ -310,6 +376,7 @@ def _check_ranges(p: dict) -> List[str]:
         errs.append("stop_estimation.absurd_overlap_s must be a number >= max_overlap_s")
     if se["min_resume_layer"] < 0:
         errs.append("stop_estimation.min_resume_layer must be >= 0")
+    errs.extend(motion_inconsistencies(p))
     for t in p["head_footprint"]["tiers"]:
         v = val(t)
         if v["z_from"] > v["z_to"]:
@@ -408,17 +475,18 @@ def _cfg_value(cfg, section, option, kind):
     if raw is None:
         return None
     try:
-        if kind == "list":
-            return [float(x) for x in raw.split(",")]
-        return float(raw)
+        out = [float(x) for x in raw.split(",")] if kind == "list" else float(raw)
     except ValueError:
         return raw
+    # inf and nan parse as floats but are not usable values: keep the text.
+    return out if _finite_tree(out) else raw
 
 
 def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
     """Replace every fingerprint leaf marked "live" by the value in the live
     printer.cfg (in memory only; the profile file is never written). Used for
     values that drift, such as the CR Touch z_offset after a PROBE_CALIBRATE.
+    A measured leaf whose value changes loses its measured provenance.
     Returns one note per replaced value; a value missing from the cfg keeps
     the profile copy and is reported as an R14 mismatch by the caller."""
     notes = []
@@ -429,9 +497,21 @@ def apply_live_config(p: dict, cfg: Dict[str, Dict[str, str]]) -> List[str]:
         have = _cfg_value(cfg, csec, copt, kind)
         if have is None:
             continue
+        if isinstance(have, str):
+            notes.append("%s.%s: live printer.cfg value %r is not a finite number; "
+                         "the profile copy %s is kept (R14)"
+                         % (sec, opt, have, leaf.get("value")))
+            continue
         if leaf.get("value") != have:
             notes.append("%s.%s: live printer.cfg %s replaces the profile copy %s"
                          % (sec, opt, have, leaf.get("value")))
+            # The old measurement does not describe the new number.
+            if leaf.get("source") == VERIFIED_SOURCE:
+                leaf["source"] = "config"
+                leaf.pop("measured_on", None)
+                leaf.pop("method", None)
+                notes.append("%s.%s: the measured provenance no longer applies, "
+                             "the value now counts as unverified" % (sec, opt))
         leaf["value"] = have
     return notes
 
@@ -448,8 +528,12 @@ def fingerprint_mismatches(p: dict, cfg: Dict[str, Dict[str, str]],
         if isinstance(fp[sec][opt], dict) and fp[sec][opt].get("live") is True:
             # Taken from the live printer.cfg (apply_live_config), so there is
             # nothing to compare; only a missing value is a problem.
-            if _cfg_value(cfg, csec, copt, kind) is None:
+            live = _cfg_value(cfg, csec, copt, kind)
+            if live is None:
                 out.append("%s.%s: missing in printer.cfg (live value needed)" % (sec, opt))
+            elif isinstance(live, str):
+                out.append("%s.%s: printer.cfg value %r is not a finite number"
+                           % (sec, opt, live))
             continue
         want = val(fp[sec][opt])
         have = _cfg_value(cfg, csec, copt, kind)

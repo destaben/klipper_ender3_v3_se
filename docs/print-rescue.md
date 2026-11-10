@@ -203,7 +203,7 @@ Two anchors tie `print_time` to the file:
 
 | Anchor | Window in planned time | Notes |
 |--------|------------------------|-------|
-| `sd` (used when present) | `[t(S) - L(S) - B_good, t(S) + d(S) + 1 s]`, S = line at `sd_good` | `L` = lookahead bound: moves dispatched before S but still in Klipper's lookahead queue (up to `LOOKAHEAD_FLUSH_TIME` = 0.25 s of minimum move time, plus the move a lazy flush keeps back). `d(S)`: `print_time` may already include S itself. |
+| `sd` (used when present) | `[t(S) - L(S) - B_good, t(S) + d(S) + 1 s]`, S = line at `sd_good` | `L` = lookahead bound: moves dispatched before S but still in Klipper's lookahead queue (up to 0.25 s of minimum move time, the larger bound; the fork's own `LOOKAHEAD_FLUSH_TIME` is 0.15 s, plus the move a lazy flush keeps back). `d(S)`: `print_time` may already include S itself. |
 | `end` (the plan's formula; fallback and cross-check) | walk back from the end of the last dispatched line by `[P_end - min(P_end, P_good + 1), P_end - (P_good - B_good)]`, plus the lookahead bound at the end on the early side | Moves still in the lookahead queue at shutdown were never counted in `P_end`. When the last line is a long move this bound is large. |
 
 With both anchors the **stop window is their conservative union**: the
@@ -237,11 +237,13 @@ Resume policy (council):
 
 ### Planner fidelity
 
-`planner.py` reproduces Klipper's `Move`/`LookAheadQueue.flush` arithmetic:
+`planner.py` reproduces the `Move`/`LookAheadQueue.flush` arithmetic of the pinned fork
+(`7e61c1cc`, `Dockerfile-klipper`; an uncapped peak cruise speed in a backward pass,
+then a forward pass; a regression test fixes a mixed-speed chain against it):
 cruise speed from F x M220 and `max_velocity`, Z and extrude-only limits,
 junction speed from `square_corner_velocity` (junction deviation, centripetal
 half-move limit, extruder `instant_corner_velocity`), `minimum_cruise_ratio`
-(`ACCEL_TO_DECEL` is mapped to it as recent Klipper does), and arcs split like
+(the pinned fork has no `ACCEL_TO_DECEL`: it ignores it, and so does the scanner), and arcs split like
 `gcode_arcs` (resolution 1.0). Approximations:
 
 - the stream is planned as one continuous lookahead; Klipper's forced flushes
@@ -275,7 +277,8 @@ What a resume skips: **a resume does not run `START_PRINT`**, so everything
 `START_PRINT` does for the whole job must be restated in the file. The preview
 restates `CANCEL_PRINTER_SHUTDOWN` (an armed auto power-off would otherwise cut
 the power mid-print), clears the display message it leaves behind (`M117`
-without text), and sets `G17` (the slicer's arc plane) before the original
+without text), and sets the arc plane that was active at the resume line (`G17`, the slicer's
+plane, unless the source set `G18` or `G19`) before the original
 lines. `SET_IDLE_TIMEOUT TIMEOUT=600` restates the configured `[idle_timeout]`
 default so the file does not depend on an earlier change; the longer timeout
 the rescue itself needs (the idle gcode turns the heaters off and clears
@@ -311,14 +314,14 @@ lists the findings that were open when it was made.
 
 ## Refusal catalogue
 
-Hard refusals stop the rescue. R13 blocks motion only: plan mode still runs.
+Codes and wording are defined in `print-rescue/refusals.py`. Hard refusals stop the rescue. R13 blocks motion only: plan mode still runs.
 Warnings need a human confirmation before any motion (later phases).
 Each finding prints as one ASCII line, safe inside
 `RESPOND TYPE=error MSG="..."` (quotes and semicolons replaced).
 
 | Code | Kind | Meaning |
 |------|------|---------|
-| R01 | refused | Part too tall: part top + `min_lift` > `z_max` - `z_top_margin`. |
+| R01 | refused | Part too tall: part top + the larger of `min_lift` and the pass-1 travel lift (`travel_clearance` plus whatever hangs below the nozzle tip) > `z_max` - `z_top_margin`. |
 | R02 | refused | No valid probe spot: none of the profile's spots (which must be verified) and none proposed with `--probe-spot` passes the geometry check for this part, or there is no part geometry. With `--suggest-spots` the report lists candidates. |
 | R03 | warning | Resume point within `travel_clearance` of a no-go zone. The park spot and the approach moves are not checked yet (KI-11). |
 | R04 | warning | Multi-tool print (or lane mismatch) and `multi_tool_resume` is false. |
@@ -331,10 +334,10 @@ Each finding prints as one ASCII line, safe inside
 | R11 | warning | Long time since the shutdown (part may have cooled loose). |
 | R12 | warning | The overlap from the resume line to the latest possible stop is above the budget (`stop_estimation.max_overlap_s`, or `--max-overlap-s`). The line states the path (mm), the filament (mm) and an estimate of the material printed twice (mm3). Refusing would favour a gap in the part, so it only warns. |
 | R13 | refused (motion) | A safety-critical profile field is not verified on this machine (source is not `measured` with `measured_on` and `method`). Exit 3 when it is the only refusal. The owner's head estimate has source `user`, so it keeps this block on. |
-| R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. |
+| R14 | refused | The profile's `config_fingerprint` does not match `printer.cfg`. A `motion` limit that differs from its fingerprint twin (for example `motion.max_z_velocity` vs `printer.max_z_velocity`) is a profile error, and after live values are applied it is reported as R14: the stop window must be timed with the limits printer.cfg has. |
 | R15 | refused | Moonraker's job queue is not empty (a queued job starts with `START_PRINT` on the next ready; **TO VERIFY**). |
 | R16 | warning | Unknown previously excluded objects: exclusions made in the UI are not in the log (several objects). |
-| R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
+| R17 | refused | Forbidden command in the resumed tail: any `G28` form or another command in `FORBIDDEN_TAIL` in `print-rescue/gcode_scan.py` (homing, probing, print start, MMU homing macros, stop/restart, pause/cancel and shutdown commands; `G92` on X/Y/Z in the tail or anywhere before the resume line; exact command names after normalising spaces and `N` line numbers; other macros are not matched, KI-08/KI-17), or a change to another tool. |
 | R18 | refused | No usable stop evidence, so no resume line can be chosen: no `Exiting SD card print` position, no usable `Stats` lines, no planned motion before the exit position, or a manual `--line` without a window. Also used when no line was chosen at all. |
 | R19 | warning | The G-code file's modified time differs from the history while the content check passed (a re-upload). |
 | R20 | warning | A probe point lies outside the bed mesh area: the mesh is extrapolated there. The distance is printed. |
@@ -517,8 +520,11 @@ Numbers are stable references (KI-05 to KI-07 are intentionally unused). A
 Open:
 
 - **KI-01**: phase 1 is a read-only planner. Phases 2+ (motion, upload/start)
-  are not implemented. No motion code of this repository has ever run on
-  hardware; the live rescue of 2026-11-07 was done by hand through Moonraker
+  are not implemented in this branch: it contains no code that heats, moves,
+  restarts or starts anything. A prototype one-pass runner exists only on the
+  separate branch `feat/print-rescue-p2` (it has open review findings listed in
+  its handoff; not part of this PR).
+  The live rescue of 2026-11-07 was done by hand through Moonraker
   ([live validation](print-rescue-live-validation-2026-11-07.md)).
 - **KI-02**: `--gcode-map` exists only for the test fixture excerpts (hidden
   from `--help`, refused without `PRINT_RESCUE_ALLOW_GCODE_MAP=1`; its
@@ -564,7 +570,28 @@ Open:
 - **KI-14**: the preview stops at `GATE_STOP`, a deliberately invalid command.
   That Klipper stops the SD print on an unknown command is **TO VERIFY** on the
   printer. The P2 design removes the trick: the resume file holds state and
-  tail only, and the gate is the runner's state machine.
+  tail only, and the gate is the runner's state machine. Non-severe in phase 1
+  because nothing executes the file; it must be verified (or removed) before any
+  runner ships.
+- **Settled review points** (do not report again): `M220 S0` / `M221 S0` are
+  ignored because Klipper rejects them (`above=0`); `rescue_fixtures.py` sets
+  the `--gcode-map` gate variable at import because it is test-only and a test
+  asserts the planner never imports it; the `actions/checkout` pin in
+  `print-rescue-test.yml` is the commit of the `v4` tag (checked with the GitHub
+  API on 2026-11-09), the same pin `lint.yml` uses; the unknown-head-position
+  warning (`PIN_AT_BOOT`) exits 0 by design, its text says exit 0 does not clear
+  it, and no consumer exists in phase 1; `.github/workflows/claude-pr-review.yml`
+  and `.github/scripts/check_review.py` are synced verbatim from dotclaude, so their
+  comments cite an ADR in the dotclaude repository (ADR 0002), which is not in
+  this repo and is not edited here; plain-number safety
+  values never reach R13 (KI-09) and G2/G3 arcs outside G17 are neither
+  translated nor refused (see the Build notes), both known limits for P2; the
+  tag pins of `actions/checkout@v4` / `claude-code-action@v1` in the synced
+  review workflow are dotclaude's choice (the review job is read-only and runs
+  on same-repo PRs only); R14 reads only the main `printer.cfg` while R17 follows
+  `[include]`, which can refuse a valid split config (fails closed, and this
+  repository's `printer.cfg` is a single file); the remaining-filament estimate mixes
+  scaled and unscaled E under `M221` (KI-23, an estimate only).
 - **KI-15**: a last dispatched line that is a dwell has no end position in the
   planner and can raise R10 falsely (a warning).
 - **KI-16**: a source file name or copied header line with a control character or a
@@ -668,8 +695,8 @@ Choices behind items that the automated reviews raised repeatedly.
   in `test_incident3.py` depends on this.
 - **Why the tail deny-list leaves out `SDCARD_*`, `M24` and `M32` (KI-08,
   KI-20).** A slicer does not emit the SD-card and file-control commands in a
-  part file. A plain `SET_GCODE_OFFSET` (a baby-step) only shifts later moves
-  and is allowed; `SET_GCODE_OFFSET ... MOVE=1`, which moves at once, and
+  part file. A plain Z `SET_GCODE_OFFSET` (a baby-step) only shifts later moves
+  and is allowed (an X/Y offset is refused, see "Pre-resume XYZ `G92`"); `SET_GCODE_OFFSET ... MOVE=1`, which moves at once, and
   `BLTOUCH_DEBUG`, which deploys the pin, are refused (R17). The rest are
   accepted gaps, not claims of safety: a deny-list cannot be complete
   (KI-08), and the P2 allow-list against the live macro set replaces it.
@@ -720,10 +747,11 @@ Choices behind items that the automated reviews raised repeatedly.
   has no hard links (a FAT card) it falls back to the pre-run check alone.
   The temp file is created with mode 0666, so the kernel applies the umask and
   the process-wide umask is never changed.
-- **Why `MINIMUM_CRUISE_RATIO=1` and `ACCEL_TO_DECEL=0` are not modelled.**
-  Klipper requires `0 <= MINIMUM_CRUISE_RATIO < 1` and `ACCEL_TO_DECEL > 0`
-  (`klippy/extras/gcode_move.py` and `klippy/toolhead.py`), so such a line
-  errors there and changes nothing. The scanner ignores them and profile
+- **Why `MINIMUM_CRUISE_RATIO=1` and `ACCEL_TO_DECEL` are not modelled.**
+  Klipper requires `0 <= MINIMUM_CRUISE_RATIO < 1` (`klippy/toolhead.py`), so
+  such a line errors there and changes nothing, and the pinned fork's
+  `SET_VELOCITY_LIMIT` has no `ACCEL_TO_DECEL` parameter at all (a source that
+  carries it, like the incident file, runs with the configured ratio). The scanner ignores both and profile
   validation rejects `motion.minimum_cruise_ratio >= 1`; with no deceleration
   headroom the look-ahead port would have no junction to time.
 - **Which built-in commands the deny-list names.** Config macros are derived
@@ -793,6 +821,27 @@ Choices behind items that the automated reviews raised repeatedly.
   file system without hard links (a FAT card) falls back to check-then-replace;
   exploiting that needs a local actor who can already write to the output
   directory.
+- **Heating targets and snapping.** The scanner reads `M104/M109/M140/M190`
+  only. When the source heats through a macro (`START_PRINT BED=.. HEATER=..`)
+  a target stays unknown and the preview is refused (R17 line "resume preview
+  refused"): a tail that extrudes after the shutdown must not run on a cold
+  nozzle. The snap to a travel or unretract is bounded by the start of its
+  SOURCE line (an arc starts earlier than its last segment), so it never
+  exceeds `max_overlap_s`.
+- **Pre-resume XYZ `G92`, X/Y gcode offsets and log sessions.** A `G92` on X, Y or Z, or a
+  non-zero `SET_GCODE_OFFSET` on X or Y (`X`, `Y`, `X_ADJUST`, `Y_ADJUST`), before the
+  resume line shifts the coordinate origin and the preview does not restore it:
+  R17 refuses. A Z offset is restored from the log and is allowed. Stats before a Klippy restart never supply the link-freeze sample
+  of a later shutdown, and only the first `Exiting SD card print` after a
+  shutdown (before the next restart) is its exit position.
+- **Flow factor in the preview (M221).** Klipper scales every E value, `G92 E`
+  included, by M221. The generated retract and prime therefore run at
+  `M221 S100`, and the job's factor is restored right before the copied tail,
+  followed by `G92 E` with the source's own (unscaled) number.
+- **Live values and provenance.** A fingerprint leaf marked `live` takes the
+  value of the live `printer.cfg`; if that differs from the profile and the leaf
+  was `measured`, it becomes unverified (R13), because the measurement described
+  the old number.
 - **Why exit 3 without evidence.** An exit code is what a runner reads.
   `NOT CHECKED:` in the text is easy to miss, so a run that skipped R07, R14
   or R15 never exits 0.
