@@ -26,3 +26,6 @@ __pycache__/
 *.pyc
 # Local compose overrides (see .env.example)
 .env
+# node-exporter textfile collector output (scripts/rpi-metrics.sh)
+textfile/*
+!textfile/.gitkeep
