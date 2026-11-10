@@ -1,0 +1,481 @@
+import gzip
+import io
+import json
+import os
+import re
+import stat
+import tempfile
+import unittest
+import urllib.error
+
+import rescue_worker as rw
+from test_rescue_job import synth_gcode
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+MACRO_CFG = os.path.join(HERE, "printer-macro", "rescue_request.cfg")
+PROFILE = os.path.join(HERE, "profiles", "creality-ender3-v3-se.json")
+MACRO_PATH = "/printer/objects/query?gcode_macro%20RESCUE_REQUEST&print_stats"
+
+
+def macro_status(seq, stamp, printing=False):
+    return {"result": {"status": {
+        "gcode_macro RESCUE_REQUEST": {"seq": seq, "stamp": stamp},
+        "print_stats": {"state": "printing" if printing else "standby"}}}}
+
+
+class FakeClient:
+    """Stands in for ReadOnlyClient: routes map a path to JSON (dict) or bytes. Only get_* exist, like the real one."""
+
+    def __init__(self, routes=None):
+        self.routes = dict(routes or {})
+        self.calls = []
+
+    def _get(self, path):
+        self.calls.append(path)
+        if path not in self.routes:
+            raise rw.WorkerError("HTTP 404 for %s" % path)
+        v = self.routes[path]
+        return v() if callable(v) else v
+
+    def get_json(self, path):
+        return self._get(path)
+
+    def get_bytes(self, path):
+        v = self._get(path)
+        return v if isinstance(v, bytes) else json.dumps(v).encode()
+
+
+def klippy_log(extra=""):
+    return ("Stats 100.0: gcodein=0\n"
+            "gcode state: absolute_coord=True last_position=[20.0, 20.0, 0.8, 5.0]\n"
+            "Exiting SD card print (position %d)\n"
+            "Lost communication with MCU 'mcu'\n" % EXIT_POS) + extra
+
+
+def make_gcode_bytes():
+    return "\n".join(synth_gcode()).encode()
+
+
+def exit_pos_of(lines):
+    idx = max(i for i, l in enumerate(lines) if l.startswith("G1 X20 Y20 Z"))
+    return len(("\n".join(lines[:idx + 1]) + "\n").encode())
+
+
+EXIT_POS = exit_pos_of(synth_gcode())
+HIST = {"result": {"jobs": [{"job_id": "000042", "filename": "part.gcode", "status": "klippy_shutdown"}]}}
+LOGS = ["logs/klippy.log", "logs/moonraker.log"]
+
+
+class TestMacro(unittest.TestCase):
+    """The Klipper side is request-only: it must not be able to move or heat anything."""
+
+    def setUp(self):
+        with open(MACRO_CFG) as f:
+            self.text = f.read()
+        self.body = "\n".join(l for l in self.text.splitlines() if not l.strip().startswith("#"))
+
+    def test_macro_exists_and_is_named(self):
+        self.assertIn("[gcode_macro RESCUE_REQUEST]", self.body)
+
+    def test_macro_has_no_motion_heating_or_restart_commands(self):
+        banned = r"\b(G0|G1|G2|G3|G28|G29|G91|G90|M104|M109|M140|M190|M106|M84|M112|M999|PROBE|BED_MESH\w*|"
+        banned += r"SET_KINEMATIC_POSITION|SET_HEATER_TEMPERATURE|STEPPER_\w+|FIRMWARE_RESTART|RESTART|"
+        banned += r"SAVE_CONFIG|SET_IDLE_TIMEOUT|BLTOUCH\w*|QUERY_PROBE|SDCARD_\w+|CANCEL_PRINT|RESUME|PAUSE|"
+        banned += r"RUN_SHELL_COMMAND|CANCEL_PRINTER_SHUTDOWN)\b"
+        self.assertIsNone(re.search(banned, self.body), re.search(banned, self.body))
+
+    def test_macro_only_records_through_its_own_variables(self):
+        for m in re.finditer(r"SET_GCODE_VARIABLE\s+(.*)", self.body):
+            self.assertIn("MACRO=RESCUE_REQUEST", m.group(1))
+        self.assertIn("variable_seq", self.body)
+        self.assertIn("variable_stamp", self.body)
+
+    def test_macro_refuses_while_a_print_is_running(self):
+        self.assertIn('print_stats.state == "printing"', self.body)
+
+    def test_macro_is_not_enabled_by_default(self):
+        # printer.cfg includes macros/*.cfg; the opt-in file must not live there
+        self.assertNotIn(os.sep + "macros" + os.sep, MACRO_CFG)
+
+
+class TestReadOnlyClient(unittest.TestCase):
+    def _opener(self, record, body=b"{}"):
+        def opener(req, timeout=None):
+            record.append((req.get_method(), req.full_url, dict(req.header_items())))
+            return io.BytesIO(body)
+        return opener
+
+    def test_only_get_is_ever_sent(self):
+        rec = []
+        c = rw.ReadOnlyClient("host:7125", opener=self._opener(rec, b'{"a": 1}'))
+        c.get_json("/printer/info")
+        c.get_bytes("/server/files/logs/klippy.log")
+        self.assertEqual({m for m, _, _ in rec}, {"GET"})
+        self.assertFalse(any(hasattr(c, n) for n in ("post", "put", "delete", "patch", "gcode", "send", "request")))
+
+    def test_path_must_be_absolute_and_stay_on_the_host(self):
+        c = rw.ReadOnlyClient("host:7125", opener=self._opener([]))
+        for bad in ("http://evil/x", "//evil/x", "printer/info", "/printer/gcode/script?script=M112"):
+            with self.assertRaises(rw.WorkerError):
+                c.get_json(bad)
+
+    def test_key_file_must_be_private_and_exist(self):
+        d = tempfile.mkdtemp()
+        with self.assertRaises(rw.WorkerError) as cm:
+            rw.ReadOnlyClient("h", key_file=os.path.join(d, "missing"), opener=self._opener([]))
+        self.assertIn("key file", str(cm.exception))
+        k = os.path.join(d, "key")
+        with open(k, "w") as f:
+            f.write("sekret-key\n")
+        os.chmod(k, 0o644)
+        with self.assertRaises(rw.WorkerError) as cm:
+            rw.ReadOnlyClient("h", key_file=k, opener=self._opener([]))
+        self.assertNotIn("sekret-key", str(cm.exception))
+        os.chmod(k, 0o600)
+        rec = []
+        rw.ReadOnlyClient("h", key_file=k, opener=self._opener(rec, b"{}")).get_json("/printer/info")
+        self.assertEqual(rec[0][2].get("X-api-key"), "sekret-key")
+
+    def test_key_never_appears_in_errors(self):
+        d = tempfile.mkdtemp()
+        k = os.path.join(d, "key")
+        with open(k, "w") as f:
+            f.write("sekret-key")
+        os.chmod(k, 0o600)
+
+        def boom(req, timeout=None):
+            raise urllib.error.URLError("sekret-key refused")
+        with self.assertRaises(rw.WorkerError) as cm:
+            rw.ReadOnlyClient("h", key_file=k, opener=boom).get_json("/printer/info")
+        self.assertNotIn("sekret-key", str(cm.exception))
+
+
+class TestPoller(unittest.TestCase):
+    def setUp(self):
+        self.state = os.path.join(tempfile.mkdtemp(), "state.json")
+
+    def poll(self, status):
+        c = FakeClient({MACRO_PATH: status})
+        return rw.Poller(c, self.state).check()
+
+    def test_no_request_when_seq_is_zero(self):
+        self.assertIsNone(self.poll(macro_status(0, 0.0)))
+
+    def test_new_request_is_seen_once_and_survives_a_worker_restart(self):
+        tok = self.poll(macro_status(1, 100.5))
+        self.assertEqual(tok, "1@100.5")
+        self.assertEqual(self.poll(macro_status(1, 100.5)), tok)   # not handled yet: still pending
+        rw.Poller(FakeClient(), self.state).mark_handled(tok)
+        self.assertIsNone(self.poll(macro_status(1, 100.5)))        # handled, even in a fresh Poller (daily restart)
+
+    def test_klippy_restart_resets_the_counter_and_a_new_press_is_still_seen(self):
+        tok = self.poll(macro_status(1, 100.5))
+        rw.Poller(FakeClient(), self.state).mark_handled(tok)
+        self.assertIsNone(self.poll(macro_status(0, 0.0)))          # restart
+        self.assertEqual(self.poll(macro_status(1, 7.25)), "1@7.25")  # same seq number, different stamp
+
+    def test_a_running_print_never_yields_a_request(self):
+        self.assertIsNone(self.poll(macro_status(3, 9.0, printing=True)))
+
+    def test_corrupt_state_file_means_ask_again_not_crash(self):
+        with open(self.state, "w") as f:
+            f.write("{not json")
+        self.assertEqual(self.poll(macro_status(2, 1.0)), "2@1.0")
+
+    def test_klippy_down_is_not_a_request(self):
+        c = FakeClient()  # route missing -> WorkerError
+        self.assertIsNone(rw.Poller(c, self.state).check())
+
+
+class TestLogKeeper(unittest.TestCase):
+    def setUp(self):
+        self.store = tempfile.mkdtemp()
+        self.now = [1000.0]
+        self.logs = {"logs/klippy.log": b"a\nb\nc\nd\n", "logs/moonraker.log": b"m1\nm2\n"}
+        self.client = FakeClient()
+        self._wire()
+
+    def _wire(self):
+        for name in LOGS:
+            self.client.routes["/server/files/" + name] = (lambda n=name: self.logs[n])
+
+    def keeper(self, **kw):
+        return rw.LogKeeper(self.client, self.store, LOGS, clock=lambda: self.now[0], **kw)
+
+    def manifest(self):
+        with open(os.path.join(self.store, "manifest.jsonl")) as f:
+            return [json.loads(l) for l in f if l.strip()]
+
+    def test_first_snapshot_is_recorded_and_readable(self):
+        e = self.keeper().snapshot_once()
+        self.assertEqual(len(e), 2)
+        m = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][0]
+        self.assertTrue(m["first"])
+        self.assertFalse(m["gap"])
+        with gzip.open(os.path.join(self.store, m["file"])) as f:
+            self.assertEqual(f.read(), b"a\nb\nc\nd\n")
+
+    def test_overlapping_growth_is_not_a_gap(self):
+        k = self.keeper()
+        k.snapshot_once()
+        self.now[0] += 300
+        self.logs["logs/klippy.log"] += b"e\nf\n"
+        k.snapshot_once()
+        last = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][-1]
+        self.assertFalse(last["gap"])
+
+    def test_rotation_that_loses_the_previous_tail_is_flagged_as_a_gap(self):
+        k = self.keeper()
+        k.snapshot_once()
+        self.now[0] += 7200
+        self.logs["logs/klippy.log"] = b"x\ny\nz\n"   # rotated: old tail gone
+        k.snapshot_once()
+        last = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][-1]
+        self.assertTrue(last["gap"])
+
+    def test_gap_is_detected_across_a_worker_restart(self):
+        self.keeper().snapshot_once()
+        self.now[0] += 86400
+        self.logs["logs/klippy.log"] = b"q\nr\n"
+        self.keeper().snapshot_once()   # a brand-new keeper reads the manifest from disk
+        last = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][-1]
+        self.assertTrue(last["gap"])
+
+    def test_unchanged_log_is_not_stored_twice(self):
+        k = self.keeper()
+        k.snapshot_once()
+        self.now[0] += 300
+        self.assertEqual(k.snapshot_once(), [])
+
+    def test_size_cap_prunes_oldest_but_keeps_the_newest_of_each_log(self):
+        k = self.keeper(max_bytes=1)   # absurdly small: everything but the newest must go
+        for i in range(4):
+            self.now[0] += 300
+            self.logs["logs/klippy.log"] += b"line%d\n" % i
+            k.snapshot_once()
+        files = [f for f in os.listdir(self.store) if f.endswith(".gz")]
+        klippy = [f for f in files if "klippy" in f]
+        self.assertEqual(len(klippy), 1)
+        with gzip.open(os.path.join(self.store, klippy[0])) as fh:
+            self.assertTrue(fh.read().endswith(b"line3\n"))
+
+    def test_age_cap_prunes_old_snapshots(self):
+        k = self.keeper(max_age_s=1000)
+        k.snapshot_once()
+        self.now[0] += 5000
+        self.logs["logs/klippy.log"] += b"new\n"
+        k.snapshot_once()
+        klippy = [f for f in os.listdir(self.store) if f.endswith(".gz") and "klippy" in f]
+        self.assertEqual(len(klippy), 1)
+
+    def test_a_failing_fetch_does_not_stop_the_other_log(self):
+        del self.client.routes["/server/files/logs/klippy.log"]
+        e = self.keeper().snapshot_once()
+        self.assertEqual([x["name"] for x in e], ["logs/moonraker.log"])
+
+    def test_manifest_never_holds_log_content(self):
+        self.keeper().snapshot_once()
+        with open(os.path.join(self.store, "manifest.jsonl")) as f:
+            self.assertNotIn("m1", f.read())
+
+
+class PrepareBase(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.mkdtemp()
+        self.store = os.path.join(self.work, "store")
+        self.jobs = os.path.join(self.work, "jobs")
+        self.now = [5000.0]
+        self.log = klippy_log().encode()
+        self.client = FakeClient({
+            "/server/history/list?limit=1": HIST,
+            "/server/files/gcodes/part.gcode": make_gcode_bytes(),
+            "/server/files/logs/klippy.log": lambda: self.log,
+            "/server/files/logs/moonraker.log": b"m\n",
+            "/printer/objects/query?print_stats": {"result": {"status": {"print_stats": {"state": "standby"}}}},
+            "/printer/info": {"result": {"state": "ready"}},
+        })
+
+    def keeper(self):
+        return rw.LogKeeper(self.client, self.store, LOGS, clock=lambda: self.now[0])
+
+    def prepare(self, **kw):
+        args = dict(client=self.client, keeper=self.keeper(), jobs_dir=self.jobs, rate_bps=40.0, token="1@5.0",
+                    profile_path=PROFILE, probe_spot="134,215")
+        args.update(kw)
+        return rw.prepare(**args)
+
+
+class TestPrepare(PrepareBase):
+    def test_prepare_writes_job_resume_pending_and_evidence(self):
+        d = self.prepare()
+        for f in ("job.json", "PENDING.json", "worker.json", "evidence/klippy.log.gz"):
+            self.assertTrue(os.path.exists(os.path.join(d, f)), f)
+        job = json.load(open(os.path.join(d, "job.json")))
+        self.assertTrue(os.path.exists(os.path.join(d, job["resume_file"])))
+        self.assertEqual(job["stop"]["exit_pos"], EXIT_POS)
+        meta = json.load(open(os.path.join(d, "worker.json")))
+        self.assertIn("no kernel journal", meta["evidence"]["note"])
+        self.assertEqual(meta["history_job_id"], "000042")
+
+    def test_prepare_sends_nothing_but_gets(self):
+        self.prepare()
+        self.assertTrue(all(p.startswith("/") for p in self.client.calls))
+        self.assertFalse(any("gcode/script" in p or "print/start" in p or "emergency" in p for p in self.client.calls))
+
+    def test_prepare_does_not_create_a_confirmation(self):
+        d = self.prepare()
+        self.assertFalse(os.path.exists(os.path.join(d, "CONFIRMED.json")))
+
+    def test_job_that_ended_normally_is_refused(self):
+        self.client.routes["/server/history/list?limit=1"] = {"result": {"jobs": [dict(HIST["result"]["jobs"][0], status="completed")]}}
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("completed", str(cm.exception))
+
+    def test_a_running_print_is_refused(self):
+        self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": {"state": "printing"}}}}
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
+
+    def test_resume_file_job_is_refused_for_manual_handling(self):
+        self.client.routes["/server/history/list?limit=1"] = {"result": {"jobs": [dict(HIST["result"]["jobs"][0], filename="resume_part.gcode")]}}
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("resume", str(cm.exception))
+
+    def test_unsafe_history_filename_is_refused(self):
+        for bad in ("../../etc/passwd", "/abs.gcode", "a/../../b.gcode"):
+            self.client.routes["/server/history/list?limit=1"] = {"result": {"jobs": [dict(HIST["result"]["jobs"][0], filename=bad)]}}
+            with self.assertRaises(rw.WorkerError):
+                self.prepare()
+
+    def test_log_without_an_exit_line_is_refused_not_guessed(self):
+        self.log = b"Stats 1.0: nothing\n"
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("Exiting SD card print", str(cm.exception))
+
+    def test_kept_snapshot_with_the_exit_line_is_used_when_the_live_log_cannot_be_fetched(self):
+        k = self.keeper()
+        k.snapshot_once()                       # holds the exit line
+        self.now[0] += 300
+        self.log = self.log + b"after\n"       # grows, overlaps, no gap
+        k.snapshot_once()
+        del self.client.routes["/server/files/logs/klippy.log"]
+        d = self.prepare()
+        self.assertTrue(os.path.exists(os.path.join(d, "job.json")))
+
+    def test_gap_after_the_snapshot_with_the_exit_line_is_refused(self):
+        k = self.keeper()
+        k.snapshot_once()
+        self.now[0] += 86400
+        self.log = b"Stats 5.0: fresh\nmore\n"   # old tail lost: gap recorded
+        k.snapshot_once()
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("gap", str(cm.exception))
+
+    def test_missing_rate_is_refused(self):
+        with self.assertRaises(rw.WorkerError):
+            self.prepare(rate_bps=None)
+
+    def test_pending_tag_binds_job_id_and_job_file_hash(self):
+        d = self.prepare()
+        p = json.load(open(os.path.join(d, "PENDING.json")))
+        self.assertTrue(p["tag"].startswith("000042-"))
+        self.assertEqual(p["token"], "1@5.0")
+
+
+class TestConfirm(PrepareBase):
+    def setUp(self):
+        super().setUp()
+        self.dir = self.prepare()
+        self.tag = json.load(open(os.path.join(self.dir, "PENDING.json")))["tag"]
+        self.good = "CONFIRM %s AT PRINTER" % self.tag
+
+    def confirm(self, typed, **kw):
+        return rw.confirm(self.dir, typed, client=self.client, profile_path=PROFILE, probe_spot="134,215", **kw)
+
+    def test_exact_phrase_confirms_and_prints_a_dry_run_command_only(self):
+        out = self.confirm(self.good)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "CONFIRMED.json")))
+        self.assertIn("rescue_run.py", out["command"])
+        self.assertIn("--dry-run", out["command"])
+        self.assertNotIn("--allow-unverified", out["command"])
+
+    def test_wrong_phrases_are_refused(self):
+        for bad in ("", "yes", "CONFIRM", "confirm %s at printer" % self.tag, "CONFIRM 000041-deadbeef AT PRINTER",
+                    self.good + " ", "CONFIRM %s" % self.tag):
+            with self.assertRaises(rw.WorkerError, msg=repr(bad)):
+                self.confirm(bad)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "CONFIRMED.json")))
+
+    def test_edited_job_file_invalidates_the_confirmation(self):
+        with open(os.path.join(self.dir, "job.json"), "a") as f:
+            f.write(" ")
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.confirm(self.good)
+        self.assertIn("changed", str(cm.exception))
+
+    def test_edited_resume_file_invalidates_the_confirmation(self):
+        job = json.load(open(os.path.join(self.dir, "job.json")))
+        with open(os.path.join(self.dir, job["resume_file"]), "a") as f:
+            f.write("G1 Z0\n")
+        with self.assertRaises(rw.WorkerError):
+            self.confirm(self.good)
+
+    def test_confirmation_is_refused_if_a_print_started_since(self):
+        self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": {"state": "printing"}}}}
+        with self.assertRaises(rw.WorkerError):
+            self.confirm(self.good)
+
+    def test_confirmation_is_refused_if_klippy_is_not_ready(self):
+        self.client.routes["/printer/info"] = {"result": {"state": "shutdown"}}
+        with self.assertRaises(rw.WorkerError):
+            self.confirm(self.good)
+
+    def test_confirmation_is_single_use(self):
+        self.confirm(self.good)
+        with self.assertRaises(rw.WorkerError):
+            self.confirm(self.good)
+
+    def test_unverified_profile_is_reported_and_flag_is_never_added(self):
+        out = self.confirm(self.good)
+        self.assertTrue(out["motion_blocked_by_profile"])   # R13: the shipped profile is owner-stated
+        self.assertIn("refuse", out["notes"][0])
+        self.assertNotIn("allow-unverified", json.dumps(out))
+
+    def test_worker_module_has_no_way_to_execute_the_runner(self):
+        src = open(os.path.join(HERE, "rescue_worker.py")).read()
+        code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
+        for banned in ("subprocess", "os.system", "os.exec", "Popen", "import rescue_run", "from rescue_run", "runpy", "importlib"):
+            self.assertNotIn(banned, code)
+        self.assertNotIn("allow-unverified", src)
+
+
+class TestLoop(PrepareBase):
+    def test_watch_once_prepares_then_marks_handled(self):
+        st = os.path.join(self.work, "state.json")
+        self.client.routes[MACRO_PATH] = macro_status(1, 5.0)
+        r = rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
+        self.assertTrue(os.path.isdir(r))
+        self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+
+    def test_failed_prepare_is_remembered_so_it_does_not_loop_hot(self):
+        st = os.path.join(self.work, "state.json")
+        self.client.routes[MACRO_PATH] = macro_status(1, 5.0)
+        self.log = b"nothing useful\n"
+        with self.assertRaises(rw.WorkerError):
+            rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
+        self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+
+
+class TestMainPermissions(unittest.TestCase):
+    def test_private_dirs_are_created_0700(self):
+        d = os.path.join(tempfile.mkdtemp(), "x")
+        rw.private_dir(d)
+        self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700)
+
+
+if __name__ == "__main__":
+    unittest.main()
