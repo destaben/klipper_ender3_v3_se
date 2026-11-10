@@ -5,7 +5,8 @@
 # Writes <textfile-dir>/rpi.prom atomically (temp file + rename), so the
 # collector never reads a half-written file. Run it from a user crontab
 # (setup_services.sh installs the line). The Pi shares one USB/SDIO bus, so
-# this makes only two vcgencmd calls per run (get_throttled, measure_volts);
+# this makes at most two vcgencmd calls per run (get_throttled, measure_volts)
+# when the sysfs files exist;
 # temperature, ARM clock and Wi-Fi come from sysfs and /proc. vcgencmd is
 # used for temperature and clock only if the sysfs file is missing.
 #

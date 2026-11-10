@@ -3,10 +3,10 @@ name: RPi Metrics Tests
 "on":
   push:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/rpi-metrics-test.yml']
+    paths: ['scripts/**', 'setup_services.sh', 'docker-compose.yaml', '.github/workflows/rpi-metrics-test.yml']
   pull_request:
     branches: [main]
-    paths: ['scripts/**', '.github/workflows/rpi-metrics-test.yml']
+    paths: ['scripts/**', 'setup_services.sh', 'docker-compose.yaml', '.github/workflows/rpi-metrics-test.yml']
 
 permissions:
   contents: read

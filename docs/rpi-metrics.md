@@ -13,8 +13,9 @@ which node-exporter's textfile collector serves at `/nodeexporter/metrics`.
 | `rpi_wifi_signal_dbm`, `rpi_wifi_link_quality` | `/proc/net/wireless`, interface `wlan0` (override with `RPI_WIFI_IFACE`) |
 | `rpi_metrics_last_run_timestamp_seconds` | `date`; alert on staleness |
 
-The Pi shares one USB/SDIO bus, so a run makes only two `vcgencmd` calls
-(`get_throttled`, `measure_volts`) when the sysfs files exist (otherwise `measure_temp` / `measure_clock` are used as fallbacks); everything else is read from sysfs and
+The Pi shares one USB/SDIO bus, so when `vcgencmd` is installed a run calls it at most
+twice (`get_throttled`, `measure_volts`); `measure_temp` and `measure_clock` run only
+if the matching sysfs file is missing. Everything else is read from sysfs and
 `/proc`. A metric whose source is missing or unparsable is omitted, never
 reported as 0. The file is replaced atomically (temp file in the same
 directory, then `mv`).
@@ -48,7 +49,7 @@ Verify (HTTP only): `curl -s http://<host_ip>/nodeexporter/metrics | grep rpi_`
 crontab -l | grep -vF 'scripts/rpi-metrics.sh' | crontab -   # as the user that installed it
 git revert <commit>   # add -m 1 for a merge commit; or git checkout the previous docker-compose.yaml
 docker compose up -d node-exporter   # recreates it without the flag and mount
-rm -rf textfile
+rm -f textfile/rpi.prom
 ```
 
 ## Tests

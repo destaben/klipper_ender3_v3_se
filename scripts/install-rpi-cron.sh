@@ -21,10 +21,6 @@ fi
 repo=$(cd "$repo" && pwd)
 
 case $repo in
-    /*) ;;
-    *) echo "WARNING: repo path is not absolute; not installing the rpi-metrics cron line." >&2; exit 0 ;;
-esac
-case $repo in
     *[!A-Za-z0-9_./+-]*)
         echo "WARNING: repo path '$repo' has characters unsafe for a crontab line (allowed: A-Z a-z 0-9 _ . / + -); not installing the rpi-metrics cron line." >&2
         exit 0
