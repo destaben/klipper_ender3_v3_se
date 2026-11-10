@@ -59,7 +59,10 @@ class WorkerError(RuntimeError):
 def private_dir(path: str) -> str:
     """Create a directory readable by this user only. An EXISTING directory is left alone (it may be shared): only warn."""
     if os.path.isdir(path):
-        if os.stat(path).st_mode & 0o077:
+        st = os.stat(path)
+        if st.st_uid != os.getuid() or st.st_mode & 0o022:   # another user could plant a symlink or swap files in it
+            raise WorkerError("%s is not owned by this user or is writable by others: refusing to write host data there" % os.path.basename(path))
+        if st.st_mode & 0o077:
             print("note: %s is accessible by others; it will hold host data" % os.path.basename(path), file=sys.stderr)
         return path
     os.makedirs(path, mode=0o700)
@@ -67,7 +70,7 @@ def private_dir(path: str) -> str:
 
 
 def write_private(path: str, data: bytes) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)   # never write through a symlink
     with os.fdopen(fd, "wb") as f:
         f.write(data)
 

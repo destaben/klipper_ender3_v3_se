@@ -605,6 +605,23 @@ class TestPrepare(PrepareBase):
         with self.assertRaises(rw.WorkerError):
             self.prepare()
 
+    def test_write_private_refuses_to_follow_a_symlink(self):
+        victim = os.path.join(self.work, "victim.txt")
+        with open(victim, "w") as f:
+            f.write("keep")
+        link = os.path.join(self.work, "link.json")
+        os.symlink(victim, link)
+        with self.assertRaises(OSError):
+            rw.write_private(link, b"overwritten")
+        self.assertEqual(open(victim).read(), "keep")
+
+    def test_an_existing_directory_writable_by_others_is_refused(self):
+        d = os.path.join(self.work, "shared")
+        os.mkdir(d)
+        os.chmod(d, 0o777)
+        with self.assertRaises(rw.WorkerError):
+            rw.private_dir(d)
+
     def test_history_file_named_like_a_worker_file_is_refused(self):
         for name in ("CONFIRMED.json", "job.json", "evidence"):
             self.client.routes["/server/history/list?limit=1"] = hist(filename=name)
