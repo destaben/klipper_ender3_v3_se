@@ -198,7 +198,8 @@ lines in the kernel stream are counted in `events.txt` without stopping.
   "unverified" by design (27 listed by R13).
 * The resume line for a power cut with no exit line is chosen from the last poll; the planner (`plan.py`) still refuses that case.
 * The final descent has no gap confirmation or paper test; the gantry tilt is not measured.
-* `rescue_run.py` has no Mainsail macro; the idea of a macro that starts it through a worker on another host is an open issue.
+* `rescue_run.py` has no Mainsail macro that starts it. A request-only macro plus a worker that prepares the plan and waits for a typed
+  confirmation exist (not deployed, stub-tested): see [print-rescue-worker.md](print-rescue-worker.md). The run itself stays manual.
 * The cause of the `-32` stalls is not known (kernel `urb stopped: -32` on the CH340, `dwc_otg` FSM warnings, no undervoltage). Cables moved
   and a short test print ran clean; two longer prints stopped. Software is not ruled out (new containers on 2026-11-04/05).
 * The Pi journal is volatile: a reboot loses the previous boot's kernel log. Keep the kernel stream running on another machine.
@@ -206,7 +207,7 @@ lines in the kernel stream are counted in `events.txt` without stopping.
 ## Reproduce the checks
 
 ```bash
-python3 -m unittest discover -s print-rescue -v     # includes test_rescue_job.py and test_rescue_run.py (simulated Moonraker)
+python3 -m unittest discover -s print-rescue -v     # includes test_rescue_job.py, test_rescue_run.py (simulated Moonraker) and test_rescue_worker.py
 ```
 
 `test_rescue_run.py` checks: R13 refusal sends no motion; command order (lower bound declared before `G28`, probe after homing, print start last);
