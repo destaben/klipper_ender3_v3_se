@@ -136,6 +136,22 @@ class TestKeyOverPlainHttp(unittest.TestCase):
         os.chmod(k, 0o600)
         return k
 
+    def test_key_is_not_sent_if_the_host_later_resolves_to_a_public_address(self):
+        answer = ["192.168.1.5"]
+        sent = []
+
+        def resolver(host, port, *a, **k):
+            return _resolver(answer[0])(host, port)
+
+        def opener(req, timeout=None):
+            sent.append(req.full_url)
+            raise AssertionError("must not be reached once the host resolves to a public address")
+        c = rw.ReadOnlyClient("h", key_file=self.key(), accept_plaintext_key=True, resolver=resolver, opener=opener)
+        answer[0] = "8.8.8.8"   # DNS now answers with a public address
+        with self.assertRaises(rw.WorkerError):
+            c.get_json("/printer/info")
+        self.assertEqual(sent, [])
+
     def test_key_is_refused_without_the_explicit_opt_in(self):
         with self.assertRaises(rw.WorkerError) as cm:
             rw.ReadOnlyClient("h", key_file=self.key(), resolver=_resolver("192.168.1.5"))

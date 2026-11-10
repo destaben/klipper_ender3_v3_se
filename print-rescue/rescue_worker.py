@@ -99,7 +99,7 @@ class ReadOnlyClient:
 
     def __init__(self, host: str, key_file: Optional[str] = None, opener: Callable = _OPEN, timeout: int = 30,
                  accept_plaintext_key: bool = False, resolver: Callable = socket.getaddrinfo):
-        self.host, self.opener, self.timeout = host, opener, timeout
+        self.host, self.opener, self.timeout, self._resolver = host, opener, timeout, resolver
         self._key = None
         if key_file:
             # Moonraker speaks plain HTTP here: the key crosses the LAN in the clear and controls the printer. Opt-in only, private hosts only.
@@ -133,6 +133,8 @@ class ReadOnlyClient:
         if (not path.startswith("/") or path.startswith("//") or ".." in path or not path.startswith(ALLOWED_PREFIXES)
                 or any(x in path.lower() for x in ("%2e", "%2f", "%5c", "%00"))):
             raise WorkerError("refused path (read-only allow-list): %s" % path.split("?")[0])
+        if self._key:   # a name can resolve elsewhere after the constructor's check (DNS change or rebinding): check every request
+            self._require_private_host(self.host, self._resolver)
         headers = {"X-Api-Key": self._key} if self._key else {}
         req = urllib.request.Request("http://%s%s" % (self.host, path), method="GET", headers=headers)
         try:
