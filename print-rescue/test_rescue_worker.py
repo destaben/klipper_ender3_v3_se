@@ -19,10 +19,10 @@ PROFILE = os.path.join(HERE, "profiles", "creality-ender3-v3-se.json")
 MACRO_PATH = "/printer/objects/query?gcode_macro%20RESCUE_REQUEST&print_stats"
 
 
-def macro_status(seq, stamp, printing=False):
+def macro_status(seq, stamp, printing=False, state=None):
     return {"result": {"status": {
         "gcode_macro RESCUE_REQUEST": {"seq": seq, "stamp": stamp},
-        "print_stats": {"state": "printing" if printing else "standby"}}}}
+        "print_stats": {"state": state or ("printing" if printing else "standby")}}}}
 
 
 class FakeClient:
@@ -92,8 +92,9 @@ class TestMacro(unittest.TestCase):
         self.assertIn("variable_seq", self.body)
         self.assertIn("variable_stamp", self.body)
 
-    def test_macro_refuses_while_a_print_is_running(self):
-        self.assertIn('print_stats.state == "printing"', self.body)
+    def test_macro_accepts_a_request_only_when_standby(self):
+        self.assertIn('printer.print_stats.state != "standby"', self.body)
+        self.assertNotIn('== "printing"', self.body)
 
     def test_macro_is_not_enabled_by_default(self):
         # printer.cfg includes macros/*.cfg; the opt-in file must not live there
@@ -219,6 +220,10 @@ class TestPoller(unittest.TestCase):
 
     def test_a_running_print_never_yields_a_request(self):
         self.assertIsNone(self.poll(macro_status(3, 9.0, printing=True)))
+
+    def test_any_state_but_standby_never_yields_a_request(self):
+        for st in ("paused", "error", "cancelled", "complete", "printing"):
+            self.assertIsNone(self.poll(macro_status(3, 9.0, state=st)), st)
 
     def test_corrupt_state_file_means_ask_again_not_crash(self):
         with open(self.state, "w") as f:
@@ -391,6 +396,18 @@ class TestPrepare(PrepareBase):
         with self.assertRaises(rw.WorkerError):
             self.prepare()
 
+    def test_every_state_but_standby_is_refused(self):
+        for st in ("paused", "error", "cancelled", "complete", "printing"):
+            self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": {"state": st}}}}
+            with self.assertRaises(rw.WorkerError, msg=st):
+                self.prepare()
+
+    def test_job_dirs_of_tokens_that_differ_only_in_punctuation_do_not_collide(self):
+        d1 = self.prepare(token="1@50.0")
+        d2 = self.prepare(token="15@0.0")
+        self.assertNotEqual(d1, d2)
+        self.assertTrue(os.path.exists(os.path.join(d1, "PENDING.json")))
+
     def test_resume_file_job_is_refused_for_manual_handling(self):
         self.client.routes["/server/history/list?limit=1"] = {"result": {"jobs": [dict(HIST["result"]["jobs"][0], filename="resume_part.gcode")]}}
         with self.assertRaises(rw.WorkerError) as cm:
@@ -489,6 +506,13 @@ class TestConfirm(PrepareBase):
         self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": {"state": "printing"}}}}
         with self.assertRaises(rw.WorkerError):
             self.confirm(self.good)
+
+    def test_confirmation_is_refused_in_every_state_but_standby(self):
+        for st in ("paused", "error", "cancelled", "complete"):
+            self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": {"state": st}}}}
+            with self.assertRaises(rw.WorkerError, msg=st):
+                self.confirm(self.good)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "CONFIRMED.json")))
 
     def test_confirmation_is_refused_if_klippy_is_not_ready(self):
         self.client.routes["/printer/info"] = {"result": {"state": "shutdown"}}

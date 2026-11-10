@@ -136,8 +136,11 @@ def _status(client, path: str, key: str) -> dict:
 
 # -- request polling -----------------------------------------------------------------------------------------------------
 class Poller:
-    """Watches the macro's counter. The token is "<seq>@<stamp>": a Klippy restart resets seq, but the stamp differs, so a new
-    press is never mistaken for an old one. Handled tokens are kept on disk so a worker restart does not replay a request."""
+    """Watches the macro's counter. The token is "<seq>@<stamp>": a Klippy restart resets seq, and the stamp (print time) usually
+    differs, so a new press is not mistaken for an old one. KNOWN LIMIT: the print time is about 0 after a restart until something
+    moves, so two idle presses across a restart can both give "1@0.0" and the second is ignored (docs/print-rescue-worker.md, known
+    limits; a better stamp is an owner decision). Handled tokens are kept on disk so a worker restart does not replay a request.
+    A request is only taken while print_stats is "standby": a paused, errored, cancelled or complete job is not a rescue moment."""
 
     def __init__(self, client, state_path: str):
         self.client, self.path = client, state_path
@@ -160,7 +163,7 @@ class Poller:
             seq, stamp = int(m["seq"]), m["stamp"]
         except (WorkerError, KeyError, TypeError, ValueError):
             return None   # Klippy not ready / macro not installed: nothing to do
-        if seq <= 0 or ps == "printing":
+        if seq <= 0 or ps != "standby":
             return None
         token = "%d@%s" % (seq, stamp)
         return None if token in self._handled() else token
@@ -280,8 +283,9 @@ def _check_filename(name: str) -> None:
 
 
 def _require_idle_ready(client) -> None:
-    if _status(client, PRINT_STATS_PATH, "print_stats").get("state") == "printing":
-        raise WorkerError("a print is running")
+    ps = _status(client, PRINT_STATS_PATH, "print_stats").get("state")
+    if ps != "standby":
+        raise WorkerError("print state is %r, not standby (a running, paused or just-finished job is refused)" % ps)
     try:
         state = client.get_json(INFO_PATH)["result"]["state"]
     except (KeyError, TypeError):
@@ -325,7 +329,7 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
     entry = _pick_klippy_log(keeper)
     gcode = client.get_bytes("/server/files/gcodes/" + urllib.parse.quote(fname))
 
-    d = private_dir(os.path.join(jobs_dir, "%s-%s" % (job_id, re.sub(r"[^0-9A-Za-z]", "", token) or "x")))
+    d = private_dir(os.path.join(jobs_dir, "%s-%s" % (re.sub(r"[^0-9A-Za-z]", "", job_id) or "x", sha256(token.encode())[:10])))
     local = _safe_name(fname)
     resume_name = "resume_" + local if local.endswith(".gcode") else "resume_" + local + ".gcode"
     gpath, lpath = os.path.join(d, local), os.path.join(d, "klippy.log")

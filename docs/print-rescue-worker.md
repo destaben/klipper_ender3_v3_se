@@ -13,8 +13,8 @@ Mainsail button RESCUE_REQUEST  ->  counter+stamp bump in Klipper  ->  worker po
       worker: prints a rescue_run.py --dry-run command. It does not run it.
 ```
 
-* `print-rescue/printer-macro/rescue_request.cfg`: the macro. It does no motion, heating, restart, file or shell access, and refuses while a
-  print runs. It is **opt-in**: it is not under `config/macros/` (which `printer.cfg` includes by glob), so nothing changes until the
+* `print-rescue/printer-macro/rescue_request.cfg`: the macro. It does no motion, heating, restart, file or shell access, and records a
+  request only while `print_stats` is `standby` (a running, paused, errored, cancelled or complete job is refused). It is **opt-in**: it is not under `config/macros/` (which `printer.cfg` includes by glob), so nothing changes until the
   owner copies it to the printer, includes it and restarts Klippy.
 * `print-rescue/rescue_worker.py`: `run` (log keeper + poller + prepare) and `confirm`. Standard library only.
 
@@ -36,7 +36,7 @@ and a hash of the job and resume files.
 * The macro text contains no motion, heating, probing, restart or shell command.
 * The worker module has no `subprocess`, no import of `rescue_run`, and does not contain the override flag at all. The printed command is
   `--dry-run`. If the profile head box is still owner-stated, the output says `rescue_run.py` will refuse (R13); nothing here overrides it.
-* The phrase must be exactly `CONFIRM <job id>-<hash8> AT PRINTER`. An edited job or resume file, a second use, a running print, or a Klippy
+* The phrase must be exactly `CONFIRM <job id>-<hash8> AT PRINTER`. An edited job or resume file, a second use, any print state other than `standby` (running, paused, errored, cancelled, complete), or a Klippy
   that is not `ready` is refused.
 * Refused rather than guessed: last job ended normally, last job was itself a resume file (build by hand with `--exit-file`), unsafe file name
   in the history, no `Exiting SD card print` line in any kept log, a gap after the snapshot that holds it, no `--rate-bps`/`--polls`.
