@@ -38,6 +38,10 @@ and a hash of the job and resume files.
   `--dry-run`. If the profile head box is still owner-stated, the output says `rescue_run.py` will refuse (R13); nothing here overrides it.
 * The phrase must be exactly `CONFIRM <job id>-<hash8> AT PRINTER`. An edited job or resume file, a second use, any print state other than `standby` (running, paused, errored, cancelled, complete), or a Klippy
   that is not `ready` is refused.
+* The stop is tied to the history job: the exit line must be NEW since a kept snapshot taken at least 5 minutes before the job started (the worker and printer
+  clocks are not synchronised), with no gap in between, because Klippy may append to its log across restarts and an older job's exit line would give the wrong
+  resume point. This needs the log keeper to have been running before the job started; otherwise the worker refuses. The G-code downloaded by name must have
+  the size the history recorded for the job that printed (a re-uploaded file of the same name is refused).
 * Refused rather than guessed: last job ended normally, last job was itself a resume file (build by hand with `--exit-file`), unsafe file name
   in the history, no `Exiting SD card print` line in any kept log, a gap after the snapshot that holds it, no `--rate-bps`/`--polls`.
 * A failed prepare marks the request handled (no hot retry loop): fix the cause and press the button again.
@@ -57,6 +61,10 @@ and a hash of the job and resume files.
 * A failed prepare (including a transient Moonraker timeout) marks the request handled, so the person must press again. Chosen over automatic retry to
   avoid a hot loop against a printer that is in trouble; the cause is printed as `REFUSED`.
 * Each log snapshot is read into memory whole. Fine for the hourly-rotated logs (a few MB); not for a log grown to hundreds of MB.
+* **Unverified, read-only check needed on the real printer:** after a shutdown and a restart, does `print_stats.state` read `standby`? The worker and the macro
+  require it (a paused, errored, cancelled or complete job is refused). If it stays `error`, the feature refuses in exactly the case it was built for and the
+  gate must be revisited (an owner decision, since it weakens the check).
+* A Moonraker `/server/files/` read is limited to the `gcodes/` and `logs/` roots; paths with `..` or encoded dots and slashes are refused.
 * The worker does not upload the resume file (that is a POST); the person does it (runbook step 3).
 * Where the worker runs, and how it restarts, is the owner's choice: run `rescue_worker.py run` under any supervisor (systemd unit, container
   restart policy). A daily restart is safe: state and logs are on disk.

@@ -43,7 +43,8 @@ KLIPPY_LOG = "logs/klippy.log"
 LOGS = (KLIPPY_LOG, "logs/moonraker.log")
 # Job statuses that mean "the print stopped abnormally". A job that completed or was cancelled by a person is not a rescue.
 ABNORMAL = ("klippy_shutdown", "klippy_disconnect", "error", "interrupted", "server_exit")
-ALLOWED_PREFIXES = ("/printer/info", "/printer/objects/query", "/server/history/list", "/server/files/", "/server/info")
+ALLOWED_PREFIXES = ("/printer/info", "/printer/objects/query", "/server/history/list", "/server/files/gcodes/", "/server/files/logs/",
+                    "/server/info")
 EVIDENCE_NOTE = "cause evidence incomplete: no kernel journal was kept (keep `journalctl -k -f` on this host and add it)"
 PHRASE = "CONFIRM %s AT PRINTER"
 
@@ -105,7 +106,8 @@ class ReadOnlyClient:
                 raise WorkerError("key file is empty")
 
     def _get(self, path: str) -> bytes:
-        if not path.startswith("/") or path.startswith("//") or ".." in path or not path.startswith(ALLOWED_PREFIXES):
+        if (not path.startswith("/") or path.startswith("//") or ".." in path or not path.startswith(ALLOWED_PREFIXES)
+                or any(x in path.lower() for x in ("%2e", "%2f", "%5c", "%00"))):
             raise WorkerError("refused path (read-only allow-list): %s" % path.split("?")[0])
         headers = {"X-Api-Key": self._key} if self._key else {}
         req = urllib.request.Request("http://%s%s" % (self.host, path), method="GET", headers=headers)
@@ -194,11 +196,18 @@ class LogKeeper:
         self.manifest_path = os.path.join(self.dir, "manifest.jsonl")
 
     def entries(self) -> List[dict]:
+        out = []
         try:
             with open(self.manifest_path) as f:
-                return [json.loads(l) for l in f if l.strip()]
-        except (OSError, ValueError):
+                for l in f:
+                    try:
+                        if l.strip():
+                            out.append(json.loads(l))
+                    except ValueError:
+                        continue   # one damaged line must not orphan the other snapshots
+        except OSError:
             return []
+        return out
 
     def _write(self, entries: List[dict]) -> None:
         tmp = self.manifest_path + ".tmp"
@@ -230,7 +239,7 @@ class LogKeeper:
                  "first": not prev, "gap": gap, "tail": _tail_hashes(data), "pruned": False}
             entries.append(e)
             out.append(e)
-        self._write(self._prune(entries))
+        self._write([e for e in self._prune(entries) if not e["pruned"]])
         return out
 
     def _prune(self, entries: List[dict]) -> List[dict]:
@@ -294,20 +303,35 @@ def _require_idle_ready(client) -> None:
         raise WorkerError("Klippy is %s, not ready" % state)
 
 
-def _pick_klippy_log(keeper: LogKeeper) -> dict:
-    """Newest kept klippy snapshot that holds an exit line, provided no gap follows it."""
+CLOCK_SKEW_S = 300.0   # the worker and the printer clocks are not synchronised: look for a baseline this much earlier
+
+
+def _exit_count(text: str) -> int:
+    return len(rj.EXIT_RE.findall(text))
+
+
+def _pick_klippy_log(keeper: LogKeeper, job_start: float) -> dict:
+    """The kept Klippy snapshot that holds THIS job's exit line. Klippy may append to its log across restarts, so an exit line is
+    attributed to the job only if it is new since a snapshot taken before the job started, with no gap on the way."""
     ents = [e for e in keeper.entries() if e["name"] == KLIPPY_LOG and not e["pruned"]]
-    for i in range(len(ents) - 1, -1, -1):
+    base = [i for i, e in enumerate(ents) if e["taken_at"] <= job_start - CLOCK_SKEW_S]
+    if not base:
+        raise WorkerError("no kept Klippy snapshot from before the job started: an exit line cannot be attributed to this job")
+    bi = base[-1]
+    try:
+        base_n = _exit_count(keeper.read(ents[bi]).decode("utf-8", "replace"))
+    except (OSError, EOFError):
+        raise WorkerError("the baseline Klippy snapshot from before the job started is unreadable")
+    if any(e["gap"] for e in ents[bi + 1:]):
+        raise WorkerError("a gap follows the baseline log snapshot: lines may be missing, refusing to guess")
+    for i in range(len(ents) - 1, bi, -1):
         try:
             text = keeper.read(ents[i]).decode("utf-8", "replace")
         except (OSError, EOFError):
             continue
-        if rj.parse_stop_state(text)["exit_pos"] is None:
-            continue
-        if any(e["gap"] for e in ents[i + 1:]):
-            raise WorkerError("a gap follows the log snapshot that holds the stop: lines may be missing, refusing to guess")
-        return ents[i]
-    raise WorkerError("no kept Klippy log holds an 'Exiting SD card print' line: the evidence of the stop is not here")
+        if _exit_count(text) > base_n:
+            return ents[i]
+    raise WorkerError("no new 'Exiting SD card print' line since before the job started: the evidence of this stop is not in the kept logs")
 
 
 def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float], token: str, profile_path: str,
@@ -320,14 +344,21 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
         fname, status, job_id = job["filename"], job["status"], str(job["job_id"])
     except (KeyError, IndexError, TypeError):
         raise WorkerError("no job in the Moonraker history")
+    try:
+        job_start = float(job["start_time"])
+        want_size = int(job["metadata"]["size"])
+    except (KeyError, TypeError, ValueError):
+        raise WorkerError("the history job has no start time or file size: the stop cannot be tied to this job")
     _check_filename(fname)
     if status not in ABNORMAL:
         raise WorkerError("the last job ended with status %r, not a stop that needs a rescue" % status)
     if _safe_name(fname).startswith("resume_"):
         raise WorkerError("the last job is itself a resume file: build this one by hand with --exit-file (runbook, step 3)")
     keeper.snapshot_once()   # newest evidence first; a failed fetch is tolerated, the kept snapshots are still used
-    entry = _pick_klippy_log(keeper)
+    entry = _pick_klippy_log(keeper, job_start)
     gcode = client.get_bytes("/server/files/gcodes/" + urllib.parse.quote(fname))
+    if len(gcode) != want_size:
+        raise WorkerError("the G-code on the printer has size %d, the job that printed had size %d: it is not the file that printed" % (len(gcode), want_size))
 
     d = private_dir(os.path.join(jobs_dir, "%s-%s" % (re.sub(r"[^0-9A-Za-z]", "", job_id) or "x", sha256(token.encode())[:10])))
     local = _safe_name(fname)
@@ -438,8 +469,11 @@ def main(argv=None) -> int:
     try:
         client = ReadOnlyClient(a.host, a.key_file)
         if a.cmd == "confirm":
-            with open(os.path.join(a.job_dir, "PENDING.json")) as f:
-                tag = json.load(f)["tag"]
+            try:
+                with open(os.path.join(a.job_dir, "PENDING.json")) as f:
+                    tag = json.load(f)["tag"]
+            except (OSError, ValueError, KeyError):
+                raise WorkerError("no pending job here")
             print("Prepared job %s. Read worker.json and job.json first. Someone must be at the printer with a finger on the "
                   "emergency stop.\nType exactly: %s" % (tag, PHRASE % tag))
             out = confirm(a.job_dir, input("> ").strip("\n"), client, a.profile, a.probe_spot)
@@ -451,7 +485,10 @@ def main(argv=None) -> int:
         last_keep = 0.0
         while True:
             if time.time() - last_keep >= a.log_interval:
-                keeper.snapshot_once()
+                try:
+                    keeper.snapshot_once()
+                except OSError as e:   # a full disk must not stop the poller; it is reported and retried next interval
+                    print("log keeper: %s" % type(e).__name__, file=sys.stderr, flush=True)
                 last_keep = time.time()
             try:
                 rate = rj.file_rate(a.polls) if a.polls and not a.rate_bps else a.rate_bps

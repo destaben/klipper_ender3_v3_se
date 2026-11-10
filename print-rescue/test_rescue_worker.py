@@ -64,7 +64,18 @@ def exit_pos_of(lines):
 
 
 EXIT_POS = exit_pos_of(synth_gcode())
-HIST = {"result": {"jobs": [{"job_id": "000042", "filename": "part.gcode", "status": "klippy_shutdown"}]}}
+HIST = {"result": {"jobs": [{"job_id": "000042", "filename": "part.gcode", "status": "klippy_shutdown",
+                             "start_time": 3000.0, "end_time": 4000.0, "metadata": {"size": len(make_gcode_bytes())}}]}}
+
+
+def hist(**kw):
+    j = dict(HIST["result"]["jobs"][0])
+    for k, v in kw.items():
+        if v is None:
+            j.pop(k, None)
+        else:
+            j[k] = v
+    return {"result": {"jobs": [j]}}
 LOGS = ["logs/klippy.log", "logs/moonraker.log"]
 
 
@@ -97,7 +108,12 @@ class TestMacro(unittest.TestCase):
         self.assertNotIn('== "printing"', self.body)
 
     def test_macro_is_not_enabled_by_default(self):
-        # printer.cfg includes macros/*.cfg; the opt-in file must not live there
+        # printer.cfg includes macros/*.cfg; the opt-in file must not live there and must not be picked up by that glob
+        with open(os.path.join(HERE, "..", "config", "printer.cfg")) as f:
+            includes = [l.strip() for l in f if l.startswith("[include")]
+        self.assertIn("[include macros/*.cfg]", includes)
+        self.assertFalse(os.path.exists(os.path.join(HERE, "..", "config", "macros", "rescue_request.cfg")))
+        self.assertFalse(any("rescue" in i or "printer-macro" in i for i in includes))
         self.assertNotIn(os.sep + "macros" + os.sep, MACRO_CFG)
 
 
@@ -118,7 +134,9 @@ class TestReadOnlyClient(unittest.TestCase):
 
     def test_path_must_be_absolute_and_stay_on_the_host(self):
         c = rw.ReadOnlyClient("host:7125", opener=self._opener([]))
-        for bad in ("http://evil/x", "//evil/x", "printer/info", "/printer/gcode/script?script=M112"):
+        for bad in ("http://evil/x", "//evil/x", "printer/info", "/printer/gcode/script?script=M112",
+                    "/server/files/config/printer.cfg", "/server/files/config/moonraker.secrets", "/server/files/gcodes/%2e%2e/x",
+                    "/server/files/logs/%2E%2E/config/printer.cfg"):
             with self.assertRaises(rw.WorkerError):
                 c.get_json(bad)
 
@@ -332,6 +350,25 @@ class TestLogKeeper(unittest.TestCase):
         e = self.keeper().snapshot_once()
         self.assertEqual([x["name"] for x in e], ["logs/moonraker.log"])
 
+    def test_one_corrupt_manifest_line_does_not_orphan_the_other_snapshots(self):
+        k = self.keeper()
+        k.snapshot_once()
+        with open(os.path.join(self.store, "manifest.jsonl"), "a") as f:
+            f.write("{broken\n")
+        self.now[0] += 300
+        self.logs["logs/klippy.log"] += b"e\n"
+        self.keeper().snapshot_once()
+        names = [e["file"] for e in self.manifest()]
+        self.assertEqual(len(names), 3)   # 2 first snapshots + the new klippy one; the corrupt line was dropped, nothing lost
+
+    def test_pruned_entries_leave_the_manifest(self):
+        k = self.keeper(max_bytes=1)
+        for i in range(4):
+            self.now[0] += 300
+            self.logs["logs/klippy.log"] += b"line%d\n" % i
+            k.snapshot_once()
+        self.assertTrue(all(not e["pruned"] for e in self.manifest()))
+
     def test_manifest_never_holds_log_content(self):
         self.keeper().snapshot_once()
         with open(os.path.join(self.store, "manifest.jsonl")) as f:
@@ -343,8 +380,8 @@ class PrepareBase(unittest.TestCase):
         self.work = tempfile.mkdtemp()
         self.store = os.path.join(self.work, "store")
         self.jobs = os.path.join(self.work, "jobs")
-        self.now = [5000.0]
-        self.log = klippy_log().encode()
+        self.now = [1000.0]
+        self.log = b"Stats 100.0: gcodein=0\n"   # before the job started: no exit line yet
         self.client = FakeClient({
             "/server/history/list?limit=1": HIST,
             "/server/files/gcodes/part.gcode": make_gcode_bytes(),
@@ -353,6 +390,9 @@ class PrepareBase(unittest.TestCase):
             "/printer/objects/query?print_stats": {"result": {"status": {"print_stats": {"state": "standby"}}}},
             "/printer/info": {"result": {"state": "ready"}},
         })
+        self.keeper().snapshot_once()              # the baseline the keeper took before the job started (t=1000, job starts at 3000)
+        self.now[0] = 5000.0
+        self.log = klippy_log().encode()
 
     def keeper(self):
         return rw.LogKeeper(self.client, self.store, LOGS, clock=lambda: self.now[0])
@@ -421,7 +461,7 @@ class TestPrepare(PrepareBase):
                 self.prepare()
 
     def test_log_without_an_exit_line_is_refused_not_guessed(self):
-        self.log = b"Stats 1.0: nothing\n"
+        self.log = b"Stats 100.0: gcodein=0\nStats 1.0: nothing\n"
         with self.assertRaises(rw.WorkerError) as cm:
             self.prepare()
         self.assertIn("Exiting SD card print", str(cm.exception))
@@ -445,6 +485,39 @@ class TestPrepare(PrepareBase):
         with self.assertRaises(rw.WorkerError) as cm:
             self.prepare()
         self.assertIn("gap", str(cm.exception))
+
+    def test_exit_line_that_was_already_in_the_log_before_the_job_started_is_refused(self):
+        # job B has no exit line of its own (power cut); the log still holds job A's: building B's resume at A's offset is wrong
+        self.log = klippy_log().encode()
+        self.now[0] = 2000.0
+        self.keeper().snapshot_once()             # a later baseline that already holds A's exit line, still before B (start 3000)
+        self.now[0] = 5000.0
+        self.log = self.log + b"Stats 900.0: more\n"
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("before the job started", str(cm.exception))
+
+    def test_no_snapshot_from_before_the_job_means_the_exit_line_cannot_be_attributed(self):
+        self.client.routes["/server/history/list?limit=1"] = hist(start_time=500.0)   # keeper started at 1000, after this job began
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("before the job started", str(cm.exception))
+
+    def test_history_without_a_start_time_is_refused(self):
+        self.client.routes["/server/history/list?limit=1"] = hist(start_time=None)
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
+
+    def test_gcode_file_that_is_not_the_one_that_printed_is_refused(self):
+        self.client.routes["/server/files/gcodes/part.gcode"] = make_gcode_bytes() + b"; re-uploaded\n"
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("size", str(cm.exception))
+
+    def test_history_without_a_file_size_is_refused(self):
+        self.client.routes["/server/history/list?limit=1"] = hist(metadata={})
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
 
     def test_missing_rate_is_refused(self):
         with self.assertRaises(rw.WorkerError):
@@ -533,8 +606,18 @@ class TestConfirm(PrepareBase):
     def test_worker_module_has_no_way_to_execute_the_runner(self):
         src = open(os.path.join(HERE, "rescue_worker.py")).read()
         code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
-        for banned in ("subprocess", "os.system", "os.exec", "Popen", "import rescue_run", "from rescue_run", "runpy", "importlib"):
+        for banned in ("subprocess", "os.system", "os.exec", "Popen", "import rescue_run", "from rescue_run", "runpy", "importlib",
+                       "__import__", "eval(", "exec(", "os.spawn", "os.popen"):
             self.assertNotIn(banned, code)
+        import ast
+        imported = set()
+        for n in ast.walk(ast.parse(src)):
+            if isinstance(n, ast.Import):
+                imported |= {a.name.split(".")[0] for a in n.names}
+            elif isinstance(n, ast.ImportFrom):
+                imported.add((n.module or "").split(".")[0])
+        self.assertTrue(imported <= {"argparse", "gzip", "hashlib", "json", "os", "re", "shlex", "sys", "time", "urllib",
+                                     "typing", "machine_profile", "rescue_job"}, imported)
         self.assertNotIn("allow-unverified", src)
 
 
@@ -567,6 +650,11 @@ class TestUnexpectedFailures(PrepareBase):
         finally:
             rw.rj.build_job = orig
         self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+
+
+class TestMainErrors(unittest.TestCase):
+    def test_confirm_on_a_directory_without_a_pending_job_is_a_refusal_not_a_traceback(self):
+        self.assertEqual(rw.main(["confirm", "--host", "h", "--job-dir", tempfile.mkdtemp()]), 2)
 
 
 class TestMainPermissions(unittest.TestCase):
