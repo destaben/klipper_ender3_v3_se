@@ -479,6 +479,7 @@ python3 -m unittest discover -s print-rescue -v
 |-------|---------|
 | P1 (code complete; review pass open, see the known issues) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
 | P2 | Moonraker-only interactive runner, see [the P2 design](print-rescue-p2-design.md): pauses the job queue, a `START_PRINT` lock while a rescue is active, uploads a state-and-tail resume file and starts it. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
+| P2b | Request-only Mainsail macro and a worker that prepares the plan and waits for a typed confirmation (never runs the runner; not deployed), see [print-rescue-worker.md](print-rescue-worker.md). |
 | P3 | Cold, empty-bed calibration: envelope corners; cutter approach in 0.5 mm steps to measure `x_max_safe`; head footprint tiers; probe spots; re-reference accuracy against homed truth (the user's dry-run idea: run the whole procedure on an empty bed and compare with a real `G28`). |
 | P4 | Interactive runner: confirm before every move, short moves, emergency stop, state re-read after every error. Gantry-tilt check from two probe points. |
 | P5 | Recorder/witness (periodic position and state snapshots during prints), start-of-print check. |

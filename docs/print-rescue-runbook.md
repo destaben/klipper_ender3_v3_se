@@ -207,7 +207,7 @@ lines in the kernel stream are counted in `events.txt` without stopping.
 ## Reproduce the checks
 
 ```bash
-python3 -m unittest discover -s print-rescue -v     # includes test_rescue_job.py and test_rescue_run.py (simulated Moonraker)
+python3 -m unittest discover -s print-rescue -v     # includes test_rescue_job.py, test_rescue_run.py (simulated Moonraker) and test_rescue_worker.py
 ```
 
 `test_rescue_run.py` checks: R13 refusal sends no motion; command order (lower bound declared before `G28`, probe after homing, print start last);

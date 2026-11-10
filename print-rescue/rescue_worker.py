@@ -20,10 +20,12 @@ Safety properties kept here (see docs/print-rescue-worker.md):
 import argparse
 import gzip
 import hashlib
+import ipaddress
 import json
 import os
 import re
 import shlex
+import socket
 import sys
 import time
 import urllib.error
@@ -55,8 +57,12 @@ class WorkerError(RuntimeError):
 
 # -- plumbing ----------------------------------------------------------------------------------------------------------
 def private_dir(path: str) -> str:
-    os.makedirs(path, mode=0o700, exist_ok=True)
-    os.chmod(path, 0o700)
+    """Create a directory readable by this user only. An EXISTING directory is left alone (it may be shared): only warn."""
+    if os.path.isdir(path):
+        if os.stat(path).st_mode & 0o077:
+            print("note: %s is accessible by others; it will hold host data" % os.path.basename(path), file=sys.stderr)
+        return path
+    os.makedirs(path, mode=0o700)
     return path
 
 
@@ -90,10 +96,16 @@ class ReadOnlyClient:
     """HTTP GET to Moonraker and nothing else. The API key (optional, trusted_clients may be enough) comes from a file that
     must be private; it is sent as a header and never put into a message."""
 
-    def __init__(self, host: str, key_file: Optional[str] = None, opener: Callable = _OPEN, timeout: int = 30):
+    def __init__(self, host: str, key_file: Optional[str] = None, opener: Callable = _OPEN, timeout: int = 30,
+                 accept_plaintext_key: bool = False, resolver: Callable = socket.getaddrinfo):
         self.host, self.opener, self.timeout = host, opener, timeout
         self._key = None
         if key_file:
+            # Moonraker speaks plain HTTP here: the key crosses the LAN in the clear and controls the printer. Opt-in only, private hosts only.
+            if not accept_plaintext_key:
+                raise WorkerError("a key would be sent over plain HTTP; prefer trusted_clients and no key, or pass the explicit "
+                                  "plaintext opt-in after reading docs/print-rescue-worker.md")
+            self._require_private_host(host, resolver)
             try:
                 st = os.stat(key_file)
                 with open(key_file) as f:
@@ -104,6 +116,17 @@ class ReadOnlyClient:
                 raise WorkerError("key file must be private (chmod 600): it is readable by others")
             if not self._key:
                 raise WorkerError("key file is empty")
+
+    @staticmethod
+    def _require_private_host(host: str, resolver: Callable) -> None:
+        name = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        name = name.strip("[]")
+        try:
+            addrs = {ipaddress.ip_address(a[4][0].split("%")[0]) for a in resolver(name, None)}
+        except (OSError, ValueError):
+            raise WorkerError("cannot resolve the host: refusing to send a key to an unknown address")
+        if not addrs or not all(a.is_private or a.is_loopback or a.is_link_local for a in addrs):
+            raise WorkerError("the host is not a private/loopback/link-local address: refusing to send a key over plain HTTP")
 
     def _get(self, path: str) -> bytes:
         if (not path.startswith("/") or path.startswith("//") or ".." in path or not path.startswith(ALLOWED_PREFIXES)
@@ -132,7 +155,7 @@ class ReadOnlyClient:
 def _status(client, path: str, key: str) -> dict:
     try:
         return client.get_json(path)["result"]["status"][key]
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, AttributeError):
         raise WorkerError("unexpected answer for %s" % key)
 
 
@@ -231,7 +254,7 @@ class LogKeeper:
             digest = sha256(data)
             if prev and prev[-1]["sha256"] == digest:
                 continue
-            gap = bool(prev) and not _contains_seq(data, prev[-1]["tail"])
+            gap = bool(prev) and (not prev[-1]["tail"] or not _contains_seq(data, prev[-1]["tail"]))
             now = self.clock()
             fname = "%s.%d.%s.gz" % (name.replace("/", "_"), int(now), digest[:8])
             write_private(os.path.join(self.dir, fname), gzip.compress(data))
@@ -292,7 +315,8 @@ def _check_filename(name: str) -> None:
 
 
 def _require_idle_ready(client) -> None:
-    ps = _status(client, PRINT_STATS_PATH, "print_stats").get("state")
+    st = _status(client, PRINT_STATS_PATH, "print_stats")
+    ps = st.get("state") if isinstance(st, dict) else None
     if ps != "standby":
         raise WorkerError("print state is %r, not standby (a running, paused or just-finished job is refused)" % ps)
     try:
@@ -363,7 +387,8 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
     d = private_dir(os.path.join(jobs_dir, "%s-%s" % (re.sub(r"[^0-9A-Za-z]", "", job_id) or "x", sha256(token.encode())[:10])))
     local = _safe_name(fname)
     resume_name = "resume_" + local if local.endswith(".gcode") else "resume_" + local + ".gcode"
-    gpath, lpath = os.path.join(d, local), os.path.join(d, "klippy.log")
+    ev = private_dir(os.path.join(d, "evidence"))
+    gpath, lpath = os.path.join(d, local), os.path.join(ev, "klippy.log")   # the log never shares a directory with a file named by the history
     write_private(gpath, gcode)
     write_private(lpath, keeper.read(entry))
     try:
@@ -374,7 +399,6 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
     rbytes = "\n".join(resume).encode("utf-8", "surrogateescape")
     write_private(os.path.join(d, "job.json"), jbytes)
     write_private(os.path.join(d, resume_name), rbytes)
-    ev = private_dir(os.path.join(d, "evidence"))
     write_private(os.path.join(ev, "klippy.log.gz"), gzip.compress(keeper.read(entry)))
     for e in reversed(keeper.entries()):
         if e["name"] != KLIPPY_LOG and not e["pruned"]:
@@ -451,6 +475,8 @@ def main(argv=None) -> int:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--host", required=True, help="Moonraker host[:port]")
     common.add_argument("--key-file", help="Moonraker API key file, mode 600 (optional when trusted_clients covers this host)")
+    common.add_argument("--accept-plaintext-key", action="store_true",
+                        help="allow --key-file: the key is sent over plain HTTP (private hosts only). Prefer trusted_clients and no key")
     common.add_argument("--profile", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles",
                                                            "creality-ender3-v3-se.json"))
     common.add_argument("--probe-spot", help="nozzle X,Y of the bare-bed probe spot, only used in the printed command")
@@ -467,7 +493,7 @@ def main(argv=None) -> int:
     c.add_argument("--job-dir", required=True)
     a = ap.parse_args(argv)
     try:
-        client = ReadOnlyClient(a.host, a.key_file)
+        client = ReadOnlyClient(a.host, a.key_file, accept_plaintext_key=a.accept_plaintext_key)
         if a.cmd == "confirm":
             try:
                 with open(os.path.join(a.job_dir, "PENDING.json")) as f:
@@ -479,6 +505,8 @@ def main(argv=None) -> int:
             out = confirm(a.job_dir, input("> ").strip("\n"), client, a.profile, a.probe_spot)
             print(json.dumps(out, indent=2))
             return 0
+        if not a.rate_bps and not a.polls:
+            raise WorkerError("need --rate-bps or --polls (bytes are not seconds; see the runbook, step 3)")
         work = private_dir(a.work_dir)
         keeper = LogKeeper(client, os.path.join(work, "logs"), max_bytes=a.max_log_mb * 1024 * 1024, max_age_s=a.max_log_days * 86400)
         jobs, state = private_dir(os.path.join(work, "jobs")), os.path.join(work, "state.json")

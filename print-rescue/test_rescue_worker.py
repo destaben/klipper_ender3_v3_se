@@ -117,6 +117,50 @@ class TestMacro(unittest.TestCase):
         self.assertNotIn(os.sep + "macros" + os.sep, MACRO_CFG)
 
 
+def _resolver(*addrs):
+    return lambda host, port, *a, **k: [(2, 1, 6, "", (x, 0)) for x in addrs]
+
+
+KEYOK = {"accept_plaintext_key": True, "resolver": _resolver("192.168.1.5")}
+
+
+class TestKeyOverPlainHttp(unittest.TestCase):
+    """Moonraker speaks plain HTTP: the key is sent in the clear, so it is only allowed on an explicit opt-in to a private address."""
+
+    def key(self):
+        d = tempfile.mkdtemp()
+        k = os.path.join(d, "key")
+        with open(k, "w") as f:
+            f.write("sekret-key")
+        os.chmod(k, 0o600)
+        return k
+
+    def test_key_is_refused_without_the_explicit_opt_in(self):
+        with self.assertRaises(rw.WorkerError) as cm:
+            rw.ReadOnlyClient("h", key_file=self.key(), resolver=_resolver("192.168.1.5"))
+        self.assertIn("plain HTTP", str(cm.exception))
+
+    def test_key_is_refused_for_a_public_or_mixed_address_even_with_the_opt_in(self):
+        for addrs in (("8.8.8.8",), ("192.168.1.5", "93.184.216.34"), ("2606:4700::1111",)):
+            with self.assertRaises(rw.WorkerError, msg=addrs):
+                rw.ReadOnlyClient("h", key_file=self.key(), accept_plaintext_key=True, resolver=_resolver(*addrs))
+
+    def test_key_is_allowed_on_private_loopback_and_link_local_with_the_opt_in(self):
+        for addrs in (("192.168.1.5",), ("10.0.0.2",), ("127.0.0.1",), ("169.254.1.1",), ("fe80::1",)):
+            rw.ReadOnlyClient("h", key_file=self.key(), accept_plaintext_key=True, resolver=_resolver(*addrs))
+
+    def test_unresolvable_host_with_a_key_is_refused(self):
+        def nope(*a, **k):
+            raise OSError("no")
+        with self.assertRaises(rw.WorkerError):
+            rw.ReadOnlyClient("h", key_file=self.key(), accept_plaintext_key=True, resolver=nope)
+
+    def test_no_key_needs_no_opt_in_and_no_resolution(self):
+        def boom(*a, **k):
+            raise AssertionError("must not resolve")
+        rw.ReadOnlyClient("h", resolver=boom)
+
+
 class TestReadOnlyClient(unittest.TestCase):
     def _opener(self, record, body=b"{}"):
         def opener(req, timeout=None):
@@ -143,18 +187,18 @@ class TestReadOnlyClient(unittest.TestCase):
     def test_key_file_must_be_private_and_exist(self):
         d = tempfile.mkdtemp()
         with self.assertRaises(rw.WorkerError) as cm:
-            rw.ReadOnlyClient("h", key_file=os.path.join(d, "missing"), opener=self._opener([]))
+            rw.ReadOnlyClient("h", key_file=os.path.join(d, "missing"), opener=self._opener([]), **KEYOK)
         self.assertIn("key file", str(cm.exception))
         k = os.path.join(d, "key")
         with open(k, "w") as f:
             f.write("sekret-key\n")
         os.chmod(k, 0o644)
         with self.assertRaises(rw.WorkerError) as cm:
-            rw.ReadOnlyClient("h", key_file=k, opener=self._opener([]))
+            rw.ReadOnlyClient("h", key_file=k, opener=self._opener([]), **KEYOK)
         self.assertNotIn("sekret-key", str(cm.exception))
         os.chmod(k, 0o600)
         rec = []
-        rw.ReadOnlyClient("h", key_file=k, opener=self._opener(rec, b"{}")).get_json("/printer/info")
+        rw.ReadOnlyClient("h", key_file=k, opener=self._opener(rec, b"{}"), **KEYOK).get_json("/printer/info")
         self.assertEqual(rec[0][2].get("X-api-key"), "sekret-key")
 
     def test_key_never_appears_in_errors(self):
@@ -167,7 +211,7 @@ class TestReadOnlyClient(unittest.TestCase):
         def boom(req, timeout=None):
             raise urllib.error.URLError("sekret-key refused")
         with self.assertRaises(rw.WorkerError) as cm:
-            rw.ReadOnlyClient("h", key_file=k, opener=boom).get_json("/printer/info")
+            rw.ReadOnlyClient("h", key_file=k, opener=boom, **KEYOK).get_json("/printer/info")
         self.assertNotIn("sekret-key", str(cm.exception))
 
 
@@ -204,7 +248,7 @@ class TestNoRedirect(unittest.TestCase):
         os.chmod(k, 0o600)
         try:
             with self.assertRaises(rw.WorkerError) as cm:
-                rw.ReadOnlyClient("127.0.0.1:%d" % red.server_port, key_file=k).get_json("/printer/info")
+                rw.ReadOnlyClient("127.0.0.1:%d" % red.server_port, key_file=k, accept_plaintext_key=True).get_json("/printer/info")
             self.assertIn("302", str(cm.exception))
             self.assertEqual(seen, [])
         finally:
@@ -369,6 +413,16 @@ class TestLogKeeper(unittest.TestCase):
             k.snapshot_once()
         self.assertTrue(all(not e["pruned"] for e in self.manifest()))
 
+    def test_rotation_right_after_an_empty_snapshot_is_flagged_as_a_gap(self):
+        self.logs["logs/klippy.log"] = b""
+        k = self.keeper()
+        k.snapshot_once()
+        self.now[0] += 300
+        self.logs["logs/klippy.log"] = b"later\nlines\n"
+        k.snapshot_once()
+        last = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][-1]
+        self.assertTrue(last["gap"])   # an empty snapshot proves nothing about what was written before the next one
+
     def test_manifest_never_holds_log_content(self):
         self.keeper().snapshot_once()
         with open(os.path.join(self.store, "manifest.jsonl")) as f:
@@ -519,6 +573,19 @@ class TestPrepare(PrepareBase):
         with self.assertRaises(rw.WorkerError):
             self.prepare()
 
+    def test_gcode_named_like_the_log_is_not_overwritten_by_it(self):
+        gc = make_gcode_bytes()
+        self.client.routes["/server/history/list?limit=1"] = hist(filename="klippy.log")
+        self.client.routes["/server/files/gcodes/klippy.log"] = gc
+        d = self.prepare()
+        with open(os.path.join(d, "klippy.log"), "rb") as f:
+            self.assertEqual(f.read(), gc)
+
+    def test_non_dict_print_stats_is_a_refusal_not_a_traceback(self):
+        self.client.routes["/printer/objects/query?print_stats"] = {"result": {"status": {"print_stats": "oops"}}}
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
+
     def test_missing_rate_is_refused(self):
         with self.assertRaises(rw.WorkerError):
             self.prepare(rate_bps=None)
@@ -616,7 +683,7 @@ class TestConfirm(PrepareBase):
                 imported |= {a.name.split(".")[0] for a in n.names}
             elif isinstance(n, ast.ImportFrom):
                 imported.add((n.module or "").split(".")[0])
-        self.assertTrue(imported <= {"argparse", "gzip", "hashlib", "json", "os", "re", "shlex", "sys", "time", "urllib",
+        self.assertTrue(imported <= {"argparse", "gzip", "hashlib", "ipaddress", "json", "os", "re", "shlex", "socket", "sys", "time", "urllib",
                                      "typing", "machine_profile", "rescue_job"}, imported)
         self.assertNotIn("allow-unverified", src)
 
@@ -653,6 +720,15 @@ class TestUnexpectedFailures(PrepareBase):
 
 
 class TestMainErrors(unittest.TestCase):
+    def test_run_without_a_file_rate_is_refused_at_startup_and_consumes_no_request(self):
+        self.assertEqual(rw.main(["run", "--host", "h", "--work-dir", os.path.join(tempfile.mkdtemp(), "w"), "--once"]), 2)
+
+    def test_existing_work_dir_permissions_are_not_changed(self):
+        d = tempfile.mkdtemp()
+        os.chmod(d, 0o755)
+        rw.private_dir(d)
+        self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o755)
+
     def test_confirm_on_a_directory_without_a_pending_job_is_a_refusal_not_a_traceback(self):
         self.assertEqual(rw.main(["confirm", "--host", "h", "--job-dir", tempfile.mkdtemp()]), 2)
 

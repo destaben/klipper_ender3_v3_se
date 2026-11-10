@@ -25,7 +25,7 @@ Mainsail button RESCUE_REQUEST  ->  counter+stamp bump in Klipper  ->  worker po
 | Trigger | A: a macro only bumps `seq`/`stamp`; the worker polls `GET /printer/objects/query` | Smallest printer-side change, no motion, no new Moonraker component. B (`action_call_remote_method`) and C (database item) would couple the macro to a Moonraker component or write path this increment does not need. D (automatic detection) removes the human trigger. |
 | Reaching Moonraker | HTTP GET only: history, gcode download, log files via `/server/files/logs/...`. No ssh in this increment | One protocol, no shell on the Pi. The client has no method other than GET and an allow-list of paths (a test fails if any other method is sent). |
 | Log retention | The worker snapshots the Klippy and Moonraker logs every 5 min into a private store (gzip, 512 MB and 14 day caps, newest snapshot of each log is never pruned) with a manifest that flags a **gap** when a snapshot does not overlap the previous one | Docker logs rotate in about an hour and the worker host restarts daily. A job built from a log that does not cover the stop is refused. |
-| Auth | Optional Moonraker API key in a file that must be mode 600 and is never logged; LAN only | Nothing is exposed to the internet. Honest limit: a Moonraker API key is not scoped, so "GET only" is enforced by this client, not by Moonraker. Prefer narrowing `trusted_clients` to the worker's address and no key at all. |
+| Auth | Optional Moonraker API key in a file that must be mode 600 and is never logged; LAN only | Nothing is exposed to the internet. Moonraker speaks plain HTTP here, so a key crosses the LAN in the clear: `--key-file` is refused unless `--accept-plaintext-key` is passed AND the host resolves only to private, loopback or link-local addresses. The key file holds one line, mode 600, never logged. Honest limit: a Moonraker API key is not scoped, so "GET only" is enforced by this client, not by Moonraker. Prefer narrowing `trusted_clients` to the worker's address and no key at all. |
 
 Council amendments, all implemented: completeness manifest for the logs; poller state on disk (a worker restart does not replay a
 request; a Klippy restart resets the counter but the stamp still tells a new press apart); the confirmation is bound to the job id
@@ -78,3 +78,16 @@ python3 print-rescue/rescue_worker.py confirm --host <host> --job-dir <private d
 ```
 
 `--rate-bps` (or `--polls <poll.csv>`) is required: bytes are not seconds (runbook, step 3).
+
+## Installing the macro (an owner decision; NOT done by this PR)
+
+1. Copy `print-rescue/printer-macro/rescue_request.cfg` next to `printer.cfg` on the printer (for example `macros/rescue_request.cfg`).
+2. Add `[include macros/rescue_request.cfg]` to `printer.cfg` and restart Klippy.
+3. Check read-only: `RESCUE_REQUEST` appears in the console list, and `print_stats.state` reads `standby` when idle (see the unverified item above).
+Pressing it prints one line and bumps the counter; nothing moves.
+
+## Running and testing
+
+* No supervisor is chosen yet: a systemd unit or a container restart policy both work, since state and logs are on disk.
+* Tests: `python3 -m unittest discover -s print-rescue -v` (the worker's are `test_rescue_worker.py`, all against stubs and local sockets).
+* Left open after review (low impact): a failed state write after a prepare can repeat the read-only prepare on the next poll; 
