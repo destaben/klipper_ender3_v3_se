@@ -74,11 +74,21 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the API key header to another host and skip the path allow-list: never follow one."""
+
+    def redirect_request(self, *a, **k):
+        return None
+
+
+_OPEN = urllib.request.build_opener(_NoRedirect).open
+
+
 class ReadOnlyClient:
     """HTTP GET to Moonraker and nothing else. The API key (optional, trusted_clients may be enough) comes from a file that
     must be private; it is sent as a header and never put into a message."""
 
-    def __init__(self, host: str, key_file: Optional[str] = None, opener: Callable = urllib.request.urlopen, timeout: int = 30):
+    def __init__(self, host: str, key_file: Optional[str] = None, opener: Callable = _OPEN, timeout: int = 30):
         self.host, self.opener, self.timeout = host, opener, timeout
         self._key = None
         if key_file:
@@ -210,7 +220,7 @@ class LogKeeper:
                 continue
             gap = bool(prev) and not _contains_seq(data, prev[-1]["tail"])
             now = self.clock()
-            fname = "%s.%d.gz" % (name.replace("/", "_"), int(now))
+            fname = "%s.%d.%s.gz" % (name.replace("/", "_"), int(now), digest[:8])
             write_private(os.path.join(self.dir, fname), gzip.compress(data))
             e = {"name": name, "file": fname, "taken_at": now, "size": len(data), "sha256": digest,
                  "first": not prev, "gap": gap, "tail": _tail_hashes(data), "pruned": False}
@@ -372,7 +382,12 @@ def confirm(job_dir: str, typed: str, client, profile_path: str, probe_spot: Opt
                      "this worker never adds the override flag.")
     notes.append("upload the resume file to the printer yourself (runbook, step 3), run the dry run, then run without --dry-run "
                  "with a finger on the emergency stop.")
-    atomic_json(os.path.join(job_dir, "CONFIRMED.json"), {"tag": p["tag"], "confirmed_at": time.time(), "dry_run_command": cmd})
+    try:   # O_EXCL: two concurrent confirms cannot both succeed
+        fd = os.open(os.path.join(job_dir, "CONFIRMED.json"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise WorkerError("this job was already confirmed (single use): prepare a new request")
+    with os.fdopen(fd, "w") as f:
+        json.dump({"tag": p["tag"], "confirmed_at": time.time(), "dry_run_command": cmd}, f, indent=1)
     return {"command": cmd, "notes": notes, "motion_blocked_by_profile": blocked}
 
 
@@ -384,9 +399,11 @@ def watch_once(client, state_path: str, keeper: LogKeeper, jobs_dir: str, rate_b
         return None
     try:
         d = prepare(client, keeper, jobs_dir, rate_bps, token, profile_path, probe_spot)
-    except WorkerError:
+    except Exception as e:
         poller.mark_handled(token)   # no hot retry loop: the person presses the button again after fixing the cause
-        raise
+        if isinstance(e, WorkerError):
+            raise
+        raise WorkerError("unexpected %s while preparing" % type(e).__name__)
     poller.mark_handled(token)
     return d
 

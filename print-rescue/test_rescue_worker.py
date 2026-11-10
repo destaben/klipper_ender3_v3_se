@@ -5,7 +5,9 @@ import os
 import re
 import stat
 import tempfile
+import threading
 import unittest
+import http.server
 import urllib.error
 
 import rescue_worker as rw
@@ -150,6 +152,47 @@ class TestReadOnlyClient(unittest.TestCase):
         self.assertNotIn("sekret-key", str(cm.exception))
 
 
+class TestNoRedirect(unittest.TestCase):
+    def test_a_redirect_is_never_followed_so_the_key_cannot_travel(self):
+        seen = []
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(dict(self.headers))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *a):
+                pass
+        target = http.server.HTTPServer(("127.0.0.1", 0), Target)
+
+        class Redirector(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1:%d/printer/info" % target.server_port)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        red = http.server.HTTPServer(("127.0.0.1", 0), Redirector)
+        for srv in (target, red):
+            threading.Thread(target=srv.handle_request, daemon=True).start()
+        d = tempfile.mkdtemp()
+        k = os.path.join(d, "key")
+        with open(k, "w") as f:
+            f.write("sekret-key")
+        os.chmod(k, 0o600)
+        try:
+            with self.assertRaises(rw.WorkerError) as cm:
+                rw.ReadOnlyClient("127.0.0.1:%d" % red.server_port, key_file=k).get_json("/printer/info")
+            self.assertIn("302", str(cm.exception))
+            self.assertEqual(seen, [])
+        finally:
+            red.server_close()
+            target.server_close()
+
+
 class TestPoller(unittest.TestCase):
     def setUp(self):
         self.state = os.path.join(tempfile.mkdtemp(), "state.json")
@@ -240,6 +283,17 @@ class TestLogKeeper(unittest.TestCase):
         self.keeper().snapshot_once()   # a brand-new keeper reads the manifest from disk
         last = [x for x in self.manifest() if x["name"] == "logs/klippy.log"][-1]
         self.assertTrue(last["gap"])
+
+    def test_two_snapshots_in_the_same_second_do_not_overwrite_each_other(self):
+        k = self.keeper()
+        k.snapshot_once()
+        self.logs["logs/klippy.log"] = b"restarted\nfresh\n"   # rotated within the same wall-clock second
+        k.snapshot_once()
+        ents = [e for e in self.manifest() if e["name"] == "logs/klippy.log"]
+        self.assertEqual(len(ents), 2)
+        self.assertNotEqual(ents[0]["file"], ents[1]["file"])
+        self.assertEqual(k.read(ents[0]), b"a\nb\nc\nd\n")
+        self.assertEqual(k.read(ents[1]), b"restarted\nfresh\n")
 
     def test_unchanged_log_is_not_stored_twice(self):
         k = self.keeper()
@@ -467,6 +521,20 @@ class TestLoop(PrepareBase):
         self.log = b"nothing useful\n"
         with self.assertRaises(rw.WorkerError):
             rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
+        self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+
+
+class TestUnexpectedFailures(PrepareBase):
+    def test_an_unexpected_exception_in_prepare_is_a_refusal_and_is_remembered(self):
+        st = os.path.join(self.work, "state.json")
+        self.client.routes[MACRO_PATH] = macro_status(1, 5.0)
+        orig = rw.rj.build_job
+        rw.rj.build_job = lambda *a, **k: (_ for _ in ()).throw(KeyError("boom"))
+        try:
+            with self.assertRaises(rw.WorkerError):
+                rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
+        finally:
+            rw.rj.build_job = orig
         self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
 
 
