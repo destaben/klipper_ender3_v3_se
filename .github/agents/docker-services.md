@@ -14,7 +14,7 @@ Help with all tasks related to `docker-compose.yaml`, `Dockerfile-klipper`, `Doc
 | `mainsail` | `ghcr.io/mainsail-crew/mainsail:v2.12.0` | `http://<host_ip>/` |
 | `klipper` | Custom (`Dockerfile-klipper`) | internal |
 | `moonraker` | Custom (`Dockerfile-moonraker`) | `http://<host_ip>/printer` etc. |
-| `node-exporter` | `prom/node-exporter:v1.9.1` | `http://<host_ip>/nodeexporter` |
+| `node-exporter` | `prom/node-exporter:v1.9.1` (textfile collector reads `./textfile`, written by `scripts/rpi-metrics.sh`) | `http://<host_ip>/nodeexporter` |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor:v0.52.0` | `http://<host_ip>/cadvisor` |
 | `klipper-connect` | Custom (`Dockerfile-klipper-connect`), behind the `prusa-connect` profile | internal (no ports, no Traefik) |
 | `mmu-fallback`, `mmu-virtual` | Custom (`Dockerfile-mmu-fallback`), behind the `mmu-fallback` profile | internal (no ports, no Traefik) |

@@ -164,10 +164,13 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      # Written by scripts/rpi-metrics.sh (user crontab, see setup_services.sh).
+      - ./textfile:/textfile:ro
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
+      - '--collector.textfile.directory=/textfile'
     labels:
       traefik.enable: true
       traefik.http.services.nodeexporter.loadbalancer.server.port: 9100

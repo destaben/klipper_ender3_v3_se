@@ -1,0 +1,28 @@
+name: RPi Metrics Tests
+
+"on":
+  push:
+    branches: [main]
+    paths: ['scripts/**', 'setup_services.sh', 'docker-compose.yaml', '.github/workflows/rpi-metrics-test.yml']
+  pull_request:
+    branches: [main]
+    paths: ['scripts/**', 'setup_services.sh', 'docker-compose.yaml', '.github/workflows/rpi-metrics-test.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: rpi-metrics tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Run unit tests (with promtool check metrics)
+        env:
+          RPI_PROMTOOL: docker run --rm -i --entrypoint promtool prom/prometheus:v2.55.1
+        run: python3 -m unittest discover -s scripts -v
