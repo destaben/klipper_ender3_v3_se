@@ -50,9 +50,13 @@ and a hash of the job and resume files.
 * **Unverified against a real Moonraker**: that `/server/files/logs/klippy.log` exists in this docker layout (`moonraker/logs` is mounted; check
   that Klipper writes its log there), that the macro's `estimated_print_time` stamp renders as expected, and the real log rotation behaviour.
   Test them read-only before relying on this.
-* A request token is `<seq>@<stamp>`. A new press that reproduces an already handled token exactly (same counter after a Klippy restart AND the same
-  print-time stamp to the millisecond) would be ignored silently. Not mitigated: the stamp is the print time at the press, so a collision needs the same
-  millisecond. If a press seems to do nothing, check the worker's output and press again.
+* A request token is `<seq>@<stamp>`. The stamp is `estimated_print_time`, which is about 0 after a Klippy restart until something moves. Two presses
+  with no motion between them across a restart can therefore produce the same token (`1@0.0`), and the second is ignored silently. This is more likely on
+  an idle printer than "the same millisecond" suggests. Not mitigated (a better stamp, such as a wall-clock time, needs a design choice). If a press
+  seems to do nothing, check the worker's output and press again.
+* A failed prepare (including a transient Moonraker timeout) marks the request handled, so the person must press again. Chosen over automatic retry to
+  avoid a hot loop against a printer that is in trouble; the cause is printed as `REFUSED`.
+* Each log snapshot is read into memory whole. Fine for the hourly-rotated logs (a few MB); not for a log grown to hundreds of MB.
 * The worker does not upload the resume file (that is a POST); the person does it (runbook step 3).
 * Where the worker runs, and how it restarts, is the owner's choice: run `rescue_worker.py run` under any supervisor (systemd unit, container
   restart policy). A daily restart is safe: state and logs are on disk.

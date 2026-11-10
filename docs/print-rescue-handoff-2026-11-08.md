@@ -76,7 +76,7 @@ Facts worth keeping:
 5. **Fix the boot race** between Klippy and `mmu-fallback` (make Klippy wait for the include file, or make the include optional) and document it in `docs/`.
 6. **Inspect the joins** of the rescued vase (around layers 203-204, 408-410 and 265) and record whether the overlap material and the Z were right.
 7. **Add a unit test for `rescue_watch.py`** (reboot detection, frozen position, capture on failure).
-8. Issue #115: start a rescue from a Mainsail macro with a worker on another host.
+8. Issue #115: start a rescue from a Mainsail macro with a worker on another host. A request-only macro and a preparing worker exist (PR #120, not deployed, see `print-rescue-worker.md`); the run itself stays manual.
 9. Housekeeping on the printer: remove the uploaded `resume_*.gcode` files and the purge blobs, and decide on the uncommitted `z_offset` edit in the working `printer.cfg`
    (the profile says 2.96, which equals the live value; R14 compares them).
 

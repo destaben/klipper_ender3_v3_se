@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import time
 import urllib.error
@@ -375,7 +376,7 @@ def confirm(job_dir: str, typed: str, client, profile_path: str, probe_spot: Opt
     profile = mp.load_profile(profile_path)
     blocked = bool(mp.motion_ready(profile))
     cmd = "python3 print-rescue/rescue_run.py --host %s --profile print-rescue/profiles/creality-ender3-v3-se.json --job %s --probe-spot %s --dry-run" % (
-        getattr(client, "host", "<host>"), os.path.join(job_dir, "job.json"), probe_spot or "<X,Y>")
+        shlex.quote(str(getattr(client, "host", "<host>"))), shlex.quote(os.path.join(job_dir, "job.json")), shlex.quote(probe_spot or "<X,Y>"))
     notes = []
     if blocked:
         notes.append("the profile head box is still owner-stated (R13): rescue_run.py will refuse to move. Measure the head; "

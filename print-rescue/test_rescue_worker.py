@@ -457,6 +457,13 @@ class TestConfirm(PrepareBase):
         self.assertIn("--dry-run", out["command"])
         self.assertNotIn("--allow-unverified", out["command"])
 
+    def test_printed_command_is_shell_quoted(self):
+        import shlex
+        out = rw.confirm(self.dir, self.good, client=self.client, profile_path=PROFILE, probe_spot="1,2; touch pwned")
+        parts = shlex.split(out["command"])
+        self.assertIn("1,2; touch pwned", parts)
+        self.assertEqual(parts.count("--dry-run"), 1)
+
     def test_wrong_phrases_are_refused(self):
         for bad in ("", "yes", "CONFIRM", "confirm %s at printer" % self.tag, "CONFIRM 000041-deadbeef AT PRINTER",
                     self.good + " ", "CONFIRM %s" % self.tag):
