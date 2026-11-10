@@ -65,7 +65,7 @@ def exit_pos_of(lines):
 
 EXIT_POS = exit_pos_of(synth_gcode())
 HIST = {"result": {"jobs": [{"job_id": "000042", "filename": "part.gcode", "status": "klippy_shutdown",
-                             "start_time": 3000.0, "end_time": 4000.0, "metadata": {"size": len(make_gcode_bytes())}}]}}
+                             "start_time": 3000.0, "end_time": 4000.0, "metadata": {"size": len(make_gcode_bytes()), "modified": 1700000000.5}}]}}
 
 
 def hist(**kw):
@@ -439,6 +439,7 @@ class PrepareBase(unittest.TestCase):
         self.client = FakeClient({
             "/server/history/list?limit=1": HIST,
             "/server/files/gcodes/part.gcode": make_gcode_bytes(),
+            "/server/files/metadata?filename=part.gcode": {"result": {"modified": 1700000000.5}},
             "/server/files/logs/klippy.log": lambda: self.log,
             "/server/files/logs/moonraker.log": b"m\n",
             "/printer/objects/query?print_stats": {"result": {"status": {"print_stats": {"state": "standby"}}}},
@@ -568,6 +569,25 @@ class TestPrepare(PrepareBase):
             self.prepare()
         self.assertIn("size", str(cm.exception))
 
+    def test_same_length_reupload_with_a_later_modification_time_is_refused(self):
+        same_size = make_gcode_bytes().replace(b"G1 X20", b"G1 X21", 1)
+        self.assertEqual(len(same_size), len(make_gcode_bytes()))
+        self.client.routes["/server/files/gcodes/part.gcode"] = same_size
+        self.client.routes["/server/files/metadata?filename=part.gcode"] = {"result": {"modified": 1700009999.0}}
+        with self.assertRaises(rw.WorkerError) as cm:
+            self.prepare()
+        self.assertIn("modified", str(cm.exception))
+
+    def test_unreadable_file_modification_time_is_refused(self):
+        del self.client.routes["/server/files/metadata?filename=part.gcode"]
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
+
+    def test_history_without_a_modification_time_is_refused(self):
+        self.client.routes["/server/history/list?limit=1"] = hist(metadata={"size": len(make_gcode_bytes())})
+        with self.assertRaises(rw.WorkerError):
+            self.prepare()
+
     def test_history_without_a_file_size_is_refused(self):
         self.client.routes["/server/history/list?limit=1"] = hist(metadata={})
         with self.assertRaises(rw.WorkerError):
@@ -577,6 +597,7 @@ class TestPrepare(PrepareBase):
         gc = make_gcode_bytes()
         self.client.routes["/server/history/list?limit=1"] = hist(filename="klippy.log")
         self.client.routes["/server/files/gcodes/klippy.log"] = gc
+        self.client.routes["/server/files/metadata?filename=klippy.log"] = {"result": {"modified": 1700000000.5}}
         d = self.prepare()
         with open(os.path.join(d, "klippy.log"), "rb") as f:
             self.assertEqual(f.read(), gc)
@@ -695,6 +716,23 @@ class TestLoop(PrepareBase):
         r = rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
         self.assertTrue(os.path.isdir(r))
         self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+
+    def test_an_already_handled_token_is_reported_once_not_dropped_silently(self):
+        import contextlib, io
+        rw._SKIP_REPORTED.clear()
+        st = os.path.join(self.work, "state.json")
+        self.client.routes[MACRO_PATH] = macro_status(1, 5.0)
+        rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+            self.assertIsNone(rw.watch_once(self.client, st, self.keeper(), self.jobs, 40.0, PROFILE, "134,215"))
+        self.assertEqual(err.getvalue().count("SKIPPED request"), 1)
+
+    def test_printed_command_uses_the_profile_that_was_checked(self):
+        d = self.prepare()
+        out = rw.confirm(d, rw.PHRASE % json.load(open(os.path.join(d, "PENDING.json")))["tag"], self.client, PROFILE, "134,215")
+        self.assertIn("--profile " + PROFILE, out["command"])
 
     def test_failed_prepare_is_remembered_so_it_does_not_loop_hot(self):
         st = os.path.join(self.work, "state.json")

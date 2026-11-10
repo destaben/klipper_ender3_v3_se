@@ -45,7 +45,7 @@ KLIPPY_LOG = "logs/klippy.log"
 LOGS = (KLIPPY_LOG, "logs/moonraker.log")
 # Job statuses that mean "the print stopped abnormally". A job that completed or was cancelled by a person is not a rescue.
 ABNORMAL = ("klippy_shutdown", "klippy_disconnect", "error", "interrupted", "server_exit")
-ALLOWED_PREFIXES = ("/printer/info", "/printer/objects/query", "/server/history/list", "/server/files/gcodes/", "/server/files/logs/",
+ALLOWED_PREFIXES = ("/printer/info", "/printer/objects/query", "/server/history/list", "/server/files/gcodes/", "/server/files/logs/", "/server/files/metadata",
                     "/server/info")
 EVIDENCE_NOTE = "cause evidence incomplete: no kernel journal was kept (keep `journalctl -k -f` on this host and add it)"
 PHRASE = "CONFIRM %s AT PRINTER"
@@ -169,6 +169,7 @@ class Poller:
 
     def __init__(self, client, state_path: str):
         self.client, self.path = client, state_path
+        self.skipped: Optional[str] = None
 
     def _handled(self) -> List[str]:
         try:
@@ -191,7 +192,10 @@ class Poller:
         if seq <= 0 or ps != "standby":
             return None
         token = "%d@%s" % (seq, stamp)
-        return None if token in self._handled() else token
+        if token in self._handled():
+            self.skipped = token
+            return None
+        return token
 
 
 # -- log keeping ---------------------------------------------------------------------------------------------------------
@@ -371,8 +375,9 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
     try:
         job_start = float(job["start_time"])
         want_size = int(job["metadata"]["size"])
+        want_modified = float(job["metadata"]["modified"])
     except (KeyError, TypeError, ValueError):
-        raise WorkerError("the history job has no start time or file size: the stop cannot be tied to this job")
+        raise WorkerError("the history job has no start time, file size or file modification time: the stop cannot be tied to this job")
     _check_filename(fname)
     if status not in ABNORMAL:
         raise WorkerError("the last job ended with status %r, not a stop that needs a rescue" % status)
@@ -380,6 +385,12 @@ def prepare(client, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float],
         raise WorkerError("the last job is itself a resume file: build this one by hand with --exit-file (runbook, step 3)")
     keeper.snapshot_once()   # newest evidence first; a failed fetch is tolerated, the kept snapshots are still used
     entry = _pick_klippy_log(keeper, job_start)
+    try:   # a same-length re-upload keeps the size: the modification time recorded at print time must still match
+        now_modified = float(client.get_json("/server/files/metadata?filename=" + urllib.parse.quote(fname))["result"]["modified"])
+    except (WorkerError, KeyError, TypeError, ValueError):
+        raise WorkerError("cannot read the modification time of the G-code on the printer: it cannot be tied to the job that printed")
+    if now_modified != want_modified:
+        raise WorkerError("the G-code on the printer was modified after the job that printed: it is not the file that printed")
     gcode = client.get_bytes("/server/files/gcodes/" + urllib.parse.quote(fname))
     if len(gcode) != want_size:
         raise WorkerError("the G-code on the printer has size %d, the job that printed had size %d: it is not the file that printed" % (len(gcode), want_size))
@@ -434,8 +445,8 @@ def confirm(job_dir: str, typed: str, client, profile_path: str, probe_spot: Opt
     _require_idle_ready(client)
     profile = mp.load_profile(profile_path)
     blocked = bool(mp.motion_ready(profile))
-    cmd = "python3 print-rescue/rescue_run.py --host %s --profile print-rescue/profiles/creality-ender3-v3-se.json --job %s --probe-spot %s --dry-run" % (
-        shlex.quote(str(getattr(client, "host", "<host>"))), shlex.quote(os.path.join(job_dir, "job.json")), shlex.quote(probe_spot or "<X,Y>"))
+    cmd = "python3 print-rescue/rescue_run.py --host %s --profile %s --job %s --probe-spot %s --dry-run" % (
+        shlex.quote(str(getattr(client, "host", "<host>"))), shlex.quote(profile_path), shlex.quote(os.path.join(job_dir, "job.json")), shlex.quote(probe_spot or "<X,Y>"))
     notes = []
     if blocked:
         notes.append("the profile head box is still owner-stated (R13): rescue_run.py will refuse to move. Measure the head; "
@@ -451,11 +462,19 @@ def confirm(job_dir: str, typed: str, client, profile_path: str, probe_spot: Opt
     return {"command": cmd, "notes": notes, "motion_blocked_by_profile": blocked}
 
 
+_SKIP_REPORTED: set = set()
+
+
 def watch_once(client, state_path: str, keeper: LogKeeper, jobs_dir: str, rate_bps: Optional[float], profile_path: str,
                probe_spot: Optional[str] = None) -> Optional[str]:
     poller = Poller(client, state_path)
     token = poller.check()
     if token is None:
+        if poller.skipped and poller.skipped not in _SKIP_REPORTED:   # once per token and process: no output every poll
+            _SKIP_REPORTED.add(poller.skipped)
+            print("SKIPPED request %s: that token was already handled (a Klippy restart resets it, so a new press can look "
+                  "identical). If you just pressed the button, see docs/print-rescue-worker.md, known limits." % poller.skipped,
+                  file=sys.stderr, flush=True)
         return None
     try:
         d = prepare(client, keeper, jobs_dir, rate_bps, token, profile_path, probe_spot)

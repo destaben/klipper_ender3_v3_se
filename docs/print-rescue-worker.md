@@ -41,7 +41,7 @@ and a hash of the job and resume files.
 * The stop is tied to the history job: the exit line must be NEW since a kept snapshot taken at least 5 minutes before the job started (the worker and printer
   clocks are not synchronised), with no gap in between, because Klippy may append to its log across restarts and an older job's exit line would give the wrong
   resume point. This needs the log keeper to have been running before the job started; otherwise the worker refuses. The G-code downloaded by name must have
-  the size the history recorded for the job that printed (a re-uploaded file of the same name is refused).
+  the size the history recorded for the job that printed (a re-uploaded file of the same name is refused). Because a same-length edit keeps the size, the file's modification time on the printer must also equal the one the history recorded; if either is missing, the worker refuses.
 * Refused rather than guessed: last job ended normally, last job was itself a resume file (build by hand with `--exit-file`), unsafe file name
   in the history, no `Exiting SD card print` line in any kept log, a gap after the snapshot that holds it, no `--rate-bps`/`--polls`.
 * A failed prepare marks the request handled (no hot retry loop): fix the cause and press the button again.
@@ -55,7 +55,7 @@ and a hash of the job and resume files.
   that Klipper writes its log there), that the macro's `estimated_print_time` stamp renders as expected, and the real log rotation behaviour.
   Test them read-only before relying on this.
 * A request token is `<seq>@<stamp>`. The stamp is `estimated_print_time`, which is about 0 after a Klippy restart until something moves. Two presses
-  with no motion between them across a restart can therefore produce the same token (`1@0.0`), and the second is ignored silently. This is more likely on
+  with no motion between them across a restart can therefore produce the same token (`1@0.0`), and the second is ignored (the worker prints one `SKIPPED request ...` line per token and process, so it is not silent, but it cannot tell the two presses apart). This is more likely on
   an idle printer than "the same millisecond" suggests. Not mitigated (a better stamp, such as a wall-clock time, needs a design choice). If a press
   seems to do nothing, check the worker's output and press again.
 * A failed prepare (including a transient Moonraker timeout) marks the request handled, so the person must press again. Chosen over automatic retry to
@@ -90,4 +90,4 @@ Pressing it prints one line and bumps the counter; nothing moves.
 
 * No supervisor is chosen yet: a systemd unit or a container restart policy both work, since state and logs are on disk.
 * Tests: `python3 -m unittest discover -s print-rescue -v` (the worker's are `test_rescue_worker.py`, all against stubs and local sockets).
-* Left open after review (low impact): a failed state write after a prepare can repeat the read-only prepare on the next poll; 
+* Left open after review (low impact): a failed state write after a prepare can repeat the read-only prepare on the next poll (it prepares into a new job directory and moves nothing); a history file named `job.json` has its evidence copy overwritten by the job manifest (the resume was already built from it); an `http_proxy` in the environment would see the API key header when `--accept-plaintext-key` is used (unset it on the worker host). 
