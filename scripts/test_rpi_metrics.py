@@ -55,7 +55,7 @@ class RpiMetricsTest(unittest.TestCase):
             f.write(body)
         os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
 
-    def run_script(self, thermal="51234\n", cpufreq="1500000\n", wireless=WIRELESS, args=None):
+    def run_script(self, thermal="51234\n", cpufreq="1500000\n", wireless=WIRELESS, args=None, extra_env=None):
         env = {
             "PATH": self.bin + os.pathsep + "/usr/bin:/bin",
             "RPI_THERMAL_FILE": self.write("thermal", thermal) if thermal is not None
@@ -65,6 +65,7 @@ class RpiMetricsTest(unittest.TestCase):
             "RPI_WIRELESS_FILE": self.write("wireless", wireless) if wireless is not None
             else os.path.join(self.tmp, "no-wireless"),
         }
+        env.update(extra_env or {})
         return subprocess.run([SH, SCRIPT] + ([self.out] if args is None else args), env=env,
                               capture_output=True, text=True)
 
@@ -141,6 +142,19 @@ class RpiMetricsTest(unittest.TestCase):
             self.assertNotIn("rpi_core_volts", v)
             self.assertIn("rpi_cpu_temp_celsius", v)
 
+    def test_lone_dash_and_dot_are_omitted(self):
+        self.stub_vcgencmd()
+        r = self.run_script(wireless=WIRELESS.replace("60.  -50.", "-.  -."), thermal="x\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("rpi_wifi", self.prom())
+
+    def test_unsafe_iface_label_skips_wifi(self):
+        self.stub_vcgencmd()
+        r = self.run_script(wireless=WIRELESS.replace("wlan0", 'a"b'),
+                            extra_env={"RPI_WIFI_IFACE": 'a"b'})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("rpi_wifi", self.prom())
+
     def test_missing_wifi_interface_omits_wifi(self):
         self.stub_vcgencmd()
         self.run_script(wireless=WIRELESS.replace("wlan0", "wlan9"))
@@ -168,6 +182,56 @@ class RpiMetricsTest(unittest.TestCase):
             r = subprocess.run(cmd + ["check", "metrics"], stdin=f,
                                capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+INSTALLER = os.path.join(os.path.dirname(SCRIPT), "install-rpi-cron.sh")
+
+
+class InstallCronTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bin = os.path.join(self.tmp, "bin")
+        os.mkdir(self.bin)
+        self.tab = os.path.join(self.tmp, "tab")
+        stub = (
+            "#!/bin/sh\n"
+            'case "$*" in\n'
+            '  *-l*) if [ -f "%s" ]; then cat "%s"; else echo "no crontab for x" >&2; exit 1; fi;;\n'
+            '  *) cat > "%s";;\n'
+            "esac\n"
+        ) % (self.tab, self.tab, self.tab)
+        path = os.path.join(self.bin, "crontab")
+        with open(path, "w") as f:
+            f.write(stub)
+        os.chmod(path, 0o755)
+
+    def run_installer(self, repo):
+        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "USER": "tester"}
+        return subprocess.run([SH, INSTALLER, repo], env=env, capture_output=True, text=True)
+
+    def test_safe_path_installs_once_and_keeps_other_jobs(self):
+        repo = os.path.join(self.tmp, "repo")
+        os.mkdir(repo)
+        with open(self.tab, "w") as f:
+            f.write("0 5 * * * other\n")
+        for _ in range(2):
+            r = self.run_installer(repo)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        with open(self.tab) as f:
+            lines = f.read().splitlines()
+        self.assertEqual(lines[0], "0 5 * * * other")
+        self.assertEqual(len([l for l in lines if "rpi-metrics.sh" in l]), 1)
+        self.assertTrue(os.path.isdir(os.path.join(repo, "textfile")))
+
+    def test_unsafe_paths_are_refused(self):
+        for name in ("a$(touch pwned)b", "a`id`b", "a b", "a%b", 'a"b', "a'b", "a;b"):
+            repo = os.path.join(self.tmp, name)
+            os.makedirs(repo)
+            r = self.run_installer(repo)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertFalse(os.path.exists(self.tab), name)
+            self.assertIn("WARNING", r.stderr + r.stdout)
 
 
 if __name__ == "__main__":

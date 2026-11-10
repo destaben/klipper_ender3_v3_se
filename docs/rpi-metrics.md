@@ -27,15 +27,16 @@ directory, then `mv`).
 * * * * * <repo>/scripts/rpi-metrics.sh <repo>/textfile
 ```
 
+The installer is `scripts/install-rpi-cron.sh <repo-dir>`. It refuses a repo
+path containing characters other than `A-Za-z0-9_./+-` (cron treats `%` as a
+newline and the shell would expand `$(...)`), keeps your other cron jobs, and
+only rewrites the crontab if it could read it.
+
 To deploy on an existing printer, only while it is idle:
 
 ```bash
 git pull
-mkdir -p textfile
-# Add the cron line. If `crontab -l` prints anything other than your jobs or
-# "no crontab for <user>", stop and add the line with `crontab -e` instead.
-crontab -l 2>&1 | head -n 20
-crontab -e   # add: * * * * * "$PWD/scripts/rpi-metrics.sh" "$PWD/textfile" (use the absolute path)
+./scripts/install-rpi-cron.sh "$PWD"
 docker compose up -d node-exporter
 ```
 

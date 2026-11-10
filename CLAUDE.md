@@ -81,6 +81,12 @@ Runs `print-rescue/test_*.py` (also run by `.github/workflows/print-rescue-test.
 python3 -m unittest discover -s print-rescue -v
 ```
 
+### RPi metrics tests (if you touched `scripts/`)
+Runs `scripts/test_rpi_metrics.py` (also run by `.github/workflows/rpi-metrics-test.yml`). Standard library only; set `RPI_PROMTOOL` to also run `promtool check metrics`:
+```bash
+RPI_PROMTOOL="docker run --rm -i --entrypoint promtool prom/prometheus:v2.55.1" python3 -m unittest discover -s scripts -v
+```
+
 ### Klipper Connect patch tests (if you touched `patches/klipper-connect/` or `Dockerfile-klipper-connect`)
 `patches/klipper-connect/test_queue_start.py` covers the local patch and runs in
 `.github/workflows/klipper-connect-test.yml`. The build and run commands are in `docs/prusa-connect.md`, "Upgrading the

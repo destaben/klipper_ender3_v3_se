@@ -26,6 +26,9 @@ thermal_file=${RPI_THERMAL_FILE:-/sys/class/thermal/thermal_zone0/temp}
 cpufreq_file=${RPI_CPUFREQ_FILE:-/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq}
 wireless_file=${RPI_WIRELESS_FILE:-/proc/net/wireless}
 iface=${RPI_WIFI_IFACE:-wlan0}
+case $iface in
+    ''|*[!A-Za-z0-9_.-]*) iface="" ;; # unsafe as a label value: skip Wi-Fi
+esac
 
 have_vcgencmd=0
 if command -v vcgencmd >/dev/null 2>&1; then
@@ -88,7 +91,7 @@ chmod 644 "$tmp"
         temp=${raw#temp=}
         temp=${temp%\'C}
         case $temp in
-            ''|*[!0-9.]*) temp="" ;;
+            ''|*[!0-9.]*|.|*.*.*) temp="" ;;
         esac
     fi
     if [ -n "$temp" ]; then
@@ -119,7 +122,7 @@ chmod 644 "$tmp"
     fi
 
     # --- Wi-Fi (/proc/net/wireless: iface: status link level noise ...) ---
-    if [ -r "$wireless_file" ]; then
+    if [ -n "$iface" ] && [ -r "$wireless_file" ]; then
         line=$(awk -v i="$iface:" '$1 == i { print $3, $4; exit }' "$wireless_file" 2>/dev/null || true)
         if [ -n "$line" ]; then
             # Trailing dots mark the driver's "updated" flags: "60." -> 60.
@@ -127,8 +130,8 @@ chmod 644 "$tmp"
             link=${link%.}
             level=${line#* }
             level=${level%.}
-            case $link in ''|*[!0-9-]*) link="" ;; esac
-            case $level in ''|*[!0-9-]*) level="" ;; esac
+            case $link in ''|*[!0-9-]*|-|*?-*) link="" ;; esac
+            case $level in ''|*[!0-9-]*|-|*?-*) level="" ;; esac
             if [ -n "$level" ]; then
                 echo "# HELP rpi_wifi_signal_dbm Wi-Fi signal level in dBm."
                 echo "# TYPE rpi_wifi_signal_dbm gauge"
