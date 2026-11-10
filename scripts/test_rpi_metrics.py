@@ -131,6 +131,16 @@ class RpiMetricsTest(unittest.TestCase):
         self.assertNotIn("rpi_throttled_bitmask", v)
         self.assertNotIn("rpi_core_volts", v)
 
+    def test_malformed_hex_and_volts_are_omitted(self):
+        for hexval in ("throttled=0x", "throttled=0x1zz"):
+            self.stub_vcgencmd(throttled=hexval, volts="volt=1.2.3V")
+            r = self.run_script()
+            self.assertEqual(r.returncode, 0, r.stderr)
+            v = self.values()
+            self.assertNotIn("rpi_throttled_bitmask", v)
+            self.assertNotIn("rpi_core_volts", v)
+            self.assertIn("rpi_cpu_temp_celsius", v)
+
     def test_missing_wifi_interface_omits_wifi(self):
         self.stub_vcgencmd()
         self.run_script(wireless=WIRELESS.replace("wlan0", "wlan9"))

@@ -105,6 +105,7 @@ This repository manages an **Ender 3 V3 SE** 3D printer running **Klipper** firm
 | `./config/klipper_connect.conf` | `/data/config/klipper_connect.conf` | klipper-connect |
 | `./klipper-connect` | `/data/klipper_connect` | klipper-connect |
 | `./gcodes` | `/data/gcodes` | klipper-connect |
+| `./textfile` | `/textfile` (ro) | node-exporter |
 | `./KlipperMaintenance/maintain.py` | `/home/klipper/klipper/klippy/extras/maintain.py` | klipper |
 | `./chopper-resonance-tuner/` | `/home/klipper/chopper-resonance-tuner` (and `gcode_shell_command.py` into `klippy/extras`) | klipper |
 | `./moonraker-timelapse/component/timelapse.py` | `/opt/moonraker/moonraker/components/timelapse.py` | moonraker |

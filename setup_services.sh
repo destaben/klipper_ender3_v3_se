@@ -129,17 +129,22 @@ mkdir -p textfile
 if command -v crontab &> /dev/null; then
     REPO_DIR=$(pwd)
     CRON_USER="${SUDO_USER:-$USER}"
+    # `crontab -u` needs root; a plain user edits their own crontab directly.
+    CRON_ARGS=()
+    if [ "$(id -u)" -eq 0 ]; then
+        CRON_ARGS=(-u "$CRON_USER")
+    fi
     CRON_LINE="* * * * * \"${REPO_DIR}/scripts/rpi-metrics.sh\" \"${REPO_DIR}/textfile\""
     # Only rewrite the crontab when the current one was read successfully or
     # does not exist yet, so an unexpected `crontab -l` failure can never
     # replace the user's other jobs with the metrics line alone.
-    if CURRENT_CRON=$(crontab -l -u "$CRON_USER" 2>&1) || printf '%s' "$CURRENT_CRON" | grep -q '^no crontab for'; then
+    if CURRENT_CRON=$(LC_ALL=C crontab -l "${CRON_ARGS[@]}" 2>&1) || printf '%s' "$CURRENT_CRON" | grep -q '^no crontab for'; then
         if ! printf '%s' "$CURRENT_CRON" | grep -q '^no crontab for'; then
             CURRENT_CRON=$(printf '%s\n' "$CURRENT_CRON" | grep -vF 'scripts/rpi-metrics.sh' || true)
         else
             CURRENT_CRON=""
         fi
-        { [ -n "$CURRENT_CRON" ] && printf '%s\n' "$CURRENT_CRON"; echo "$CRON_LINE"; } | crontab -u "$CRON_USER" -
+        { [ -n "$CURRENT_CRON" ] && printf '%s\n' "$CURRENT_CRON"; echo "$CRON_LINE"; } | crontab "${CRON_ARGS[@]}" -
         echo "Installed rpi-metrics crontab line for $CRON_USER."
     else
         echo "WARNING: could not read the crontab of $CRON_USER; not installing the rpi-metrics line." >&2

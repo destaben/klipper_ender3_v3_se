@@ -47,6 +47,7 @@ Includes:
    The `setup_services.sh` script will:
    - Install Docker and the Docker Compose plugin if not already present.
    - Clone additional dependencies ([Chopper Resonance Tuner](https://github.com/MRX8024/chopper-resonance-tuner), [KlipperMaintenance](https://github.com/3DCoded/KlipperMaintenance), [Moonraker Timelapse](https://github.com/mainsail-crew/moonraker-timelapse)).
+   - Install a user crontab line that runs `scripts/rpi-metrics.sh` every minute (see [docs/rpi-metrics.md](docs/rpi-metrics.md)).
    - Start all Docker containers.
    - Add your login user to the `docker` group; log out and back in (or run `newgrp docker`) before using `docker` without `sudo` in your own shell.
 
@@ -122,7 +123,9 @@ The [Klipper Connect patch tests](.github/workflows/klipper-connect-test.yml) wo
 
 The [Virtual Printer Boot](.github/workflows/sim-boot.yml) workflow runs on pull requests and on pushes to `main` that touch `config/`, `sim/`, `mmu-fallback/`, or the workflow file itself. It boots `config/` in a virtual printer (a Klipper host and two virtual MCUs) and fails if Klippy does not reach `ready`. It does not simulate heating or motion. The same workflow unit-tests the `mmu-fallback` watcher.
 
-The [Print Rescue Tests](.github/workflows/print-rescue-test.yml) workflow runs on pull requests and on pushes to `main` that touch `print-rescue/`, anything under `config/`, or the workflow file itself. It runs the standard-library unit tests of the read-only print-rescue planner. The planner, its refusal catalogue and the manual rescue procedure are described in [docs/print-rescue.md](docs/print-rescue.md); the [incident](docs/print-rescue-incident-2026-11-07.md), the [live validation](docs/print-rescue-live-validation-2026-11-07.md) and the [phase 2 design](docs/print-rescue-p2-design.md) have their own pages.
+The [Print Rescue Tests](.github/workflows/print-rescue-test.yml) workflow runs on pull requests and on pushes to `main` that touch `print-rescue/`, anything under `config/`, or the workflow file itself. It runs the standard-library unit tests of the read-only print-rescue planner. The planner, its refusal catalogue and the manual rescue procedure are described in [docs/print-rescue.md](docs/print-rescue.md); the [incident](docs/print-rescue-incident-2026-11-07.md), the [live validation](docs/print-rescue-live-validation-2026-11-07.md, rpi-metrics.md) and the [phase 2 design](docs/print-rescue-p2-design.md) have their own pages.
+
+The [RPi Metrics Tests](.github/workflows/rpi-metrics-test.yml) workflow runs on pull requests and on pushes to `main` that touch `scripts/` or the workflow file. It runs the unit tests of `scripts/rpi-metrics.sh` with a stubbed `vcgencmd` and checks the output with `promtool check metrics`.
 
 ## Services
 
@@ -193,6 +196,8 @@ All services are defined in `docker-compose.yaml` and managed via Docker Compose
 ├── Dockerfile-mmu-fallback    # Dockerfile for the optional virtual Pico MMU sidecar
 ├── mmu-fallback/              # Virtual Pico MMU sidecar (mmu_link.py, run_virtual.sh and unit tests)
 ├── print-rescue/              # Read-only print rescue planner (phase 1) and its unit tests; see docs/print-rescue.md
+├── scripts/                   # rpi-metrics.sh (Pi health metrics for node-exporter) and its unit tests; see docs/rpi-metrics.md
+├── textfile/                  # node-exporter textfile collector output (git-ignored except .gitkeep)
 ├── serial-links/              # Stable serial path for the Pico MMU (default: symlink to the real device)
 ├── docs/                      # Upgrade notes, Prusa Connect and virtual MMU setup, and VFA docs (klipper-mmu-upgrade.md, prusa-connect.md, virtual-mmu.md, vfa-diagnosis.md, vfa-log.md, print-rescue.md, print-rescue-incident-2026-11-07.md, print-rescue-p2-design.md, print-rescue-live-validation-2026-11-07.md)
 ├── sim/                       # Virtual printer boot check (Dockerfile-sim, run.sh, check_ready.py, gen_sim_config.py, patches/)

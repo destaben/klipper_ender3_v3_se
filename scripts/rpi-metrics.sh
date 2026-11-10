@@ -44,7 +44,8 @@ chmod 644 "$tmp"
         raw=$(vcgencmd get_throttled 2>/dev/null || true)
         hex=${raw#throttled=}
         case $hex in
-            0x[0-9a-fA-F]|0x[0-9a-fA-F][0-9a-fA-F]*)
+            0x*[!0-9a-fA-F]*|0x) ;;
+            0x[0-9a-fA-F]*)
                 bits=$((hex))
                 echo "# HELP rpi_throttled_bitmask Raw vcgencmd get_throttled bitmask."
                 echo "# TYPE rpi_throttled_bitmask gauge"
@@ -65,7 +66,7 @@ chmod 644 "$tmp"
         volts=${raw#volt=}
         volts=${volts%V}
         case $volts in
-            ''|*[!0-9.]*) ;;
+            ''|*[!0-9.]*|.|*.*.*) ;;
             *)
                 echo "# HELP rpi_core_volts Core voltage in volts."
                 echo "# TYPE rpi_core_volts gauge"

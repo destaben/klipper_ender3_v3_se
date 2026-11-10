@@ -14,7 +14,7 @@ which node-exporter's textfile collector serves at `/nodeexporter/metrics`.
 | `rpi_metrics_last_run_timestamp_seconds` | `date`; alert on staleness |
 
 The Pi shares one USB/SDIO bus, so a run makes only two `vcgencmd` calls
-(`get_throttled`, `measure_volts`); everything else is read from sysfs and
+(`get_throttled`, `measure_volts`) when the sysfs files exist (otherwise `measure_temp` / `measure_clock` are used as fallbacks); everything else is read from sysfs and
 `/proc`. A metric whose source is missing or unparsable is omitted, never
 reported as 0. The file is replaced atomically (temp file in the same
 directory, then `mv`).
@@ -32,7 +32,10 @@ To deploy on an existing printer, only while it is idle:
 ```bash
 git pull
 mkdir -p textfile
-(crontab -l 2>/dev/null | grep -vF scripts/rpi-metrics.sh; echo "* * * * * $PWD/scripts/rpi-metrics.sh $PWD/textfile") | crontab -
+# Add the cron line. If `crontab -l` prints anything other than your jobs or
+# "no crontab for <user>", stop and add the line with `crontab -e` instead.
+crontab -l 2>&1 | head -n 20
+crontab -e   # add: * * * * * "$PWD/scripts/rpi-metrics.sh" "$PWD/textfile" (use the absolute path)
 docker compose up -d node-exporter
 ```
 
@@ -41,8 +44,8 @@ Verify (HTTP only): `curl -s http://<host_ip>/nodeexporter/metrics | grep rpi_`
 ## Rollback
 
 ```bash
-crontab -l | grep -v 'scripts/rpi-metrics.sh' | crontab -
-git revert -m 1 <merge-commit>   # or git checkout the previous docker-compose.yaml
+crontab -l | grep -vF 'scripts/rpi-metrics.sh' | crontab -   # as the user that installed it
+git revert <commit>   # add -m 1 for a merge commit; or git checkout the previous docker-compose.yaml
 docker compose up -d node-exporter   # recreates it without the flag and mount
 rm -rf textfile
 ```
