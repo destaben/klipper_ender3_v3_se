@@ -126,7 +126,10 @@ def pick_resume_line(lines: List[str], exit_idx: int, overlap_bytes: int) -> int
         offs.append(o)
         o += len(l.encode("utf-8", "surrogateescape")) + 1
     target = offs[exit_idx] + len(lines[exit_idx].encode("utf-8", "surrogateescape")) + 1 - overlap_bytes
-    i = max(j for j in range(len(lines)) if offs[j] <= target)
+    before = [j for j in range(len(lines)) if offs[j] <= target]
+    if not before:
+        raise JobError("the overlap reaches before the start of the file")
+    i = max(before)
     # POSITIVE E only: a wipe is 'G1 X.. Y.. E-.1' and must never be chosen
     while i > 0 and not re.match(r"^G1 X" + NUM + r" Y" + NUM + r" E\d*\.?\d+\s*$", lines[i]):
         i -= 1

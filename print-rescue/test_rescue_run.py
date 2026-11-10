@@ -19,7 +19,7 @@ REAR = (134.0, 215.0)
 class FakeMoonraker:
     """Just enough of Moonraker/Klipper to run the sequence: tracks X/Y/Z, relative mode, temperatures and the command log."""
 
-    def __init__(self, probe_script=None, z_offset=2.96, queue=None, files=None, bed=60.0):
+    def __init__(self, probe_script=None, z_offset=2.96, queue=None, files=None, bed=60.0, print_state="standby"):
         self.cmds, self.calls, self.xy_moves = [], [], []
         self.x = self.y = self.z = 0.0
         self.rel = False
@@ -28,6 +28,7 @@ class FakeMoonraker:
         self.files = files if files is not None else ["resume_test.gcode"]
         self.targets = {"extruder": 0, "bed": 0}
         self.started = None
+        self.print_state = print_state
 
     def _script(self, cmd):
         self.cmds.append(cmd)
@@ -73,7 +74,7 @@ class FakeMoonraker:
         if path.startswith("/printer/objects/query"):
             return {"result": {"status": {
                 "toolhead": {"position": [self.x, self.y, self.z, 0]},
-                "print_stats": {"state": "standby"},
+                "print_stats": {"state": self.print_state},
                 "configfile": {"settings": {"bltouch": {"z_offset": self.z_offset}}},
                 "heater_bed": {"temperature": self.bed},
                 "extruder": {"temperature": 220.0}}}}
@@ -128,6 +129,32 @@ class TestRun(unittest.TestCase):
         self.assertTrue(any("R13" in l for l in out))
         self.assertFalse([c for c in f.cmds if c.startswith(("G28", "G1 X", "PROBE"))])
 
+    def test_a_refused_preflight_sends_no_command_at_all(self):
+        # Regression: the abort cleanup ran after every refusal, so a rejected run still sent M104 S0 and a
+        # relative Z lift. With a print active that would switch off the nozzle and raise Z on a live job.
+        cases = [
+            ("a print is active", dict(print_state="printing"), True),
+            ("a paused print", dict(print_state="paused"), True),
+            ("R13 unverified without the permission", {}, False),
+            ("cold bed", dict(bed=30.0), True),
+            ("z_offset mismatch", dict(z_offset=3.035), True),
+            ("missing resume file", dict(files=[]), True),
+            ("queued job", dict(queue=[{"filename": "x"}]), True),
+        ]
+        for name, kw, allow in cases:
+            f = FakeMoonraker(**kw)
+            r, out = make(f, allow=allow)
+            self.assertEqual(r.run(), 1, name)
+            self.assertEqual(f.cmds, [], "%s: no command may reach the printer, got %s" % (name, f.cmds))
+
+    def test_a_failure_after_motion_started_still_cools_and_lifts(self):
+        f = FakeMoonraker()
+        r, out = make(f)
+        r.probe_z = lambda: (_ for _ in ()).throw(rr.RescueError("probe failed"))
+        self.assertEqual(r.run(), 1)
+        self.assertIn("M104 S0", f.cmds)
+        self.assertIn("G1 Z10 F300", f.cmds)
+
     def test_full_sequence_order_and_height_of_every_xy_move(self):
         f = FakeMoonraker(probe_script=["notrigger", "ok"])
         r, out = make(f)
@@ -146,6 +173,20 @@ class TestRun(unittest.TestCase):
         # every XY move happened at Z >= part top + clearance, or with the head box clear of the part
         for z, x, y in f.xy_moves:
             self.assertTrue(z >= 86.6 or not r.hits_part(x, y), (z, x, y))
+
+    def test_a_failed_power_off_stops_the_run_and_cools(self):
+        f = FakeMoonraker(probe_script=["alarm", "ok"])
+        original = f.__call__
+
+        def failing(method, path, data=None, timeout=60):
+            if path.startswith("/machine/device_power/off"):
+                return {"error": {"message": "plug unreachable"}}
+            return original(method, path, data, timeout)
+        r, out = make(failing)
+        f.calls = []
+        self.assertEqual(r.run(), 1)
+        self.assertTrue(any("power off failed" in l for l in out))
+        self.assertNotIn("/machine/device_power/on?printer", [p for _, p in f.calls])
 
     def test_latched_probe_power_cycles_then_succeeds(self):
         f = FakeMoonraker(probe_script=["alarm", "ok"])

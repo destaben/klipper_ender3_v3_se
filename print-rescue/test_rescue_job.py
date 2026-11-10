@@ -54,6 +54,11 @@ class TestGeometry(unittest.TestCase):
 
 
 class TestResumeLine(unittest.TestCase):
+    def test_an_overlap_reaching_before_the_file_start_is_a_refusal_not_a_traceback(self):
+        lines = ["G1 X10 Y10 E1.0", "G1 X11 Y10 E1.0", "G1 X12 Y10 E1.0"]
+        with self.assertRaises(rj.JobError):
+            rj.pick_resume_line(lines, 1, 10 ** 6)
+
     def setUp(self):
         self.lines = synth_gcode()
         # exit on the hop travel of layer 2 (the 'G1 X20 Y20 Z0.8 F12000' line)

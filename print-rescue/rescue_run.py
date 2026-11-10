@@ -70,6 +70,7 @@ class Runner:
         self.lb = z_lower_bound if z_lower_bound is not None else float(job["resume"]["layer_z"])
         self.hot_since: Optional[float] = None
         self.unverified = bool(mp.motion_ready(profile))
+        self.begun = False  # set once preflight has passed; abort_hot sends nothing before that
 
     # -- plumbing ----------------------------------------------------------
     def log(self, *a):
@@ -195,9 +196,12 @@ class Runner:
     def power_cycle_and_rebuild(self):
         self.log("  CR Touch latched: power cycle >= 25 s, then rebuild the reference")
         if not self.dry:
-            self.api("POST", "/machine/device_power/off?printer", {})
-            self.sleep(25)
-            self.api("POST", "/machine/device_power/on?printer", {})
+            for action in ("off", "on"):
+                answer = self.api("POST", "/machine/device_power/%s?printer" % action, {})
+                if isinstance(answer, dict) and "error" in answer:   # api() returns the error, it does not raise
+                    raise RescueError("power %s failed: %s" % (action, answer["error"].get("message")))
+                if action == "off":
+                    self.sleep(25)
             for _ in range(60):
                 self.sleep(4)
                 try:
@@ -234,6 +238,11 @@ class Runner:
 
     def abort_hot(self, msg: str):
         self.log("ABORT:", msg)
+        if not self.begun:
+            # A refusal before the first command (an active print, R13, a cold bed...) leaves the printer exactly as it
+            # was: the cleanup below would switch off a running job's nozzle and raise its Z.
+            self.log("  (nothing was sent to the printer)")
+            return
         try:
             if not self.dry:
                 self.gcode("M104 S0")
@@ -247,6 +256,7 @@ class Runner:
         job, bed, hot = self.job, self.job["temps"]["bed"], self.job["temps"]["nozzle"]
         try:
             self.preflight()
+            self.begun = True  # from here on the run changes the printer, so a failure must cool and lift
             self.gcode("SET_IDLE_TIMEOUT TIMEOUT=14400")
             self.gcode("M140 S%d" % bed)
             self.log("Z REFERENCE (declared %s is a LOWER bound: the head may have been lifted by hand)" % self.lb)
