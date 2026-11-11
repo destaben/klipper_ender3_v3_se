@@ -47,4 +47,4 @@ A list of findings, each with: file:line, one-sentence summary, severity, and
 the concrete failure scenario (not "this could be an issue" — the actual input
 or state that breaks). Empty list if nothing survived review. No fixes applied
 by you directly — report back to `/release`, which routes severe findings to an
-auto-fix loop (capped at 2 passes) and asks the user about everything else.
+auto-fix loop (capped at 2 passes) and routes non-severe findings per `release-policy`.
