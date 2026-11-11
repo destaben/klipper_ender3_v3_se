@@ -9,6 +9,8 @@ replaced by an earlier success):
 
 * its first non-blank line is `## Review of PR #<n>` (optionally followed by
   a space or punctuation and more text, e.g. a commit sha), and
+* if it has a `New: n · Open: n · Fixed: n · Justified: n` summary line, the
+  new and open counts add up to the Result total, and
 * its last non-blank line is
   `Result: <total> findings (<severe> severe, <non-severe> non-severe)` with
   total == severe + non-severe ("1 finding" when the total is exactly 1;
@@ -34,6 +36,9 @@ from pathlib import Path
 
 # Environment variables whose values must never appear in a posted review.
 SECRET_ENV_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
+
+SUMMARY_RE = re.compile(r"^New: (\d+) · Open: (\d+) · Fixed: (\d+) · Justified: (\d+)(?: · Withdrawn: (\d+))?$")
+MISSED_RE = re.compile(r"pre-existing \(missed earlier\)", re.IGNORECASE)
 
 RESULT_RE = re.compile(
     r"^Result: (\d+) (findings?) \((\d+) severe, (\d+) non-severe\)$"
@@ -139,7 +144,23 @@ def validate(text, pr_number):
         return "Result noun does not match the count"
     if total != severe + non_severe:
         return "Result counts do not add up"
+    # The summary block is optional for the gate (a missing one is not worth a
+    # red job), but when it is there it must agree with the Result line: the
+    # findings that still need action are the new and the open ones.
+    for ln in lines:
+        summary = SUMMARY_RE.match(ln.replace("*", "").replace("`", "").strip())
+        if summary and int(summary.group(1)) + int(summary.group(2)) != total:
+            return "Summary New + Open does not match the Result total"
     return None
+
+
+def review_stats(text):
+    """How many findings the review tags `pre-existing (missed earlier)`.
+
+    Each one is a miss of an earlier pass, so this number makes the
+    convergence problem measurable from the job log.
+    """
+    return sum(1 for ln in (text or "").splitlines() if MISSED_RE.search(ln))
 
 
 def leaked_secret(text, environ=None):
@@ -183,6 +204,8 @@ def main(argv):
         if text:
             print(f"result excerpt: {' '.join(text.split())[:200]}", file=sys.stderr)
         return 3
+    print(f"review stats: {review_stats(text)} finding(s) tagged pre-existing (missed earlier)",
+          file=sys.stderr)
     output_file.write_text(unfence(text).strip() + "\n", encoding="utf-8")
     return 0
 
