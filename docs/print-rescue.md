@@ -9,6 +9,10 @@ The procedure was written after the [2026-11-07 incident](print-rescue-incident-
 where a hand-built resume worked but several steps were riskier than they had
 to be.
 
+**To run a rescue yourself, without AI, follow [print-rescue-runbook.md](print-rescue-runbook.md):** capture, bring the machine back,
+`rescue_job.py` (builds the resume file), `rescue_run.py` (one pass, finger on the emergency stop), `rescue_watch.py`. It was validated live
+on 2026-11-08. The Mainsail button and the worker that prepares the plan and waits for confirmation (not deployed): [print-rescue-worker.md](print-rescue-worker.md). Where the work stands and what to do next: [print-rescue-handoff-2026-11-08.md](print-rescue-handoff-2026-11-08.md). The sections below are the design and the planner reference.
+
 Items marked **TO VERIFY** are claims that have not been checked on the
 hardware or in the Klipper fork source. They are listed again in
 [To verify](#to-verify-against-the-klipper-fork).
@@ -478,6 +482,7 @@ python3 -m unittest discover -s print-rescue -v
 |-------|---------|
 | P1 (code complete; review pass open, see the known issues) | Read-only planner, resume preview, refusal catalogue, profile with provenance, incident fixtures. Pending items: [Known issues](#known-issues-and-pending-work-end-of-phase-1). |
 | P2 | Moonraker-only interactive runner, see [the P2 design](print-rescue-p2-design.md): pauses the job queue, a `START_PRINT` lock while a rescue is active, uploads a state-and-tail resume file and starts it. Starts only after the P2-gate items are closed ([Known issues](#known-issues-and-pending-work-end-of-phase-1)). |
+| P2b | Request-only Mainsail macro and a worker that prepares the plan and waits for a typed confirmation (never runs the runner; not deployed), see [print-rescue-worker.md](print-rescue-worker.md). |
 | P3 | Cold, empty-bed calibration: envelope corners; cutter approach in 0.5 mm steps to measure `x_max_safe`; head footprint tiers; probe spots; re-reference accuracy against homed truth (the user's dry-run idea: run the whole procedure on an empty bed and compare with a real `G28`). |
 | P4 | Interactive runner: confirm before every move, short moves, emergency stop, state re-read after every error. Gantry-tilt check from two probe points. |
 | P5 | Recorder/witness (periodic position and state snapshots during prints), start-of-print check. |
